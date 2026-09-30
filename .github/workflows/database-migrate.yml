@@ -31,8 +31,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify environment branch and direct connection
         env:
-          EXPECTED_BRANCH: ${{ inputs.environment == 'prod' && 'Prod' || 'NonProd' }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          if [ "${{ inputs.environment }}" = "prod" ]; then
+            EXPECTED_BRANCH=Prod
+          else
+            EXPECTED_BRANCH=$(gh api --paginate \
+              "repos/${{ github.repository }}/branches?per_page=100" \
+              --jq '.[].name' | python3 .github/scripts/latest_release_branch.py)
+          fi
           test "$GITHUB_REF_NAME" = "$EXPECTED_BRANCH" || {
             echo "Select the $EXPECTED_BRANCH branch when migrating ${{ inputs.environment }}."
             exit 1
