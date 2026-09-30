@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  pull_request:
+    branches: ['Release-*.*.*']
+  push:
+    branches: ['Release-*.*.*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  latest-release:
+    name: Verify latest release branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      branch: ${{ steps.release.outputs.branch }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find and verify the latest release branch
+        id: release
+        env:
+          EVENT_RELEASE_BRANCH: ${{ github.event.pull_request.base.ref || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RELEASE_BRANCH=$(gh api --paginate \
+            "repos/${{ github.repository }}/branches?per_page=100" \
+            --jq '.[].name' | python3 .github/scripts/latest_release_branch.py)
+          test "$EVENT_RELEASE_BRANCH" = "$RELEASE_BRANCH" || {
+            echo "The current release is $RELEASE_BRANCH, not $EVENT_RELEASE_BRANCH."
+            exit 1
+          }
+          echo "branch=$RELEASE_BRANCH" >> "$GITHUB_OUTPUT"
+
+  ci:
+    name: CI
+    uses: ./.github/workflows/_reusable-ci.yml
+
+  required:
+    name: Release required
+    if: ${{ always() }}
+    needs: [latest-release, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify required jobs
+        env:
+          CI_RESULT: ${{ needs.ci.result }}
+          RELEASE_RESULT: ${{ needs.latest-release.result }}
+        run: |
+          test "$CI_RESULT" = "success"
+          test "$RELEASE_RESULT" = "success"
+
+  merge-to-release:
+    name: Enable automatic merge to Release
+    if: ${{ github.event_name == 'pull_request' && needs.required.result == 'success' }}
+    needs: [required]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Enable auto-merge for the validated pull request
+        env:
+          GH_TOKEN: ${{ secrets.PROMOTION_TOKEN }}
+        run: |
+          gh pr merge "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --auto \
+            --merge
+
+  promote:
+    name: Open release pull request to Prod
+    if: ${{ github.event_name == 'push' && needs.required.result == 'success' }}
+    needs: [latest-release, required]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: environment-promotion
+      cancel-in-progress: false
+    steps:
+      - name: Create or find promotion pull request
+        env:
+          GH_TOKEN: ${{ secrets.PROMOTION_TOKEN }}
+          RELEASE_BRANCH: ${{ needs.latest-release.outputs.branch }}
+        run: |
+          set -euo pipefail
+          PR_TITLE="release: promote $RELEASE_BRANCH → Prod"
+          PR_BODY="Promotion from \`$RELEASE_BRANCH\` to \`Prod\`. After all Prod requirements pass, merge this PR manually using **Create a merge commit**. Do not squash this promotion PR."
+          PR_NUMBER=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --base "Prod" \
+            --head "$RELEASE_BRANCH" \
+            --state open \
+            --json number \
+            --jq '.[0].number')
+
+          if [ -z "$PR_NUMBER" ]; then
+            PR_URL=$(gh pr create \
+              --repo "${{ github.repository }}" \
+              --base "Prod" \
+              --head "$RELEASE_BRANCH" \
+              --title "$PR_TITLE" \
+              --body "$PR_BODY")
+            PR_NUMBER=${PR_URL##*/}
+          else
+            gh pr edit "$PR_NUMBER" \
+              --repo "${{ github.repository }}" \
+              --title "$PR_TITLE" \
+              --body "$PR_BODY"
+          fi
+
+          echo "Promotion PR #$PR_NUMBER is ready for Prod validation and manual merge."

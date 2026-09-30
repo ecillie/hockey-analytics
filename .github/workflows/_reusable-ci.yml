@@ -60,6 +60,8 @@ jobs:
             backend/requirements.txt
             backend/requirements-dev.txt
             ml/requirements.txt
+      - name: Test release branch selection
+        run: python3 .github/scripts/test_latest_release_branch.py
       - name: Install backend dependencies
         run: python -m pip install -r backend/requirements-dev.txt
       - name: Validate committed OpenAPI contract
