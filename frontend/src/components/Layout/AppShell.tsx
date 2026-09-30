@@ -8,6 +8,8 @@ const navigation = [
   { to: '/players', label: 'Players', icon: 'players' as const },
   { to: '/teams', label: 'Teams', icon: 'teams' as const },
   { to: '/compare', label: 'Compare', icon: 'compare' as const },
+  { to: '/about', label: 'About', icon: 'info' as const },
+  { to: '/future-plans', label: 'Plans', icon: 'roadmap' as const },
 ]
 
 export function AppShell() {

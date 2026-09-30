@@ -59,6 +59,120 @@ describe('application routes', () => {
     expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeInTheDocument()
   })
 
+  it('renders the about page content and profile links', async () => {
+    renderAt('/about')
+    expect(await screen.findByRole('heading', { name: 'About TradeValue' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Built for better hockey questions' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Evan Cillie' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Contribute' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Website/ })).toHaveAttribute('href', 'https://evan-cillie.vercel.app/')
+    expect(screen.getByRole('link', { name: /LinkedIn/ })).toHaveAttribute('href', 'https://www.linkedin.com/in/evan-cillie')
+    expect(screen.getByRole('link', { name: /GitHub/ })).toHaveAttribute('href', 'https://github.com/ecillie/Hockey-Analytics')
+    expect(screen.getByRole('link', { name: /cillieevan@gmail.com/ })).toHaveAttribute('href', 'mailto:cillieevan@gmail.com')
+  })
+
+  it('renders and navigates the future plans roadmap', async () => {
+    const user = userEvent.setup()
+    renderAt('/future-plans')
+    expect(await screen.findByRole('tab', { name: 'Data & Automation' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('heading', { name: 'A reliable data engine' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Deeper player analytics' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Help shape what comes next' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Player Analytics' }))
+    expect(window.location.search).toBe('?tab=player-analytics')
+    expect(screen.getByRole('tab', { name: 'Player Analytics' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('heading', { name: 'Deeper player analytics' })).toBeInTheDocument()
+
+    await user.keyboard('{End}')
+    expect(window.location.search).toBe('?tab=timeline')
+    expect(screen.getByRole('tab', { name: 'Timeline' })).toHaveFocus()
+    expect(screen.getByRole('heading', { name: 'Reliable live product' })).toBeInTheDocument()
+
+    window.history.back()
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Player Analytics' })).toHaveAttribute('aria-selected', 'true'))
+    expect(screen.getByRole('heading', { name: 'Deeper player analytics' })).toBeInTheDocument()
+
+    window.history.forward()
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Timeline' })).toHaveAttribute('aria-selected', 'true'))
+    expect(screen.getByRole('heading', { name: 'Reliable live product' })).toBeInTheDocument()
+  })
+
+  it('opens a shared future plans tab from the URL', async () => {
+    renderAt('/future-plans?tab=teams-games')
+    expect(await screen.findByRole('tab', { name: 'Teams & Games' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('heading', { name: 'Team analytics & salary-cap tools' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Automated data updates' })).not.toBeInTheDocument()
+  })
+
+  it('supports complete keyboard navigation and invalid tab fallbacks', async () => {
+    const user = userEvent.setup()
+    renderAt('/future-plans?tab=not-a-roadmap-tab')
+
+    const dataTab = await screen.findByRole('tab', { name: 'Data & Automation' })
+    expect(dataTab).toHaveAttribute('aria-selected', 'true')
+    dataTab.focus()
+
+    await user.keyboard('{ArrowLeft}')
+    expect(screen.getByRole('tab', { name: 'Timeline' })).toHaveFocus()
+    expect(window.location.search).toBe('?tab=timeline')
+
+    await user.keyboard('{ArrowRight}')
+    expect(dataTab).toHaveFocus()
+    expect(window.location.search).toBe('?tab=data-automation')
+
+    await user.keyboard('{ArrowRight}')
+    expect(screen.getByRole('tab', { name: 'Player Analytics' })).toHaveFocus()
+    await user.keyboard('{ArrowLeft}')
+    expect(dataTab).toHaveFocus()
+
+    await user.keyboard('{End}')
+    expect(screen.getByRole('tab', { name: 'Timeline' })).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(dataTab).toHaveFocus()
+
+    const unchangedUrl = window.location.href
+    await user.keyboard('{PageDown}')
+    expect(window.location.href).toBe(unchangedUrl)
+    expect(dataTab).toHaveFocus()
+  })
+
+  it('renders every roadmap category with accessible, persistent URL state', async () => {
+    const user = userEvent.setup()
+    renderAt('/future-plans?tab=platform&source=shared-roadmap')
+
+    const categories = [
+      ['Data & Automation', 'Automated data updates'],
+      ['Player Analytics', 'Deeper player analytics'],
+      ['Contracts & Salary', 'Salary & contract models'],
+      ['Teams & Games', 'Team analytics & salary-cap tools'],
+      ['Decision Tools', 'Player comparisons'],
+      ['Platform', 'Performance & access'],
+      ['Timeline', 'Reliable live product'],
+    ] as const
+
+    expect(await screen.findByRole('heading', { name: 'Performance & access' })).toBeInTheDocument()
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'tab-platform')
+
+    for (const [tabName, sectionHeading] of categories) {
+      const tab = screen.getByRole('tab', { name: tabName })
+      await user.click(tab)
+      expect(tab).toHaveAttribute('aria-selected', 'true')
+      expect(tab).toHaveAttribute('tabindex', '0')
+      expect(screen.getByRole('tabpanel')).toHaveAttribute('id', tab.getAttribute('aria-controls'))
+      expect(screen.getByRole('heading', { name: sectionHeading })).toBeInTheDocument()
+      expect(window.location.search).toContain('source=shared-roadmap')
+      expect(screen.getAllByRole('tabpanel')).toHaveLength(1)
+    }
+
+    expect(screen.getByRole('link', { name: 'Start a conversation' })).toHaveAttribute(
+      'href',
+      'mailto:cillieevan@gmail.com?subject=TradeValue%20contribution',
+    )
+    expect(screen.getByText(/This roadmap reflects the current direction of TradeValue/)).toBeInTheDocument()
+    expect(screen.getAllByRole('tab').filter((tab) => tab.getAttribute('aria-selected') === 'true')).toHaveLength(1)
+  })
+
   it('filters, sorts, paginates, and resets the player directory', async () => {
     const user = userEvent.setup()
     renderAt('/players')
