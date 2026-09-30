@@ -1,15 +1,22 @@
-# CI and Automatic Promotion
+# CI and Release Promotion
 
 TradeValue uses three environment workflows:
 
-- `Dev` validates and auto-merges pull requests into `Dev`. After the resulting
-  successful push, it opens or updates the `Dev → NonProd` promotion pull
-  request.
-- `NonProd` validates and auto-merges pull requests into `NonProd`. After the
-  resulting successful push, it opens or updates the `NonProd → Prod`
-  promotion pull request.
-- `Prod` validates and auto-merges pull requests into `Prod`. It does not
-  promote further.
+- `Dev` validates and squash-merges pull requests into `Dev`. After the
+  resulting successful push, it finds the newest
+  `Release-MAJOR.MINOR.PATCH` branch and opens or updates the promotion pull
+  request to it.
+- `Release` validates and merge-commits pull requests into the newest release
+  branch. After the resulting successful push, it opens or updates that
+  release branch's promotion pull request to `Prod`.
+- `Prod` validates pull requests into `Prod`. A person must merge the pull
+  request with a merge commit after every required check passes.
+
+Release precedence is numeric from left to right: major, then minor, then
+patch. For example, `Release-10.1.0` is newer than `Release-9.99.99`, and
+`Release-10.2.0` is newer than `Release-10.1.99`. Names that do not exactly
+match `Release-MAJOR.MINOR.PATCH`, such as `Release-MVP`, are ignored. The
+promotion fails clearly when no matching release branch exists.
 
 All three call `_reusable-ci.yml`, so backend tests, ML tests, frontend lint,
 frontend tests, and the frontend production build use the same implementation.
@@ -20,12 +27,34 @@ The backend job also verifies a linear Alembic history, upgrades an empty local
 PostgreSQL service, compares its catalog with the committed schema snapshot,
 tests a downgrade/re-upgrade cycle, runs API smoke checks, and uploads offline
 SQL plus catalog diagnostics.
-Each destination workflow owns the merge into its branch. Its merge job runs
-only after that environment's required aggregate job succeeds. GitHub
-auto-merge remains responsible for waiting on every other check required by the
-destination branch, including Vercel preview checks when those are configured
-as required. The Dev and NonProd push jobs only create the next promotion pull
-request; they do not merge it themselves.
+The Dev and Release workflows own their destination merges. Their merge jobs
+run only after the required aggregate job succeeds. GitHub auto-merge remains
+responsible for waiting on every other check required by the destination
+branch, including Vercel preview checks when those are configured as required.
+The push jobs only create the next promotion pull request; they do not merge it
+themselves. The Prod workflow never enables auto-merge.
+
+Promotion pull requests use consistent, searchable titles:
+
+- `release: promote Dev → Release-1.2.0`
+- `release: promote Release-1.2.0 → Prod`
+
+Feature pull requests should use concise conventional titles such as
+`feat(players): add contract history` or
+`fix(ci): select the latest release numerically`.
+
+## Merge strategy
+
+| Pull request | Merge method | Enforcement |
+| --- | --- | --- |
+| Feature branch → `Dev` | Squash merge | Automated by `dev.yml` |
+| `Dev` → `Release-MAJOR.MINOR.PATCH` | Merge commit | Automated by `release.yml` |
+| `Release-MAJOR.MINOR.PATCH` → `Prod` | Merge commit | Manual after `Prod required` passes |
+
+Squashing feature work keeps development history concise. Promotion pull
+requests retain merge commits so the long-lived branches preserve ancestry;
+squashing a promotion can make later comparisons and merges repeat or conflict
+with commits that Git no longer recognizes as shared history.
 
 ## Frontend release gate
 
@@ -58,7 +87,8 @@ For every promotion candidate, confirm that:
 Open **Settings → General → Pull Requests**:
 
 1. Enable **Allow merge commits**.
-2. Enable **Allow auto-merge**.
+2. Enable **Allow squash merging**.
+3. Enable **Allow auto-merge** for Dev and release-branch promotion.
 
 Auto-merge waits until all requirements on the destination branch have passed.
 See [GitHub's auto-merge documentation](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-auto-merge-for-pull-requests-in-your-repository).
@@ -81,14 +111,14 @@ and packages**; the workflow does not need a broadly writable `GITHUB_TOKEN`.
 ### Branch rulesets
 
 Open **Settings → Rules → Rulesets** and create three separate active branch
-rulesets. A single ruleset cannot be used because each destination branch has a
-different required check.
+rulesets. A single ruleset cannot be used because each destination branch type
+has a different required check.
 
 Configure each ruleset as follows:
 
 - Enforcement status: **Active**
 - Bypass list: empty
-- Target: include one branch by exact name
+- Target: include the branch name or release-branch pattern shown below
 - Enable **Restrict deletions**
 - Enable **Require a pull request before merging**
 - Required approvals: `0`
@@ -103,7 +133,7 @@ Add only the check matching the target branch:
 | Ruleset target | Required check |
 | --- | --- |
 | `Dev` | `Dev required` |
-| `NonProd` | `NonProd required` |
+| `Release-*.*.*` | `Release required` |
 | `Prod` | `Prod required` |
 
 Strict up-to-date mode is intentionally disabled. Each downstream merge adds a
@@ -119,29 +149,34 @@ and [required-status-check documentation](https://docs.github.com/en/repositorie
 ## Safe rollout
 
 1. Open or update a pull request into `Dev`. Confirm `Dev required` succeeds
-   and the workflow enables auto-merge for the pull request.
-2. Confirm GitHub merges into `Dev`, then creates the `Dev → NonProd` pull
-   request and enables
-   auto-merge. Confirm `NonProd required` appears and succeeds.
-3. Confirm GitHub merges that pull request into `NonProd`, then creates the
-   `NonProd → Prod` pull request. Confirm `Prod required` appears and succeeds.
-4. Confirm GitHub merges the final pull request into `Prod`.
+   and the workflow enables squash auto-merge for the pull request.
+2. Confirm GitHub selects the numerically newest release branch, creates the
+   `Dev → Release-MAJOR.MINOR.PATCH` pull request, and enables auto-merge.
+   Confirm `Release required` appears and succeeds.
+3. Confirm GitHub merges that pull request into the release branch and creates
+   the `Release-MAJOR.MINOR.PATCH → Prod` pull request. Confirm `Prod required`
+   appears and succeeds.
+4. Review and manually merge the final pull request into `Prod` with **Create a
+   merge commit**. Do not squash the promotion pull request.
 
 If a required job fails or is cancelled, the destination pull request remains
-open. Rerun the failed jobs or push a corrective commit; auto-merge resumes only
-after the destination workflow succeeds.
+open. Rerun the failed jobs or push a corrective commit. Auto-merge resumes for
+Dev and release pull requests only; Prod always requires a manual merge.
 
 ## Database migration release gate
 
 Database changes are deliberately separate from Vercel application startup and
-the automatic branch cascade. Create GitHub Environments named `nonprod` and
+branch promotion. Create GitHub Environments named `nonprod` and
 `prod`, add a direct Neon connection as the `DATABASE_URL` secret in each, and
-configure required reviewers on `prod`.
+configure required reviewers on `prod`. `nonprod` remains the runtime and
+database environment name; it is no longer a Git branch.
 
-Before releasing schema-dependent code, manually dispatch the `Database
-migration` workflow against `nonprod`, validate the application, and then
-dispatch it against `prod`. Per-environment concurrency prevents overlapping
-migration runs. The workflow records the starting and ending revision, applies
-`upgrade head`, verifies the exact schema contract, and smoke-tests health,
-seasons, and teams. Use pooled URLs only for the request-serving application;
-the migration workflow requires a direct Neon URL.
+Before releasing schema-dependent code, select the newest release branch and
+manually dispatch the `Database migration` workflow against `nonprod`, validate
+the application, and then select `Prod` and dispatch it against `prod`. The
+workflow verifies these branch choices using the same release selection logic.
+Per-environment concurrency prevents overlapping migration runs. The workflow
+records the starting and ending revision, applies `upgrade head`, verifies the
+exact schema contract, and smoke-tests health, seasons, and teams. Use pooled
+URLs only for the request-serving application; the migration workflow requires
+a direct Neon URL.
