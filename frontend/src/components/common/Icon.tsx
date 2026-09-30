@@ -6,6 +6,8 @@ const paths: Record<string, ReactNode> = {
   players: <><circle cx="9" cy="8" r="3"/><path d="M3 20c0-4 2.5-7 6-7s6 3 6 7M16 5c2.5.2 4 1.7 4 4s-1.5 3.8-4 4M17 14c2.4.8 4 3 4 6"/></>,
   teams: <><path d="M4 20V8l8-4 8 4v12M8 20v-7h8v7M3 20h18"/></>,
   compare: <><path d="M8 5h12M16 2l4 3-4 3M16 19H4M8 16l-4 3 4 3"/></>,
+  info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></>,
+  roadmap: <><path d="M5 19V5M5 7h9l-2-2m2 2-2 2M5 15h13l-2-2m2 2-2 2"/></>,
   arrow: <path d="m9 18 6-6-6-6"/>,
   chevron: <path d="m8 10 4 4 4-4"/>,
 }
