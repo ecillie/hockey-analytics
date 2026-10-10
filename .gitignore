@@ -25,4 +25,6 @@ frontend/*.tsbuildinfo
 **/.env.local
 **/.env.*.local
 /release intiavitive.md
+# Local planning documents and diagrams
+/planning/
 .venv/
