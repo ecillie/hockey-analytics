@@ -171,6 +171,98 @@ React Router URLs working when opened or refreshed directly.
 The checked-in ingestion CSVs and scripts are excluded from the Vercel Function.
 Run ingestion from a trusted machine or a separate job using
 `requirements-dev.txt` and the direct Neon database URL.
+
+## Replacement pipeline coverage policy
+
+`app.jobs.shared.coverage` defines version 3 of the required/optional dataset
+and field baseline for the replacement pipelines. It is independent of database
+selection and has no network, upload, or scheduling side effects. Final scope
+review is recorded in the local `planning/required-data-coverage.md` matrix.
+The replacement scope excludes AHL collection, AHL roster evidence, and derived
+shot-map/shooting summaries. Individual shots, MoneyPuck statistics, and NHL EDGE
+season data remain in scope.
+
+Use `check_record_coverage(dataset, record)` after source normalization to report
+missing required and optional fields without changing the input. Missing values
+stay missing; measured zeros are accepted. This is an availability check, not
+the Phase 1 validation of types, units, identity, or source-specific rules.
+
+Use `assess_coverage(requested, observations, current_season=..., mode=...)` to
+check explicit dataset/season/game-type partitions. Each observation supplies an
+independently established expected population, accepted counts, collection
+completion, and validation/identity issues. A successful fetch or an unknown
+expected count cannot establish complete required coverage. Independently check
+exact identities, duplicates, and relationships before submitting evidence;
+equal row counts alone cannot detect a missing player replaced by a duplicate.
+
+```python
+from app.jobs.shared.coverage import (
+    CoverageObservation, CoveragePartition, assess_coverage,
+)
+
+partition = CoveragePartition("contract_seasons", season=2008)
+evidence = CoverageObservation(
+    partition=partition,
+    expected_records=10,  # Historical participation audit, not loaded row count.
+    accepted_records=8,
+    collection_complete=True,
+)
+report = assess_coverage([partition], [evidence], current_season=2026)
+assert not report.complete
+assert report.issues[0].code == "MISSING_RECORDS"
+```
+
+Required gaps block completion; optional gaps remain in `report.issues` without
+blocking. `report.complete` describes only the explicitly requested scope,
+not the whole release. It does not permit uploading invalid optional records.
+Callers must enumerate the entire required scope for a setup/release gate and
+derive transaction date windows, season upper bounds, and expected populations
+from validated source/reference evidence. No source jobs are wired to this
+policy yet, and no coverage result authorizes checkpoint advancement or upload.
+
+Run the offline policy tests with:
+
+```bash
+PYTHONPATH=backend python -m pytest backend/tests/test_data_coverage.py --no-cov
+```
+
+# Replacement data contracts (Phase 1)
+
+`app.jobs.shared.data_contracts` defines 32 logical record families, their keys,
+units, relationships, and correction/history requirements. Every coverage output
+has a contract. Validate normalized Python records or JSON without a database:
+
+```python
+from app.jobs.shared.data_contracts import validate_record
+
+record = validate_record("contract_seasons", {
+    "contract_id": 1, "player_id": 7, "season": 2025,
+    "cap_hit": 800_000_000, "is_slide": False,
+})
+```
+
+`app.jobs.shared.access_contracts` supplies injectable reader, transaction, and
+checkpoint interfaces plus immutable normalized write envelopes. Adapters must
+preserve revisions, atomically commit records/provenance/progress, reject stale
+revisions, isolate environments, and recover exact batch retries. The in-memory
+adapter lives in the test package; real adapters and query integration are
+Phase 5 work.
+
+`app.jobs.shared.consumer_contracts` defines all existing API query projections,
+maps all 18 endpoints, and defines the ML player-season/salary-cap reader shapes.
+Existing consumers and public contracts remain unchanged. The dictionary,
+relationship diagram, access requirements, compatibility checklist, and exported
+JSON schema are local planning artifacts under the ignored `planning/` directory.
+
+Run the offline contract checks with:
+
+```bash
+PYTHONPATH=backend python -m pytest --no-cov \
+  backend/tests/test_data_contracts.py \
+  backend/tests/test_access_contracts.py \
+  backend/tests/test_consumer_contracts.py
+```
+
 # Contract ingestion
 
 Current/recent contracts come from CapWages' active-player index. Historical
