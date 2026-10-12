@@ -16,6 +16,8 @@ class ContractStore:
     def __init__(self, fixtures=()):
         self.rows, self.checkpoints, self.receipts, self.snapshots = {}, {}, {}, {}
         self.locked = set()
+        self.leased = set()
+        self.read_leased = {}
         self.fail_before_commit = False
         self.now = datetime(2026, 10, 10, 12, 2, tzinfo=timezone.utc)
         for dataset, value in fixtures:
@@ -88,6 +90,25 @@ class ContractStore:
         if environment != snapshot.environment:
             raise ValueError("Checkpoint environment differs from snapshot")
         return self._view(snapshot)[1].get((environment, job, scope_key))
+
+    @contextmanager
+    def writer_lease(self, environment, *, conflict_scopes, read_scopes=()):
+        locks = {(environment, scope) for scope in conflict_scopes}
+        reads = {(environment, scope) for scope in read_scopes} - locks
+        if not locks or locks & (self.leased | self.read_leased.keys()) or reads & self.leased:
+            raise RevisionConflict("Conflicting writer lease")
+        self.leased.update(locks)
+        for key in reads:
+            self.read_leased[key] = self.read_leased.get(key, 0) + 1
+        try:
+            yield
+        finally:
+            self.leased.difference_update(locks)
+            for key in reads:
+                if self.read_leased[key] == 1:
+                    del self.read_leased[key]
+                else:
+                    self.read_leased[key] -= 1
 
     @contextmanager
     def transaction(self, environment, *, conflict_scopes):

@@ -217,8 +217,9 @@ blocking. `report.complete` describes only the explicitly requested scope,
 not the whole release. It does not permit uploading invalid optional records.
 Callers must enumerate the entire required scope for a setup/release gate and
 derive transaction date windows, season upper bounds, and expected populations
-from validated source/reference evidence. No source jobs are wired to this
-policy yet, and no coverage result authorizes checkpoint advancement or upload.
+from validated source/reference evidence. Live source jobs are not implemented
+yet. The Phase 2 setup gate enumerates selected partitions and requires explicit coverage evidence; a coverage result
+alone never authorizes checkpoint advancement or upload.
 
 Run the offline policy tests with:
 
@@ -262,6 +263,31 @@ PYTHONPATH=backend python -m pytest --no-cov \
   backend/tests/test_access_contracts.py \
   backend/tests/test_consumer_contracts.py
 ```
+
+# Replacement execution foundation (Phase 2)
+
+Setup/population and independent job entrypoints now reuse a shared executor.
+It validates source candidates, retains provenance and review issues, isolates
+execution environments, reserves conflicting datasets, and atomically commits
+accepted batches with run counters and independent checkpoints. It supports
+selected reruns, backfills, correction refreshes, failed-batch resume, bounded
+source requests, and validation-only setup with no writes.
+
+[Execution foundation usage and recovery](../docs/execution-foundation.md)
+includes runnable offline demonstrations and the infrastructure/source adapter
+boundaries. Source operations are injected; unimplemented jobs report `deferred`
+and exit unsuccessfully. Live source adapters, selected database connections,
+production locks, and recurring schedules remain later phases.
+
+```bash
+PYTHONPATH=backend python3 -m app.database_setup.run_setup \
+  --environment dev --current-season 2026 --first-season 2026 \
+  --jobs teams_seasons player_profiles team_rosters \
+  --runtime tests.execution_fixtures:create_runtime --validation-only
+```
+
+The fixture runtime uses an in-memory test store, accepts `dev` only, and makes
+no network requests. Existing supported ingestion commands remain available.
 
 # Contract ingestion
 
