@@ -198,5 +198,16 @@ class BatchTransaction(Protocol):
 
 
 class DataStore(DataReader, Protocol):
+    def writer_lease(self, environment: Environment, *, conflict_scopes: tuple[str, ...],
+                     read_scopes: tuple[str, ...] = ()
+                     ) -> AbstractContextManager[None]:
+        """Reserve scopes for an entire run/setup, including reads and batch commits.
+
+        Output scopes are exclusive; dependency read scopes may be shared by
+        other readers, but exclude writers. All writers must honor reservations.
+        Transactions remain atomic. Infrastructure owns lease expiry/fencing.
+        """
+        ...
+
     def transaction(self, environment: Environment, *, conflict_scopes: tuple[str, ...]
                     ) -> AbstractContextManager[BatchTransaction]: ...
