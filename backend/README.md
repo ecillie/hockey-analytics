@@ -264,6 +264,20 @@ PYTHONPATH=backend python -m pytest --no-cov \
   backend/tests/test_consumer_contracts.py
 ```
 
+# Core data pipelines (Phase 3)
+
+`app.jobs.core_operations.core_operations()` supplies reusable NHL reference,
+profile, roster, identity-mapping, and basic-statistics operations, Cap Space
+contracts with a verified CapWages fallback, current/recent USA Today transactions,
+and conservative roster reconciliation. Accepted signings/extensions atomically
+include contract-refresh requests. Source failures, coverage gaps, and uncertain
+identities/status changes preserve accepted state.
+
+See [core pipeline configuration and source policies](../docs/core-data-pipelines.md)
+for runtime injection, source precedence, coverage limits, and an offline setup
+demonstration. Games, MoneyPuck, and EDGE remain Phase 4; database integration
+remains Phase 5. No recurring schedules are enabled.
+
 # Replacement execution foundation (Phase 2)
 
 Setup/population and independent job entrypoints now reuse a shared executor.
@@ -276,7 +290,8 @@ source requests, and validation-only setup with no writes.
 [Execution foundation usage and recovery](../docs/execution-foundation.md)
 includes runnable offline demonstrations and the infrastructure/source adapter
 boundaries. Source operations are injected; unimplemented jobs report `deferred`
-and exit unsuccessfully. Live source adapters, selected database connections,
+and exit unsuccessfully. Core source adapters are implemented in Phase 3; selected
+database connections,
 production locks, and recurring schedules remain later phases.
 
 ```bash

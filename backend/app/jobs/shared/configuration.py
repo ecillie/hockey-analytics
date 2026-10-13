@@ -15,17 +15,24 @@ class JobSpec:
     inputs: tuple[str, ...] = ()
     history_start: int = 2008
     current_only: bool = False
+    optional_reads: tuple[str, ...] = ()
+    supporting_outputs: tuple[str, ...] = ()
+
+    @property
+    def accepted_outputs(self):
+        return self.outputs + self.supporting_outputs
 
 
 JOBS = MappingProxyType({
     "teams_seasons": JobSpec(("franchises", "teams", "seasons", "team_seasons")),
-    "player_profiles": JobSpec(("player_profiles",)),
-    "team_rosters": JobSpec(("memberships", "roster_observations"), ("teams", "seasons", "player_profiles")),
+    "player_profiles": JobSpec(("player_profiles",), optional_reads=("teams", "team_seasons", "games")),
+    "team_rosters": JobSpec(("memberships", "roster_observations"), ("teams", "seasons", "player_profiles"), optional_reads=("team_seasons",)),
     "source_id_mappings": JobSpec(("source_mappings",), ("teams", "player_profiles")),
-    "contracts": JobSpec(("contracts", "contract_seasons"), ("player_profiles", "seasons", "source_mappings")),
-    "basic_stats": JobSpec(("basic_stats",), ("player_profiles", "teams", "seasons")),
-    "transactions": JobSpec(("transactions",), ("player_profiles", "teams", "source_mappings"), current_only=True),
-    "roster_reconciliation": JobSpec(("roster_state",), ("memberships", "transactions"), current_only=True),
+    "contracts": JobSpec(("contracts", "contract_seasons"), ("player_profiles", "seasons", "source_mappings"), optional_reads=("teams", "team_seasons", "basic_stats", "memberships"), supporting_outputs=("seasons",)),
+    "basic_stats": JobSpec(("basic_stats",), ("player_profiles", "teams", "seasons"), optional_reads=("team_seasons",)),
+    "transactions": JobSpec(("transactions", "refresh_requests"), ("player_profiles", "teams", "source_mappings"), current_only=True),
+    "roster_reconciliation": JobSpec(("roster_state",), ("memberships", "transactions"), current_only=True,
+        optional_reads=("roster_observations", "roster_overrides", "player_profiles", "teams", "source_observations")),
     "game_schedule": JobSpec(("games",), ("teams", "seasons")),
     "game_details": JobSpec(("game_stats", "game_events"), ("games", "player_profiles")),
     "moneypuck_stats": JobSpec(("moneypuck_skater_stats", "moneypuck_goalie_stats", "moneypuck_team_stats", "moneypuck_line_stats"), ("teams", "seasons", "player_profiles", "source_mappings")),
@@ -94,11 +101,12 @@ class JobConfig(Record):
 
     @property
     def write_scopes(self):
-        return tuple(sorted(f"dataset:{name}" for name in JOBS[self.job].outputs))
+        return tuple(sorted(f"dataset:{name}" for name in JOBS[self.job].accepted_outputs))
 
     @property
     def read_scopes(self):
-        return tuple(sorted({f"dataset:{name}" for name in JOBS[self.job].inputs} - set(self.write_scopes)))
+        spec = JOBS[self.job]
+        return tuple(sorted({f"dataset:{name}" for name in (*spec.inputs, *spec.optional_reads)} - set(self.write_scopes)))
 
 
 def ordered_jobs(selected, *, catalog=JOBS):

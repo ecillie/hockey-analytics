@@ -167,10 +167,11 @@ def test_setup_holds_leases_across_jobs_and_excludes_refreshes():
     assert not runner.store.leased
 
 
-def test_disjoint_jobs_can_run_while_environment_leases_remain_isolated():
+def test_reference_discovery_reads_reserve_dependencies_and_environments_remain_isolated():
     runner = executor()
     with writer_session(runner.store, "dev", config().conflict_scopes):
-        assert runner.run(config("player_profiles")).complete
+        assert runner.run(config("player_profiles")).run.status == "deferred"
+    assert runner.run(config("player_profiles")).complete
     with runner.store.writer_lease("prod", conflict_scopes=config().conflict_scopes):
         assert runner.run(config()).complete
 

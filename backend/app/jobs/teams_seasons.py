@@ -1,4 +1,4 @@
-"""Explicit teams_seasons entrypoint; source operation is injected until its implementation phase."""
+"""Explicit teams_seasons entrypoint; register its operation with core_operations()."""
 
 
 def run(executor, config):
