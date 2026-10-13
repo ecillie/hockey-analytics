@@ -10,7 +10,7 @@ def core_operations(*, discovery=Discovery(), mappings=(), contract_fallback=Tru
     """Infrastructure supplies this registry, DataStore, and per-source SourceClient.
 
     MappingCandidate inputs carry verified cross-ID or manual-decision evidence.
-    Phase 4 jobs are deliberately absent and continue to report deferred.
+    Game, MoneyPuck, and EDGE jobs are supplied separately by game_data_operations().
     """
     return {**nhl_operations(discovery=discovery, mappings=tuple(mappings)),
             "contracts": contract_operation(fallback=contract_fallback),

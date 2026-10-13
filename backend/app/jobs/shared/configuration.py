@@ -25,7 +25,7 @@ class JobSpec:
 
 JOBS = MappingProxyType({
     "teams_seasons": JobSpec(("franchises", "teams", "seasons", "team_seasons")),
-    "player_profiles": JobSpec(("player_profiles",), optional_reads=("teams", "team_seasons", "games")),
+    "player_profiles": JobSpec(("player_profiles",), optional_reads=("teams", "team_seasons", "games", "source_observations")),
     "team_rosters": JobSpec(("memberships", "roster_observations"), ("teams", "seasons", "player_profiles"), optional_reads=("team_seasons",)),
     "source_id_mappings": JobSpec(("source_mappings",), ("teams", "player_profiles")),
     "contracts": JobSpec(("contracts", "contract_seasons"), ("player_profiles", "seasons", "source_mappings"), optional_reads=("teams", "team_seasons", "basic_stats", "memberships"), supporting_outputs=("seasons",)),
@@ -33,11 +33,11 @@ JOBS = MappingProxyType({
     "transactions": JobSpec(("transactions", "refresh_requests"), ("player_profiles", "teams", "source_mappings"), current_only=True),
     "roster_reconciliation": JobSpec(("roster_state",), ("memberships", "transactions"), current_only=True,
         optional_reads=("roster_observations", "roster_overrides", "player_profiles", "teams", "source_observations")),
-    "game_schedule": JobSpec(("games",), ("teams", "seasons")),
-    "game_details": JobSpec(("game_stats", "game_events"), ("games", "player_profiles")),
-    "moneypuck_stats": JobSpec(("moneypuck_skater_stats", "moneypuck_goalie_stats", "moneypuck_team_stats", "moneypuck_line_stats"), ("teams", "seasons", "player_profiles", "source_mappings")),
-    "moneypuck_shots": JobSpec(("shots",), ("games", "player_profiles", "source_mappings")),
-    "edge": JobSpec(("edge_summaries", "edge_games", "edge_events"), ("teams", "seasons", "player_profiles"), history_start=2021),
+    "game_schedule": JobSpec(("games",), ("teams", "seasons"), optional_reads=("team_seasons",)),
+    "game_details": JobSpec(("game_stats", "game_events"), ("games", "player_profiles"), optional_reads=("teams", "game_stats", "game_events", "pipeline_runs")),
+    "moneypuck_stats": JobSpec(("moneypuck_skater_stats", "moneypuck_goalie_stats", "moneypuck_team_stats", "moneypuck_line_stats"), ("teams", "seasons", "player_profiles", "source_mappings"), optional_reads=("team_seasons",)),
+    "moneypuck_shots": JobSpec(("shots",), ("games", "player_profiles", "source_mappings"), optional_reads=("teams", "team_seasons", "shots")),
+    "edge": JobSpec(("edge_summaries", "edge_games", "edge_events"), ("teams", "seasons", "player_profiles"), history_start=2021, optional_reads=("games", "team_seasons", "basic_stats", "memberships")),
     "datasets": JobSpec(("datasets",), ("basic_stats", "contract_seasons")),
 })
 

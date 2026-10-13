@@ -275,8 +275,25 @@ identities/status changes preserve accepted state.
 
 See [core pipeline configuration and source policies](../docs/core-data-pipelines.md)
 for runtime injection, source precedence, coverage limits, and an offline setup
-demonstration. Games, MoneyPuck, and EDGE remain Phase 4; database integration
-remains Phase 5. No recurring schedules are enabled.
+demonstration. Games, MoneyPuck, and EDGE are implemented through the separate
+Phase 4 registry below; database integration remains Phase 5. No recurring schedules
+are enabled.
+
+# Game, MoneyPuck, and EDGE pipelines (Phase 4)
+
+`app.jobs.game_data_operations.game_data_operations()` registers independently runnable
+NHL schedules and completed-game details, MoneyPuck statistics and streamed shot
+archives, and dated NHL EDGE summaries/breakdowns. Optional audited EDGE samples
+remain explicitly limited. Coverage evidence, correction lookbacks, missing-player
+discovery/replay, and atomic recovery use the existing executor.
+
+See [configuration, coverage, and source limitations](../docs/game-tracking-pipelines.md)
+for the offline CLI and runtime integration. Database population, live schema and
+coverage audits, and consumer integration remain Phase 5 gates.
+
+```bash
+PYTHONPATH=backend python3 -m pytest backend/tests/test_game_data_sources.py --no-cov
+```
 
 # Replacement execution foundation (Phase 2)
 
