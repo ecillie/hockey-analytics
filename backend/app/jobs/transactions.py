@@ -1,4 +1,4 @@
-"""Explicit transactions entrypoint; source operation is injected until its implementation phase."""
+"""Explicit transactions entrypoint; register its operation with core_operations()."""
 
 
 def run(executor, config):

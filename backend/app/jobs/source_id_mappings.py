@@ -1,4 +1,4 @@
-"""Explicit source_id_mappings entrypoint; source operation is injected until its implementation phase."""
+"""Explicit source_id_mappings entrypoint; register its operation with core_operations()."""
 
 
 def run(executor, config):

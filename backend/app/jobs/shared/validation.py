@@ -59,9 +59,9 @@ def validate_collection(batch, context, normalize: Callable):
         issue(JOBS[context.config.job].outputs[0], "Missing or inconsistent independent batch enumeration", code="INCOMPLETE_COLLECTION")
     for item in batch.records:
         observation_id = None
-        dataset = item.dataset if item.dataset in JOBS[context.config.job].outputs else JOBS[context.config.job].outputs[0]
+        dataset = item.dataset if item.dataset in JOBS[context.config.job].accepted_outputs else JOBS[context.config.job].outputs[0]
         try:
-            if item.dataset not in JOBS[context.config.job].outputs:
+            if item.dataset not in JOBS[context.config.job].accepted_outputs:
                 raise ValueError("Record is outside the job's declared outputs")
             if not isinstance(item.observation, SourceObservation):
                 raise ValueError("Record requires a source observation")
@@ -79,7 +79,8 @@ def validate_collection(batch, context, normalize: Callable):
             if season is not None:
                 # Future contract terms/references are retained, but never unrelated past seasons.
                 permits_future = item.dataset in ("contract_seasons", "seasons")
-                if season < context.config.first_season or (season > context.config.last_season and not permits_future):
+                related_contract_reference = item.dataset == "seasons" and context.config.job == "contracts"
+                if (season < context.config.first_season and not related_contract_reference) or (season > context.config.last_season and not permits_future):
                     raise ValueError("Record is outside requested seasons")
             if hasattr(record, "game_type") and record.game_type not in context.config.game_types:
                 raise ValueError("Record is outside requested game types")
