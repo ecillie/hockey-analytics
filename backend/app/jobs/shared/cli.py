@@ -53,7 +53,8 @@ def report_payload(report):
     return {"run": report.run.model_dump(mode="json"), "error": report.error,
                       "issues": [issue.model_dump(mode="json") for issue in report.issues],
                       "committed_cursors": report.committed_cursors,
-                      "written": report.written, "unchanged": report.unchanged}
+                      "written": report.written, "unchanged": report.unchanged,
+                      "source_coverage": report.source_coverage}
 
 
 def job_main(job, argv=None):

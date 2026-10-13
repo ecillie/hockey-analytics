@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from time import sleep
 from typing import Any, Callable, Iterable, Mapping
@@ -11,7 +11,7 @@ from .access_contracts import DataReader, DataStore, RevisionConflict, Snapshot,
 from .configuration import JOBS, JobConfig
 from .data_contracts import Checkpoint, Environment, PipelineRun, Record, RECORD_DEFINITIONS
 from .identity import resolve_identity
-from .run_tracking import CheckpointCursor, RunReport, RunTracker, start_run, terminal_report
+from .run_tracking import CheckpointCursor, RunReport, RunTracker, start_run, terminal_report, update_run
 from .source_requests import SourceClient
 from .upload import prepare_writes, upload_batch
 from .validation import CollectionBatch, ValidatedBatch, validate_collection
@@ -41,6 +41,7 @@ class ExecutionContext:
     snapshot: Snapshot
     overlay: dict[tuple[str, tuple[Any, ...]], Record] = field(default_factory=dict)
     client: SourceClient | None = None
+    source_coverage: list[dict] = field(default_factory=list)
 
     def lookup(self, dataset, key):
         if (dataset, key) in self.overlay:
@@ -172,12 +173,16 @@ class Executor:
         context.snapshot = self.store.snapshot(context.config.environment, accepted_before=self.now())
 
     def _finish(self, context, state, status, error=None):
-        report = state.report(status, self.now(), error)
+        report = replace(state.report(status, self.now(), error), source_coverage=tuple(context.source_coverage))
+        if context.source_coverage:
+            report = replace(report, run=update_run(report.run,
+                scope={**report.run.scope, "source_coverage": context.source_coverage}))
         try:
             self._persist_run(context, state, run=report.run)
         except Exception as exc:
-            return state.report(state.failure_status, self.now(),
-                                f"{error + '; ' if error else ''}{exc}; terminal run persistence failed")
+            return replace(state.report(state.failure_status, self.now(),
+                                f"{error + '; ' if error else ''}{exc}; terminal run persistence failed"),
+                           source_coverage=tuple(context.source_coverage))
         return report
 
     def _accept_batch(self, context, state, batch, checked: ValidatedBatch, position):

@@ -31,7 +31,7 @@ def localized(value):
     return value.strip()
 
 
-def source_record(ctx, dataset, payload, *, source, key, raw=None, scope=None, source_updated_at=None):
+def source_record(ctx, dataset, payload, *, source, key, raw=None, scope=None, source_updated_at=None, version=VERSION):
     definition = RECORD_DEFINITIONS[dataset]
     json_payload = payload.model_dump(mode="json") if hasattr(payload, "model_dump") else payload
     record_scope = {}
@@ -44,7 +44,7 @@ def source_record(ctx, dataset, payload, *, source, key, raw=None, scope=None, s
         observation_id=uuid5(NAMESPACE_URL, f"{ctx.run.run_id}/{source}/{dataset}/{key}/{digest}"),
         source=source, source_key=str(key), dataset=dataset,
         observed_at=ctx.run.started_at, content_digest=digest,
-        transformation_version=VERSION, scope={**ctx.config.scope, **record_scope, **(scope or {})},
+        transformation_version=version, scope={**ctx.config.scope, **record_scope, **(scope or {})},
         payload=raw, source_updated_at=source_updated_at)
     return SourceRecord(dataset, payload, observation)
 

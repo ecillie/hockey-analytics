@@ -171,7 +171,9 @@ class Discovery:
 
 
 def collect_profiles(ctx, cursor, discovery=Discovery()):
+    from .feed_support import missing_player_discovery
     ids = {positive_id(value) for value in discovery.player_ids}
+    ids.update(missing_player_discovery(ctx).player_ids)
     ids.update(player.nhl_player_id for player in scan(ctx, "player_profiles") if player.nhl_player_id)
     for year in range(ctx.config.first_season, ctx.config.last_season + 1):
         for game_type in ctx.config.game_types:

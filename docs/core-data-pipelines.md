@@ -16,8 +16,9 @@ same execution path in initial, refresh, backfill, and validation modes.
 | `transactions` | Current/recent USA Today NHL transactions from the page's embedded structured payload. Stable IDs support duplicate detection and versioned corrections. |
 | `roster_reconciliation` | Accepted NHL roster observations, typed transaction evidence, and dated manual overrides. Uncertain changes are held. |
 
-Games, MoneyPuck, EDGE, and datasets remain later-phase operations and report
-`deferred` unless separately registered. Database connections and production
+Games, MoneyPuck, and EDGE are registered separately through
+[the Phase 4 registry](game-tracking-pipelines.md). Datasets remain a later-phase
+operation and report `deferred` unless separately registered. Database connections and production
 persistence remain Phase 5 work; recurring dispatch/schedules remain Phase 6.
 
 ## Offline usage

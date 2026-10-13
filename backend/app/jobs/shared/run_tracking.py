@@ -17,6 +17,7 @@ class RunReport:
     written: int = 0
     unchanged: int = 0
     error: str | None = None
+    source_coverage: tuple[dict, ...] = ()
 
     @property
     def complete(self):
