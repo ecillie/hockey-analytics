@@ -327,7 +327,7 @@ def test_empty_and_changed_transaction_pages_are_distinct():
         parse_page('<script id="__NEXT_DATA__">{"props":{}}</script>')
 
 
-def test_policy_bounds_and_phase4_operations_remain_deferred():
+def test_policy_bounds_and_game_data_operations_remain_deferred():
     for days in (0, 32, True):
         with pytest.raises(ValueError):
             TransactionPolicy(recent_days=days)

@@ -44,6 +44,12 @@ class SourceRequestError(RuntimeError):
     pass
 
 
+class SourceHTTPError(SourceRequestError):
+    def __init__(self, status):
+        self.status = status
+        super().__init__(f"Source HTTP {status}")
+
+
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -111,7 +117,7 @@ class SourceClient:
                 if 200 <= response.status < 300:
                     return response.body
                 if response.status not in (408, 429, 500, 502, 503, 504):
-                    raise SourceRequestError(f"Source HTTP {response.status}")
+                    raise SourceHTTPError(response.status)
                 if math.isfinite(response.retry_after):
                     self.next_request[source] = max(self.next_request[source], self.clock() + response.retry_after)
                     if response.retry_after > policy.max_retry_delay_seconds:

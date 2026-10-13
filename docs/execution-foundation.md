@@ -4,7 +4,7 @@ Phase 2 implements explicit setup/job entrypoints and a shared execution path
 against the Phase 1 logical records and injectable access contracts. It is
 verified offline with reference records and a dependent membership load. Core
 source adapters are implemented in [Phase 3](core-data-pipelines.md); game,
-MoneyPuck, and EDGE adapters remain Phase 4. Database connections, durable leases,
+MoneyPuck, and EDGE adapters are implemented in [Phase 4](game-tracking-pipelines.md). Database connections, durable leases,
 and production integration remain Phase 5. No recurring schedules are activated.
 
 ## Runtime boundary
