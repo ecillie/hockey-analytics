@@ -1,4 +1,4 @@
-"""Explicit basic_stats entrypoint; source operation is injected until its implementation phase."""
+"""Explicit basic_stats entrypoint; register its operation with core_operations()."""
 
 
 def run(executor, config):

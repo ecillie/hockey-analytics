@@ -22,7 +22,7 @@ from pydantic import (
 )
 
 
-CONTRACT_VERSION = "1"
+CONTRACT_VERSION = "2"
 Id = Annotated[StrictInt, Field(gt=0)]
 Count = Annotated[StrictInt, Field(ge=0)]
 Text = Annotated[StrictStr, Field(min_length=1)]
@@ -170,7 +170,8 @@ class SourceMapping(Record):
 class Contract(Record):
     contract_id: Id
     player_id: Id
-    start_season: Season
+    # Agreements beginning before the collection baseline can still cover 2008+.
+    start_season: Annotated[StrictInt, Field(ge=1900)]
     end_season: Season
     term_years: Id
     is_entry_level: StrictBool
@@ -260,6 +261,17 @@ class Transaction(Record):
         if len(ids) != len(set(ids)):
             raise ValueError("A transaction participant may occur only once")
         return self
+
+
+class RefreshRequest(Record):
+    """Immutable, correction-specific request, committed with its triggering fact."""
+    request_id: Digest
+    job: Literal["contracts"]
+    player_id: Id
+    cause_source: Text
+    cause_id: Text
+    cause_digest: Digest
+    requested_at: AwareDatetime
 
 
 class RosterState(Record):
@@ -590,10 +602,11 @@ RECORD_DEFINITIONS: Mapping[str, RecordDefinition] = MappingProxyType({
     "player_profiles": RecordDefinition(PlayerProfile, ("player_id",), "One canonical player identity", unique_keys=(("nhl_player_id",),)),
     "memberships": RecordDefinition(Membership, ("membership_id",), "One supported player-team membership episode", PLAYER_SEASON_REFS),
     "source_mappings": RecordDefinition(SourceMapping, ("source", "entity_type", "source_id"), "One source identifier mapped to one canonical entity"),
-    "contracts": RecordDefinition(Contract, ("contract_id",), "One signed agreement", (Reference("player_id", "player_profiles"), Reference("signing_team_id", "teams"), Reference("start_season", "seasons"), Reference("end_season", "seasons"))),
+    "contracts": RecordDefinition(Contract, ("contract_id",), "One signed agreement", (Reference("player_id", "player_profiles"), Reference("signing_team_id", "teams"), Reference("end_season", "seasons"))),
     "contract_seasons": RecordDefinition(ContractSeason, ("contract_id", "season"), "One contract's terms for one season", (Reference("contract_id", "contracts"), Reference("player_id", "player_profiles"), Reference("season", "seasons"), Reference("owning_team_id", "teams"))),
     "basic_stats": RecordDefinition(BasicStats, PLAYER_SEASON_KEY + ("stat_kind",), "One source/player/season/game-type/team-scope/stat-kind", PLAYER_SEASON_REFS),
     "transactions": RecordDefinition(Transaction, ("source", "source_id"), "One current/recent source transaction with all participants", (Reference("from_team_id", "teams"), Reference("to_team_id", "teams"))),
+    "refresh_requests": RecordDefinition(RefreshRequest, ("request_id",), "One contract refresh request per accepted transaction revision/player", (Reference("player_id", "player_profiles"),), append_only=True),
     "roster_state": RecordDefinition(RosterState, ("player_id",), "One supported current state per player", (Reference("player_id", "player_profiles"), Reference("team_id", "teams"), Reference("override_id", "roster_overrides"))),
     "roster_observations": RecordDefinition(RosterObservation, ("snapshot_id", "player_id", "team_id"), "One observed roster membership within a source snapshot", (Reference("player_id", "player_profiles"), Reference("team_id", "teams")), append_only=True),
     "roster_overrides": RecordDefinition(RosterOverride, ("override_id",), "One dated manual roster decision", (Reference("player_id", "player_profiles"), Reference("team_id", "teams"))),
@@ -696,6 +709,11 @@ def validate_batch(records: tuple[tuple[str, Record], ...],
         if isinstance(record, Transaction):
             for participant in record.participants:
                 resolve("player_profiles", (participant.player_id,))
+        if isinstance(record, RefreshRequest):
+            cause = resolve("transactions", (record.cause_source, record.cause_id))
+            if (cause.event_type not in ("SIGNING", "EXTENSION")
+                    or record.player_id not in {participant.player_id for participant in cause.participants}):
+                raise ValueError("Contract refresh request differs from its accepted signing/extension")
         if isinstance(record, LineAdvanced):
             for player_id in record.player_ids:
                 resolve("player_profiles", (player_id,))
@@ -712,6 +730,8 @@ def validate_batch(records: tuple[tuple[str, Record], ...],
             contract = resolve("contracts", (record.contract_id,))
             if contract.player_id != record.player_id or not contract.start_season <= record.season <= contract.end_season:
                 raise ValueError("Contract-season owner or range differs from the agreement")
+        if isinstance(record, Contract) and record.start_season >= 2008:
+            resolve("seasons", (record.start_season,))
         if isinstance(record, (Shot, GameStats, GameEvent, EdgeGame, EdgeEvent)) and record.game_id is not None:
             game = resolve("games", (record.game_id,))
             if hasattr(record, "season") and (record.season, record.game_type) != (game.season, game.game_type):

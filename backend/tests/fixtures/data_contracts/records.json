@@ -133,6 +133,18 @@
       ],
       "from_team_id": 11,
       "to_team_id": 10
+    },
+    {
+      "source": "usatoday",
+      "source_id": "fixture-signing",
+      "event_date": "2026-10-10",
+      "event_type": "SIGNING",
+      "participants": [
+        {
+          "player_id": 7
+        }
+      ],
+      "to_team_id": 10
     }
   ],
   "roster_state": [
@@ -449,6 +461,17 @@
         "predicted_hockey_value": 2.25
       },
       "created_at": "2026-10-10T12:00:00Z"
+    }
+  ],
+  "refresh_requests": [
+    {
+      "request_id": "1111111111111111111111111111111111111111111111111111111111111111",
+      "job": "contracts",
+      "player_id": 7,
+      "cause_source": "usatoday",
+      "cause_id": "fixture-signing",
+      "cause_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+      "requested_at": "2026-10-10T12:00:00Z"
     }
   ]
 }
