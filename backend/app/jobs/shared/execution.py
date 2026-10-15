@@ -49,6 +49,8 @@ class ExecutionContext:
     source_coverage: list[dict] = field(default_factory=list)
 
     def lookup(self, dataset, key):
+        if dataset == "pipeline_runs" and key == (self.run.run_id,):
+            return self.run
         if (dataset, key) in self.overlay:
             return self.overlay[dataset, key]
         stored = self.reader.get(dataset, key, snapshot=self.snapshot)
@@ -150,8 +152,14 @@ class Executor:
             self._persist_run(context, state)
             operation = self.operations.get(config.job)
             if operation is None:
+                log_event(logger, "job.deferred", reason_code="OPERATION_NOT_CONFIGURED")
                 return self._finish(context, state, "deferred", "Source operation is not implemented/registered")
+            from .freshness import inputs_fresh
+            if not inputs_fresh(context):
+                log_event(logger, "job.deferred", reason_code="STALE_INPUTS")
+                return self._finish(context, state, "deferred", "Required producer inputs exceed the configured freshness threshold")
             if (JOBS[config.job].inputs and operation.ready is None) or (operation.ready is not None and operation.ready(context) is not True):
+                log_event(logger, "job.deferred", reason_code="INPUTS_NOT_READY")
                 return self._finish(context, state, "deferred", "Required inputs are not verified ready")
             progress = self.store.checkpoint(config.environment, config.job, config.scope_key, snapshot=context.snapshot) if config.resume else None
             saved = CheckpointCursor.model_validate(progress[0].cursor) if progress else None

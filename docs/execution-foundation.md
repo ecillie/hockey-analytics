@@ -5,7 +5,8 @@ against the Phase 1 logical records and injectable access contracts. It is
 verified offline with reference records and a dependent membership load. Core
 source adapters are implemented in [Phase 3](core-data-pipelines.md); game,
 MoneyPuck, and EDGE adapters are implemented in [Phase 4](game-tracking-pipelines.md).
-Database connections and durable leases remain Phase 6 local implementation work;
+[Phase 6 infrastructure](local-persistence-datasets.md) implements local PostgreSQL
+connections, durable run/checkpoint state, and session-fenced reservations.
 AWS/production integration is verified in Phase 9. No recurring schedules are activated.
 
 ## Runtime boundary
@@ -105,9 +106,9 @@ prerequisites retain shared read reservations. Overlapping writers defer and
 separate environments remain isolated. Transactions still protect the relevant
 accepted record/reference scopes for their atomic batch commit.
 
-Database infrastructure must make all writers honor these reservations and
-implement lease expiry/fencing locally in Phase 6 and verify it on AWS in Phase 9. The in-memory test lease establishes
-interface behavior, not concurrent-process safety.
+The Phase 6 PostgreSQL adapter makes every adapter writer honor these reservations
+and fences execution on session loss. AWS session/failover behavior remains a
+Phase 9 gate. The in-memory test lease establishes interface behavior only.
 
 Each accepted batch atomically commits changed records, raw observations, run
 counters, an idempotency receipt, and checkpoint progress. Upload retries reuse

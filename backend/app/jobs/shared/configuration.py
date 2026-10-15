@@ -28,7 +28,7 @@ JOBS = MappingProxyType({
     "player_profiles": JobSpec(("player_profiles",), optional_reads=("teams", "team_seasons", "games", "source_observations")),
     "team_rosters": JobSpec(("memberships", "roster_observations"), ("teams", "seasons", "player_profiles"), optional_reads=("team_seasons",)),
     "source_id_mappings": JobSpec(("source_mappings",), ("teams", "player_profiles")),
-    "contracts": JobSpec(("contracts", "contract_seasons"), ("player_profiles", "seasons", "source_mappings"), optional_reads=("teams", "team_seasons", "basic_stats", "memberships"), supporting_outputs=("seasons",)),
+    "contracts": JobSpec(("contracts", "contract_seasons"), ("player_profiles", "seasons", "source_mappings"), optional_reads=("teams", "team_seasons", "basic_stats", "memberships", "refresh_requests", "refresh_completions"), supporting_outputs=("seasons", "refresh_completions")),
     "basic_stats": JobSpec(("basic_stats",), ("player_profiles", "teams", "seasons"), optional_reads=("team_seasons",)),
     "transactions": JobSpec(("transactions", "refresh_requests"), ("player_profiles", "teams", "source_mappings"), current_only=True),
     "roster_reconciliation": JobSpec(("roster_state",), ("memberships", "transactions"), current_only=True,
@@ -38,7 +38,7 @@ JOBS = MappingProxyType({
     "moneypuck_stats": JobSpec(("moneypuck_skater_stats", "moneypuck_goalie_stats", "moneypuck_team_stats", "moneypuck_line_stats"), ("teams", "seasons", "player_profiles", "source_mappings"), optional_reads=("team_seasons",)),
     "moneypuck_shots": JobSpec(("shots",), ("games", "player_profiles", "source_mappings"), optional_reads=("teams", "team_seasons", "shots")),
     "edge": JobSpec(("edge_summaries", "edge_games", "edge_events"), ("teams", "seasons", "player_profiles"), history_start=2021, optional_reads=("games", "team_seasons", "basic_stats", "memberships")),
-    "datasets": JobSpec(("datasets",), ("basic_stats", "contract_seasons")),
+    "datasets": JobSpec(("datasets",), ("basic_stats", "player_profiles", "seasons", "moneypuck_skater_stats", "moneypuck_goalie_stats")),
 })
 
 
@@ -66,6 +66,7 @@ class JobConfig(Record):
     max_batches: Count = Field(default=10000, gt=0, le=100000)
     max_batch_records: Count = Field(default=1000, gt=0, le=10000)
     correction_lookback_days: Count = 0
+    max_input_age_seconds: Count = 0
 
     @model_validator(mode="after")
     def execution_scope(self):
@@ -88,7 +89,8 @@ class JobConfig(Record):
     @property
     def scope(self):
         return {"first_season": self.first_season, "last_season": self.last_season,
-                "game_types": sorted(self.game_types), "correction_lookback_days": self.correction_lookback_days}
+                "game_types": sorted(self.game_types), "correction_lookback_days": self.correction_lookback_days,
+                **({"max_input_age_seconds":self.max_input_age_seconds} if self.max_input_age_seconds else {})}
 
     @property
     def scope_key(self):
@@ -106,7 +108,8 @@ class JobConfig(Record):
     @property
     def read_scopes(self):
         spec = JOBS[self.job]
-        return tuple(sorted({f"dataset:{name}" for name in (*spec.inputs, *spec.optional_reads)} - set(self.write_scopes)))
+        freshness = ("pipeline_runs",) if self.max_input_age_seconds else ()
+        return tuple(sorted({f"dataset:{name}" for name in (*spec.inputs, *spec.optional_reads, *freshness)} - set(self.write_scopes)))
 
 
 def ordered_jobs(selected, *, catalog=JOBS):

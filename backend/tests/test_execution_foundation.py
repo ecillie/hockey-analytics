@@ -349,7 +349,7 @@ def test_cli_fixture_runtime_reports_completion_and_rejects_invalid_backfills(ca
     assert json.loads(capsys.readouterr().out)["run"]["status"] == "succeeded"
     assert setup_main([*args, "--first-season", "2026", "--jobs", "teams_seasons", "player_profiles", "team_rosters", "--validation-only"]) == 0
     assert json.loads(capsys.readouterr().out)["complete"]
-    assert job_main("contracts", args) == 1
+    assert job_main("contracts", args) == 3
     assert json.loads(capsys.readouterr().out)["run"]["status"] == "deferred"
     with pytest.raises(SystemExit) as error:
         job_main("transactions", [*args, "--mode", "backfill", "--validation-only"])

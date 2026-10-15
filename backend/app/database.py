@@ -10,7 +10,7 @@ from contextlib import contextmanager
 import logging
 from typing import Iterator
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import get_database_settings
@@ -28,22 +28,43 @@ engine = create_engine(
     pool_recycle=settings.pool_recycle_seconds,
     pool_use_lifo=True,
     hide_parameters=True,
-    connect_args={"connect_timeout": settings.connect_timeout_seconds},
+    connect_args={"connect_timeout": settings.connect_timeout_seconds,
+                  "options": f"-csearch_path={settings.query_schema}"},
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+
+if settings.query_schema == "pipeline_api":
+    @event.listens_for(engine, "connect")
+    def verify_pipeline_environment(connection, _record):
+        # Every physical consumer connection checks the migrated target binding,
+        # including health requests; a URL label cannot authorize another target.
+        cursor = connection.cursor()
+        try:
+            cursor.execute("SELECT environment FROM public.pipeline_target")
+            target = cursor.fetchone()
+            if target is None or target[0] != settings.environment.value:
+                from sqlalchemy.exc import DisconnectionError
+                raise DisconnectionError("Database environment binding differs")
+        finally:
+            cursor.close()
+            connection.rollback()
 
 
 def init_db() -> None:
     """Verify that the migrated schema is reachable and present."""
     with engine.connect() as connection:
         players_table = connection.execute(
-            text("SELECT to_regclass('public.players')")
+            text("SELECT to_regclass(:players)"), {"players": f"{settings.query_schema}.players"}
         ).scalar_one()
     if players_table is None:
         raise RuntimeError(
             "Database schema is missing; run Alembic upgrade head first"
         )
+    if settings.query_schema == "pipeline_api":
+        from database.pipeline.store import PostgresStore
+        PostgresStore(engine, settings.environment.value)
     log_event(logger, "database.schema_checked", level=logging.DEBUG, environment=settings.environment.value)
 
 

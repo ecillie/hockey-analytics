@@ -25,20 +25,20 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 _EVENTS = frozenset({
     "api.request_completed", "api.request_cancelled", "api.database_error",
     "api.validation_failed", "api.problem", "job.started", "job.finished",
-    "job.error", "job.resumed", "job.batch_validated", "job.batch_accepted",
+    "job.error", "job.deferred", "job.resumed", "job.batch_validated", "job.batch_accepted",
     "job.checkpoint_committed", "job.persistence_error", "setup.started",
     "setup.finished", "setup.error", "source.request", "source.retry",
     "source.failed", "source.invalid_json", "upload.retry", "upload.failed",
     "database.connected", "database.connection_failed", "database.schema_checked",
-    "database.committed", "database.rolled_back", "database.rollback_failed", "cli.failed",
+    "database.committed", "database.rolled_back", "database.rollback_failed", "database.binding_failed", "cli.failed",
 })
 _IDS = {"request_id", "job_run_id", "setup_run_id", "batch_id"}
-_NAMES = {"job", "source", "mode", "status", "component", "error_code"}
+_NAMES = {"job", "source", "mode", "status", "component", "error_code", "reason_code"}
 _NUMBERS = {
     "status_code", "duration_ms", "attempt", "delay_seconds", "batch_index",
     "records", "issues", "read", "accepted", "rejected", "unresolved", "skipped",
     "written", "unchanged", "completed_batches", "first_season", "last_season",
-    "correction_lookback_days", "requested_jobs", "completed_jobs",
+    "correction_lookback_days", "max_input_age_seconds", "requested_jobs", "completed_jobs",
     "checkpoint_count", "coverage_count", "github_run_id", "github_run_attempt",
 }
 _BOOLS = {"resume", "validation_only", "complete", "checkpoint_complete"}

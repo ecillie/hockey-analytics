@@ -217,8 +217,9 @@ blocking. `report.complete` describes only the explicitly requested scope,
 not the whole release. It does not permit uploading invalid optional records.
 Callers must enumerate the entire required scope for a setup/release gate and
 derive transaction date windows, season upper bounds, and expected populations
-from validated source/reference evidence. Live source jobs are not implemented
-yet. The Phase 2 setup gate enumerates selected partitions and requires explicit coverage evidence; a coverage result
+from validated source/reference evidence. Source operations are implemented in
+Phases 3–4 and the local runtime in Phase 6; live coverage auditing remains open.
+The Phase 2 setup gate enumerates selected partitions and requires explicit coverage evidence; a coverage result
 alone never authorizes checkpoint advancement or upload.
 
 Run the offline policy tests with:
@@ -229,7 +230,14 @@ PYTHONPATH=backend python -m pytest backend/tests/test_data_coverage.py --no-cov
 
 # Replacement data contracts (Phase 1)
 
-`app.jobs.shared.data_contracts` defines 32 logical record families, their keys,
+Local PostgreSQL persistence, durable reservations, compatible consumer views,
+event-request consumption, job controls, and reproducible dataset processing are
+implemented in Phase 6. See [local persistence and dataset usage](../docs/local-persistence-datasets.md)
+for explicit initialization/identity transition, runtime configuration, consumer
+selection, recovery, and the remaining AWS/live-coverage gates. Logical contract
+version 3 adds immutable refresh-completion records.
+
+`app.jobs.shared.data_contracts` defines 34 logical record families, their keys,
 units, relationships, and correction/history requirements. Every coverage output
 has a contract. Validate normalized Python records or JSON without a database:
 
@@ -246,8 +254,8 @@ record = validate_record("contract_seasons", {
 checkpoint interfaces plus immutable normalized write envelopes. Adapters must
 preserve revisions, atomically commit records/provenance/progress, reject stale
 revisions, isolate environments, and recover exact batch retries. The in-memory
-adapter lives in the test package; real adapters and query integration are
-Phase 6 local work, followed by Phase 9 AWS verification.
+adapter lives in the test package; the real PostgreSQL adapter and consumer views
+are implemented in Phase 6, followed by Phase 9 AWS verification.
 
 `app.jobs.shared.consumer_contracts` defines all existing API query projections,
 maps all 18 endpoints, and defines the ML player-season/salary-cap reader shapes.
@@ -276,7 +284,8 @@ identities/status changes preserve accepted state.
 See [core pipeline configuration and source policies](../docs/core-data-pipelines.md)
 for runtime injection, source precedence, coverage limits, and an offline setup
 demonstration. Games, MoneyPuck, and EDGE are implemented through the separate
-Phase 4 registry below; database integration is Phase 6 locally and Phase 9 on AWS. No recurring schedules
+Phase 4 registry below; local database integration is implemented in Phase 6, with
+Phase 9 AWS acceptance. No recurring schedules
 are enabled.
 
 # Game, MoneyPuck, and EDGE pipelines (Phase 4)
@@ -289,7 +298,8 @@ discovery/replay, and atomic recovery use the existing executor.
 
 See [configuration, coverage, and source limitations](../docs/game-tracking-pipelines.md)
 for the offline CLI and runtime integration. Database population, live schema and
-coverage audits, and AWS consumer integration remain Phase 9 gates; local adapters/query work is Phase 6.
+coverage audits, and AWS consumer integration remain Phase 9 gates; local adapters
+and consumer views are implemented in Phase 6.
 
 ```bash
 PYTHONPATH=backend python3 -m pytest backend/tests/test_game_data_sources.py --no-cov
@@ -314,8 +324,8 @@ source requests, and validation-only setup with no writes.
 includes runnable offline demonstrations and the infrastructure/source adapter
 boundaries. Source operations are injected; unimplemented jobs report `deferred`
 and exit unsuccessfully. Core source adapters are implemented in Phase 3; selected
-database connections,
-production locks, and recurring schedules remain later phases.
+local database connections and session-fenced locks are implemented in Phase 6;
+managed-service verification and recurring schedules remain later phases.
 
 ```bash
 PYTHONPATH=backend python3 -m app.database_setup.run_setup \

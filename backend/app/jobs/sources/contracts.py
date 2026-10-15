@@ -140,6 +140,12 @@ def collect(ctx, cursor, *, fallback=True):
     if ctx.client is None:
         raise ValueError("Contract collection requires a configured SourceClient")
     items, references, candidates = [], {}, {}
+    pending = []
+    if ctx.config.first_season <= ctx.config.current_season <= ctx.config.last_season:
+        pending = [row for row in scan(ctx, "refresh_requests")
+                   if ctx.lookup("refresh_completions", (row.request_id,)) is None]
+        for row in pending:
+            candidates.setdefault(row.player_id, set()).add(ctx.config.current_season)
     # Audit salary coverage against actual NHL participation, including retirees.
     for row in scan(ctx, "basic_stats"):
         if ctx.config.first_season <= row.season <= ctx.config.last_season and row.games_played > 0:
@@ -207,7 +213,14 @@ def collect(ctx, cursor, *, fallback=True):
                 payload.update(contract_id=agreement_id, player_id=player_id)
                 items.append(source_record(ctx, "contract_seasons", payload, source=source,
                     key=f"{nhl_id}/{agreement['source_id']}/{term['season']}", raw=body))
-    yield from batches(ctx, (*[references[year] for year in sorted(references)], *items), cursor, partition="contracts")
+    # Coalesce requests by player above; acknowledge each exact cause only after
+    # the complete collection has validated. Failed/resumed work retains pending
+    # requests until its acknowledgement batch commits.
+    completions = [source_record(ctx, "refresh_completions", {
+        "request_id": row.request_id, "run_id": ctx.run.run_id,
+        "completed_at": ctx.run.started_at}, source="contract-refresh",
+        key=row.request_id, raw=row.model_dump(mode="json")) for row in pending]
+    yield from batches(ctx, (*[references[year] for year in sorted(references)], *items, *completions), cursor, partition="contracts")
 
 
 def normalize(item, ctx):
