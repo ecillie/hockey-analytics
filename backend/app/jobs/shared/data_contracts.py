@@ -22,7 +22,7 @@ from pydantic import (
 )
 
 
-CONTRACT_VERSION = "2"
+CONTRACT_VERSION = "3"
 Id = Annotated[StrictInt, Field(gt=0)]
 Count = Annotated[StrictInt, Field(ge=0)]
 Text = Annotated[StrictStr, Field(min_length=1)]
@@ -272,6 +272,13 @@ class RefreshRequest(Record):
     cause_id: Text
     cause_digest: Digest
     requested_at: AwareDatetime
+
+
+class RefreshCompletion(Record):
+    """Acknowledgement committed only after the requested refresh succeeds."""
+    request_id: Digest
+    run_id: UUID
+    completed_at: AwareDatetime
 
 
 class RosterState(Record):
@@ -607,6 +614,7 @@ RECORD_DEFINITIONS: Mapping[str, RecordDefinition] = MappingProxyType({
     "basic_stats": RecordDefinition(BasicStats, PLAYER_SEASON_KEY + ("stat_kind",), "One source/player/season/game-type/team-scope/stat-kind", PLAYER_SEASON_REFS),
     "transactions": RecordDefinition(Transaction, ("source", "source_id"), "One current/recent source transaction with all participants", (Reference("from_team_id", "teams"), Reference("to_team_id", "teams"))),
     "refresh_requests": RecordDefinition(RefreshRequest, ("request_id",), "One contract refresh request per accepted transaction revision/player", (Reference("player_id", "player_profiles"),), append_only=True),
+    "refresh_completions": RecordDefinition(RefreshCompletion, ("request_id",), "One successful consumption of a refresh request", (Reference("request_id", "refresh_requests"), Reference("run_id", "pipeline_runs")), append_only=True),
     "roster_state": RecordDefinition(RosterState, ("player_id",), "One supported current state per player", (Reference("player_id", "player_profiles"), Reference("team_id", "teams"), Reference("override_id", "roster_overrides"))),
     "roster_observations": RecordDefinition(RosterObservation, ("snapshot_id", "player_id", "team_id"), "One observed roster membership within a source snapshot", (Reference("player_id", "player_profiles"), Reference("team_id", "teams")), append_only=True),
     "roster_overrides": RecordDefinition(RosterOverride, ("override_id",), "One dated manual roster decision", (Reference("player_id", "player_profiles"), Reference("team_id", "teams"))),

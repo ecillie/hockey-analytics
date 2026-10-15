@@ -409,7 +409,7 @@ def test_complete_migration_lifecycle_on_isolated_database(tmp_path):
         run_command(database_url, *alembic, "upgrade", "head")
         run_command(database_url, *alembic, "upgrade", "head")
         current = run_command(database_url, *alembic, "current", "--check-heads")
-        assert "20260920_0002 (head)" in current.stdout
+        assert "20261015_0003 (head)" in current.stdout
         run_command(
             database_url,
             "backend/database/schema_snapshot.py",
@@ -425,7 +425,7 @@ def test_complete_migration_lifecycle_on_isolated_database(tmp_path):
 
         isolated = create_engine(database_url)
         with isolated.connect() as connection:
-            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "20260920_0002"
+            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "20261015_0003"
             assert connection.execute(text("SELECT COUNT(*) FROM seasons")).scalar_one() == 22
             assert connection.execute(text("SELECT COUNT(*) FROM data_sources")).scalar_one() == 4
         isolated.dispose()

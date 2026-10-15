@@ -10,6 +10,7 @@ __pycache__/
 
 backend/.pytest_cache/
 /backend/logs/
+/backend/artifacts/
 .coverage
 coverage/
 

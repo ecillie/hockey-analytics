@@ -87,6 +87,12 @@ class DatabaseSettingsTests(unittest.TestCase):
                 }
             )
 
+    def test_query_schema_is_explicit_and_whitelisted(self):
+        settings = self.load_with({"ENV":"dev", "DATABASE_URL":"postgresql://local/test", "DATA_QUERY_SCHEMA":"pipeline_api"})
+        self.assertEqual(settings.query_schema, "pipeline_api")
+        with self.assertRaisesRegex(ConfigurationError, "DATA_QUERY_SCHEMA"):
+            self.load_with({"ENV":"dev", "DATABASE_URL":"postgresql://local/test", "DATA_QUERY_SCHEMA":"other,public"})
+
     def test_api_cors_origins_are_trimmed(self):
         get_api_settings.cache_clear()
         with patch("app.config._load_backend_env"), patch.dict(

@@ -43,6 +43,11 @@ def plan_setup(*, selected, environment, target_environment, current_season,
     # Finish a producer's requested partitions before starting its consumers.
     # A current contract/game/dataset can depend on references from earlier seasons.
     for job in selected:
+        if job == "datasets":
+            configurations.append(JobConfig(job=job, environment=environment, target_environment=target_environment,
+                mode=mode, current_season=current_season, first_season=first_season,
+                last_season=last_season, resume=resume))
+            continue
         for season in seasons:
             if season < JOBS[job].history_start or (JOBS[job].current_only and season != current_season):
                 continue

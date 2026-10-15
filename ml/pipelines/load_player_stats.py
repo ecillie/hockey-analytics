@@ -49,21 +49,21 @@ basic_team AS (
         player_id,
         season_start_year,
 
-        SUM(COALESCE(games_played, 0)) AS games_played,
-        SUM(COALESCE(goals, 0)) AS goals,
-        SUM(COALESCE(assists, 0)) AS assists,
-        SUM(COALESCE(points, 0)) AS points,
-        SUM(COALESCE(plus_minus, 0)) AS plus_minus,
-        SUM(COALESCE(penalty_minutes, 0)) AS penalty_minutes,
-        SUM(COALESCE(power_play_goals, 0)) AS power_play_goals,
-        SUM(COALESCE(power_play_points, 0)) AS power_play_points,
-        SUM(COALESCE(short_handed_goals, 0)) AS short_handed_goals,
-        SUM(COALESCE(shots, 0)) AS shots,
+        SUM(games_played) AS games_played,
+        SUM(goals) AS goals,
+        SUM(assists) AS assists,
+        SUM(points) AS points,
+        SUM(plus_minus) AS plus_minus,
+        SUM(penalty_minutes) AS penalty_minutes,
+        SUM(power_play_goals) AS power_play_goals,
+        SUM(power_play_points) AS power_play_points,
+        SUM(short_handed_goals) AS short_handed_goals,
+        SUM(shots) AS shots,
 
         CASE
-            WHEN SUM(COALESCE(shots, 0)) > 0
-            THEN SUM(COALESCE(goals, 0))::DOUBLE PRECISION
-                 / SUM(COALESCE(shots, 0))
+            WHEN SUM(shots) > 0
+            THEN SUM(goals)::DOUBLE PRECISION
+                 / SUM(shots)
             ELSE NULL
         END AS shooting_percentage
 
@@ -134,44 +134,44 @@ advanced_team AS (
         player_id,
         season_start_year,
 
-        SUM(COALESCE(ice_time_seconds, 0)) AS ice_time_seconds,
-        SUM(COALESCE(shifts, 0)) AS shifts,
-        SUM(COALESCE(game_score, 0)) AS game_score,
-        SUM(COALESCE(individual_points, 0)) AS individual_points,
-        SUM(COALESCE(individual_goals, 0)) AS individual_goals,
-        SUM(COALESCE(individual_primary_assists, 0))
+        SUM(ice_time_seconds) AS ice_time_seconds,
+        SUM(shifts) AS shifts,
+        SUM(game_score) AS game_score,
+        SUM(individual_points) AS individual_points,
+        SUM(individual_goals) AS individual_goals,
+        SUM(individual_primary_assists)
             AS individual_primary_assists,
-        SUM(COALESCE(individual_secondary_assists, 0))
+        SUM(individual_secondary_assists)
             AS individual_secondary_assists,
-        SUM(COALESCE(individual_expected_goals, 0))
+        SUM(individual_expected_goals)
             AS individual_expected_goals,
-        SUM(COALESCE(individual_shots_on_goal, 0))
+        SUM(individual_shots_on_goal)
             AS individual_shots_on_goal,
-        SUM(COALESCE(individual_unblocked_attempts, 0))
+        SUM(individual_unblocked_attempts)
             AS individual_unblocked_attempts,
 
         CASE
-            WHEN SUM(COALESCE(ice_time_seconds, 0)) > 0
+            WHEN SUM(ice_time_seconds) > 0
             THEN
                 SUM(
-                    COALESCE(on_ice_expected_goals_pct, 0)
-                    * COALESCE(ice_time_seconds, 0)
+                    on_ice_expected_goals_pct
+                    * ice_time_seconds
                 )
-                / SUM(COALESCE(ice_time_seconds, 0))
+                / SUM(ice_time_seconds)
             ELSE NULL
         END AS on_ice_expected_goals_pct,
 
-        SUM(COALESCE(shots_blocked, 0)) AS shots_blocked,
-        SUM(COALESCE(takeaways, 0)) AS takeaways,
-        SUM(COALESCE(giveaways, 0)) AS giveaways,
-        SUM(COALESCE(penalties, 0)) AS penalties,
-        SUM(COALESCE(penalties_drawn, 0)) AS penalties_drawn,
+        SUM(shots_blocked) AS shots_blocked,
+        SUM(takeaways) AS takeaways,
+        SUM(giveaways) AS giveaways,
+        SUM(penalties) AS penalties,
+        SUM(penalties_drawn) AS penalties_drawn,
 
-        SUM(COALESCE(offensive_zone_shift_starts, 0))
+        SUM(offensive_zone_shift_starts)
             AS offensive_zone_shift_starts,
-        SUM(COALESCE(defensive_zone_shift_starts, 0))
+        SUM(defensive_zone_shift_starts)
             AS defensive_zone_shift_starts,
-        SUM(COALESCE(neutral_zone_shift_starts, 0))
+        SUM(neutral_zone_shift_starts)
             AS neutral_zone_shift_starts
 
     FROM skater_advanced_season_stats
