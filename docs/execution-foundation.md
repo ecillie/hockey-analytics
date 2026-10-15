@@ -4,8 +4,9 @@ Phase 2 implements explicit setup/job entrypoints and a shared execution path
 against the Phase 1 logical records and injectable access contracts. It is
 verified offline with reference records and a dependent membership load. Core
 source adapters are implemented in [Phase 3](core-data-pipelines.md); game,
-MoneyPuck, and EDGE adapters are implemented in [Phase 4](game-tracking-pipelines.md). Database connections, durable leases,
-and production integration remain Phase 5. No recurring schedules are activated.
+MoneyPuck, and EDGE adapters are implemented in [Phase 4](game-tracking-pipelines.md).
+Database connections and durable leases remain Phase 6 local implementation work;
+AWS/production integration is verified in Phase 9. No recurring schedules are activated.
 
 ## Runtime boundary
 
@@ -105,7 +106,7 @@ separate environments remain isolated. Transactions still protect the relevant
 accepted record/reference scopes for their atomic batch commit.
 
 Database infrastructure must make all writers honor these reservations and
-implement lease expiry/fencing in Phase 5. The in-memory test lease establishes
+implement lease expiry/fencing locally in Phase 6 and verify it on AWS in Phase 9. The in-memory test lease establishes
 interface behavior, not concurrent-process safety.
 
 Each accepted batch atomically commits changed records, raw observations, run

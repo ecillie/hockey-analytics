@@ -163,7 +163,7 @@ Fresh NHL/MoneyPuck download probes during this implementation returned HTTP 403
 The source catalogue was readable, but those probes did not verify current JSON/CSV
 payloads. NHL/EDGE response-shape tests are illustrative offline fixtures; 2008
 MoneyPuck excerpts come from the repository's existing historical input files.
-Before Phase 5 population claims, audit live source schemas, complete historical
+Before Phase 9 AWS population claims, audit live source schemas, complete historical
 populations, EDGE field/feed availability, and current-season publication. Final
 required/optional scope acceptance, durable databases/leases, consumer integration,
 schedules, and cutover remain their existing later release gates.

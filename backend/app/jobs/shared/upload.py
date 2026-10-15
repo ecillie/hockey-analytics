@@ -1,10 +1,14 @@
 """Write preparation and atomic uploads shared by data, issues, and run tracking."""
 from time import sleep
+import logging
 from uuid import uuid4
 
 from .access_contracts import AcceptedBatch, IdempotencyConflict, RevisionConflict, make_write
 from .data_contracts import RECORD_DEFINITIONS
 from .retries import backoff_delay
+from app.observability import log_context, log_event
+
+logger = logging.getLogger(__name__)
 
 
 class UploadInterrupted(RuntimeError):
@@ -36,6 +40,16 @@ def upload_batch(store, run, scopes, writes, *, checkpoint=None, pause=sleep):
 
 
 def upload(store, batch, *, attempts=3, pause=sleep):
+    with log_context(component="database", batch_id=batch.batch_id, job_run_id=batch.run_id,
+                     environment=batch.environment):
+        try:
+            return _upload(store, batch, attempts=attempts, pause=pause)
+        except (Exception, KeyboardInterrupt) as exc:
+            log_event(logger, "upload.failed", level=logging.ERROR, error=exc)
+            raise
+
+
+def _upload(store, batch, *, attempts, pause):
     if type(attempts) is not int or not 1 <= attempts <= 10:
         raise ValueError("Upload attempts must be between 1 and 10")
     batch.validate_envelope()
@@ -49,4 +63,7 @@ def upload(store, batch, *, attempts=3, pause=sleep):
         except UploadInterrupted:
             if attempt + 1 == attempts:
                 raise
-            pause(backoff_delay(attempt, 8))
+            delay = backoff_delay(attempt, 8)
+            log_event(logger, "upload.retry", level=logging.WARNING, attempt=attempt + 1,
+                      delay_seconds=delay)
+            pause(delay)

@@ -18,8 +18,10 @@ same execution path in initial, refresh, backfill, and validation modes.
 
 Games, MoneyPuck, and EDGE are registered separately through
 [the Phase 4 registry](game-tracking-pipelines.md). Datasets remain a later-phase
-operation and report `deferred` unless separately registered. Database connections and production
-persistence remain Phase 5 work; recurring dispatch/schedules remain Phase 6.
+operation and report `deferred` unless separately registered. Database connections
+and persistence remain Phase 6 local work, with Phase 9 AWS acceptance. Recurring
+workflows are created in Phase 7, verified live in Phase 10, and enabled in
+production in Phase 11.
 
 ## Offline usage
 
@@ -118,7 +120,7 @@ Fallback requires an accepted CapWages player mapping and a matching embedded NH
 ID. Partial primary coverage and overlapping competing agreements require review;
 the adapter does not silently merge sources or replace an existing agreement with
 a competing identity. Contract-source schemas and fallback availability still
-require live coverage auditing before Phase 5 population claims.
+require live coverage auditing before Phase 9 AWS population claims.
 
 ## Transactions and contract-refresh requests
 
@@ -142,7 +144,7 @@ Signing and extension facts include immutable `refresh_requests` in the same
 atomic batch. Each request binds the source event ID, raw revision digest, and
 canonical player. Reruns retain the request; a correction creates a new request.
 A transaction with all participant requests must fit one batch or the run fails
-before committing. No scheduler is activated. Phase 6 consumers must coalesce
+before committing. No scheduler is activated. Phase 7 workflow consumers must coalesce
 requests and check their triggering revision is still applicable before dispatch.
 
 ## Roster precedence and recovery

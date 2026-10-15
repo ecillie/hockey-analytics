@@ -1,11 +1,18 @@
 """Dependency-ordered data population only; infrastructure is supplied by the caller."""
 from contextlib import nullcontext
 from dataclasses import dataclass
+import logging
+from time import perf_counter
+from uuid import uuid4
+
+from app.observability import log_context, log_event, workflow_context
 
 from app.jobs.shared.configuration import JOBS, JobConfig, execution_mode, ordered_jobs
 from app.jobs.shared.access_contracts import RevisionConflict
 from app.jobs.shared.execution import writer_session
 from app.jobs.shared.run_tracking import RunReport, terminal_report
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -47,6 +54,26 @@ def plan_setup(*, selected, environment, target_environment, current_season,
 
 def run_setup(executor, configurations):
     configurations = tuple(configurations)
+    started = perf_counter()
+    with log_context(component="setup", setup_run_id=uuid4(), environment=executor.target_environment,
+                     **workflow_context()):
+        log_event(logger, "setup.started", requested_jobs=len(configurations))
+        try:
+            report = _run_setup(executor, configurations)
+        except BaseException as exc:
+            log_event(logger, "setup.error", level=logging.ERROR, error=exc)
+            log_event(logger, "setup.finished", level=logging.ERROR, complete=False,
+                      status="cancelled" if isinstance(exc, KeyboardInterrupt) else "failed",
+                      duration_ms=round((perf_counter() - started) * 1000, 3))
+            raise
+        log_event(logger, "setup.finished", level=logging.INFO if report.complete else logging.WARNING,
+                  complete=report.complete, requested_jobs=len(report.requested),
+                  completed_jobs=sum(item.complete for item in report.reports),
+                  duration_ms=round((perf_counter() - started) * 1000, 3))
+        return report
+
+
+def _run_setup(executor, configurations):
     if not configurations:
         raise ValueError("Setup requires selected work")
     environments = {config.environment for config in configurations}
@@ -65,6 +92,7 @@ def run_setup(executor, configurations):
         try:
             snapshot = executor.store.snapshot(configurations[0].environment, accepted_before=executor.now())
         except Exception as exc:
+            log_event(logger, "setup.error", level=logging.ERROR, error=exc)
             return SetupReport((terminal_report(configurations[0], "failed", executor.now(), str(exc)),), configurations)
     # Hold all affected scopes through setup to exclude refreshes between batches/jobs.
     try:
@@ -76,6 +104,7 @@ def run_setup(executor, configurations):
                 if not report.complete:
                     break
     except RevisionConflict as exc:
+        log_event(logger, "setup.error", level=logging.WARNING, error=exc)
         reports.append(terminal_report(configurations[0], "deferred", executor.now(), str(exc)))
     return SetupReport(tuple(reports), configurations)
 
