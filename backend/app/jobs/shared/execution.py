@@ -4,6 +4,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
+import logging
+from time import perf_counter
 from time import sleep
 from typing import Any, Callable, Iterable, Mapping
 
@@ -15,6 +17,9 @@ from .run_tracking import CheckpointCursor, RunReport, RunTracker, start_run, te
 from .source_requests import SourceClient
 from .upload import prepare_writes, upload_batch
 from .validation import CollectionBatch, ValidatedBatch, validate_collection
+from app.observability import log_context, log_event, workflow_context
+
+logger = logging.getLogger(__name__)
 
 
 def utc_now():
@@ -91,26 +96,50 @@ class Executor:
 
     def run(self, config: JobConfig, *, session: WriterSession | None = None,
             overlay=None, validation_snapshot: Snapshot | None = None) -> RunReport:
+        started = perf_counter()
+        run = start_run(config, self.now())
+        with log_context(component="jobs", environment=config.environment, job=config.job,
+                         job_run_id=run.run_id, mode=config.mode, resume=config.resume,
+                         **config.scope, **workflow_context()):
+            log_event(logger, "job.started")
+            try:
+                report = self._execute(config, run=run, session=session, overlay=overlay,
+                                       validation_snapshot=validation_snapshot)
+            except BaseException as exc:
+                log_event(logger, "job.finished", level=logging.ERROR, error=exc,
+                          status="cancelled" if isinstance(exc, KeyboardInterrupt) else "failed",
+                          duration_ms=round((perf_counter() - started) * 1000, 3))
+                raise
+            log_event(logger, "job.finished",
+                      level=logging.INFO if report.complete or report.run.status == "disabled" else logging.WARNING,
+                      status=report.run.status, **report.run.counters.model_dump(),
+                      written=report.written, unchanged=report.unchanged, issues=len(report.issues),
+                      checkpoint_count=len(report.committed_cursors), coverage_count=len(report.source_coverage),
+                      duration_ms=round((perf_counter() - started) * 1000, 3))
+            return report
+
+    def _execute(self, config, *, run, session=None, overlay=None, validation_snapshot=None):
         if config.target_environment != self.target_environment or config.environment != self.target_environment:
             raise ValueError("Adapter environment does not match execution")
         if validation_snapshot is not None and (config.mode != "validation" or validation_snapshot.environment != config.environment):
             raise ValueError("Validation snapshot does not match execution")
         if config.mode == "validation":
-            return self._run(config, overlay=overlay, snapshot=validation_snapshot)
+            return self._run(config, run=run, overlay=overlay, snapshot=validation_snapshot)
         if session is not None:
             if (not session.active or session.store is not self.store or session.environment != config.environment
                     or not set(config.write_scopes) <= set(session.scopes)
                     or not set(config.read_scopes) <= set(session.scopes) | set(session.read_scopes)):
                 raise ValueError("Writer session does not cover execution")
-            return self._run(config)
+            return self._run(config, run=run)
         try:
             with writer_session(self.store, config.environment, config.write_scopes, read_scopes=config.read_scopes):
-                return self._run(config)
+                return self._run(config, run=run)
         except RevisionConflict as exc:
-            return terminal_report(config, "deferred", self.now(), str(exc))
+            log_event(logger, "job.error", level=logging.WARNING, error=exc)
+            return terminal_report(config, "deferred", self.now(), str(exc), run=run)
 
-    def _run(self, config, *, overlay=None, snapshot=None):
-        state = RunTracker(start_run(config, self.now()))
+    def _run(self, config, *, run, overlay=None, snapshot=None):
+        state = RunTracker(run)
         context = None
         try:
             context = ExecutionContext(config, state.run, self.store,
@@ -126,6 +155,8 @@ class Executor:
                 return self._finish(context, state, "deferred", "Required inputs are not verified ready")
             progress = self.store.checkpoint(config.environment, config.job, config.scope_key, snapshot=context.snapshot) if config.resume else None
             saved = CheckpointCursor.model_validate(progress[0].cursor) if progress else None
+            if saved:
+                log_event(logger, "job.resumed", checkpoint_complete=saved.complete)
             if saved and saved.complete:
                 return self._finish(context, state, "no_change")
             cursor = saved.position if saved else None
@@ -144,6 +175,9 @@ class Executor:
                 state.count(read=len(batch.records))
                 context.run = state.run
                 checked = validate_collection(batch, context, operation.normalize)
+                log_event(logger, "job.batch_validated", level=logging.WARNING if checked.issues else logging.DEBUG,
+                          batch_index=index, records=len(batch.records), issues=len(checked.issues),
+                          unresolved=checked.unresolved)
                 state.issues.extend(checked.issues)
                 if checked.issues:
                     state.count(unresolved=checked.unresolved, rejected=len(batch.records) - checked.unresolved)
@@ -158,6 +192,7 @@ class Executor:
                 raise ValueError("Source enumeration ended without an explicit final batch")
             return self._finish(context, state, "succeeded" if config.mode == "validation" or state.domain_changes else "no_change")
         except (Exception, KeyboardInterrupt) as exc:
+            log_event(logger, "job.error", level=logging.ERROR, error=exc)
             status = "cancelled" if isinstance(exc, KeyboardInterrupt) else state.failure_status
             if context is None or not state.persisted:
                 return state.report(status, self.now(), str(exc))
@@ -180,6 +215,7 @@ class Executor:
         try:
             self._persist_run(context, state, run=report.run)
         except Exception as exc:
+            log_event(logger, "job.persistence_error", level=logging.ERROR, error=exc)
             return replace(state.report(state.failure_status, self.now(),
                                 f"{error + '; ' if error else ''}{exc}; terminal run persistence failed"),
                            source_coverage=tuple(context.source_coverage))
@@ -206,8 +242,13 @@ class Executor:
             state.written += receipt.written - len(progress_writes)
             state.unchanged += len(records) - len(writes) + receipt.unchanged
             state.committed_cursors.append(position.position)
+            log_event(logger, "job.checkpoint_committed", level=logging.DEBUG,
+                      checkpoint_complete=position.complete, checkpoint_count=len(state.committed_cursors))
         state.run = running
         context.run = running
         state.completed_batches += 1
+        log_event(logger, "job.batch_accepted", level=logging.DEBUG, records=len(batch.records),
+                  accepted=running.counters.accepted, written=state.written, unchanged=state.unchanged,
+                  completed_batches=state.completed_batches)
         if context.config.mode != "validation":
             context.snapshot = self.store.snapshot(config.environment, accepted_before=self.now())

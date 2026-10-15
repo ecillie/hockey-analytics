@@ -63,8 +63,8 @@ def finish_run(run, status, counters, now):
     return update_run(run, status=status, counters=counters, finished_at=now)
 
 
-def terminal_report(config, status, now, error=None):
-    run = start_run(config, now)
+def terminal_report(config, status, now, error=None, *, run=None):
+    run = run or start_run(config, now)
     return RunReport(finish_run(run, status, run.counters, now), error=error)
 
 

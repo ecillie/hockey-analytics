@@ -9,6 +9,7 @@ __pycache__/
 *.bak
 
 backend/.pytest_cache/
+/backend/logs/
 .coverage
 coverage/
 

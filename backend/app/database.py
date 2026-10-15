@@ -7,12 +7,16 @@ otherwise mutate the schema.
 from __future__ import annotations
 
 from contextlib import contextmanager
+import logging
 from typing import Iterator
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import get_database_settings
+from app.observability import log_event
+
+logger = logging.getLogger(__name__)
 
 
 settings = get_database_settings()
@@ -23,6 +27,7 @@ engine = create_engine(
     max_overflow=settings.max_overflow,
     pool_recycle=settings.pool_recycle_seconds,
     pool_use_lifo=True,
+    hide_parameters=True,
     connect_args={"connect_timeout": settings.connect_timeout_seconds},
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -39,6 +44,7 @@ def init_db() -> None:
         raise RuntimeError(
             "Database schema is missing; run Alembic upgrade head first"
         )
+    log_event(logger, "database.schema_checked", level=logging.DEBUG, environment=settings.environment.value)
 
 
 def connect_database():
@@ -51,10 +57,17 @@ def connect_database():
             "run 'pip install -r backend/requirements.txt'"
         ) from exc
 
-    return psycopg2.connect(
-        settings.database_url,
-        connect_timeout=settings.connect_timeout_seconds,
-    )
+    try:
+        connection = psycopg2.connect(
+            settings.database_url,
+            connect_timeout=settings.connect_timeout_seconds,
+        )
+    except Exception as exc:
+        log_event(logger, "database.connection_failed", level=logging.ERROR, error=exc,
+                  environment=settings.environment.value)
+        raise
+    log_event(logger, "database.connected", level=logging.DEBUG, environment=settings.environment.value)
+    return connection
 
 
 @contextmanager
@@ -64,8 +77,16 @@ def database_transaction() -> Iterator[object]:
     try:
         yield connection
         connection.commit()
-    except Exception:
-        connection.rollback()
+        log_event(logger, "database.committed", level=logging.DEBUG, environment=settings.environment.value)
+    except BaseException as exc:
+        try:
+            connection.rollback()
+        except Exception as rollback_error:
+            log_event(logger, "database.rollback_failed", level=logging.ERROR, error=rollback_error,
+                      environment=settings.environment.value)
+            raise
+        log_event(logger, "database.rolled_back", level=logging.ERROR, error=exc,
+                  environment=settings.environment.value)
         raise
     finally:
         connection.close()

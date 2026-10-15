@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import json
 import math
+import logging
 from threading import Lock
 from types import MappingProxyType
 from time import monotonic, sleep
@@ -11,6 +12,9 @@ from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .retries import backoff_delay
+from app.observability import log_context, log_event
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -90,8 +94,13 @@ class SourceClient:
         # A wait/retry for one source must not hold other sources' request locks.
         # Serialize this source through its response so Retry-After is observed
         # before a subsequent caller can begin another request.
-        with self.locks[source]:
-            return self._get(source, url, self.policies[source])
+        with log_context(source=source):
+            try:
+                with self.locks[source]:
+                    return self._get(source, url, self.policies[source])
+            except (Exception, KeyboardInterrupt) as exc:
+                log_event(logger, "source.failed", level=logging.ERROR, error=exc)
+                raise
 
     def _get(self, source, url, policy):
         for attempt in range(policy.attempts):
@@ -112,6 +121,8 @@ class SourceClient:
                 if attempt + 1 == policy.attempts:
                     raise SourceRequestError("Source request failed after bounded retries") from exc
             else:
+                log_event(logger, "source.request", level=logging.DEBUG, attempt=attempt + 1,
+                          status_code=response.status)
                 if len(response.body) > policy.max_response_bytes:
                     raise SourceRequestError("Source response exceeds byte limit")
                 if 200 <= response.status < 300:
@@ -126,6 +137,8 @@ class SourceClient:
                 if attempt + 1 == policy.attempts:
                     raise SourceRequestError(f"Source HTTP {response.status} after bounded retries")
             self.next_request[source] = max(self.next_request[source], self.clock() + retry_delay)
+            log_event(logger, "source.retry", level=logging.WARNING, attempt=attempt + 1,
+                      delay_seconds=retry_delay)
             self.pause(retry_delay)
         raise AssertionError("Unreachable")
 
@@ -133,4 +146,5 @@ class SourceClient:
         try:
             return json.loads(self.get(source, url))
         except (ValueError, UnicodeError) as exc:
+            log_event(logger, "source.invalid_json", level=logging.ERROR, error=exc, source=source)
             raise SourceRequestError("Source did not return valid JSON") from exc
