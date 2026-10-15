@@ -247,7 +247,7 @@ checkpoint interfaces plus immutable normalized write envelopes. Adapters must
 preserve revisions, atomically commit records/provenance/progress, reject stale
 revisions, isolate environments, and recover exact batch retries. The in-memory
 adapter lives in the test package; real adapters and query integration are
-Phase 5 work.
+Phase 6 local work, followed by Phase 9 AWS verification.
 
 `app.jobs.shared.consumer_contracts` defines all existing API query projections,
 maps all 18 endpoints, and defines the ML player-season/salary-cap reader shapes.
@@ -276,7 +276,7 @@ identities/status changes preserve accepted state.
 See [core pipeline configuration and source policies](../docs/core-data-pipelines.md)
 for runtime injection, source precedence, coverage limits, and an offline setup
 demonstration. Games, MoneyPuck, and EDGE are implemented through the separate
-Phase 4 registry below; database integration remains Phase 5. No recurring schedules
+Phase 4 registry below; database integration is Phase 6 locally and Phase 9 on AWS. No recurring schedules
 are enabled.
 
 # Game, MoneyPuck, and EDGE pipelines (Phase 4)
@@ -289,13 +289,19 @@ discovery/replay, and atomic recovery use the existing executor.
 
 See [configuration, coverage, and source limitations](../docs/game-tracking-pipelines.md)
 for the offline CLI and runtime integration. Database population, live schema and
-coverage audits, and consumer integration remain Phase 5 gates.
+coverage audits, and AWS consumer integration remain Phase 9 gates; local adapters/query work is Phase 6.
 
 ```bash
 PYTHONPATH=backend python3 -m pytest backend/tests/test_game_data_sources.py --no-cov
 ```
 
 # Replacement execution foundation (Phase 2)
+
+API and replacement setup/job entrypoints now share structured backend logging.
+Set `LOG_LEVEL=INFO` (or `DEBUG` for batch/checkpoint details). Logs use stderr;
+in `ENV=dev`, optional `LOG_FILE=logs/backend.txt` also saves rotating text logs
+under `backend/logs/`. CLI summaries use stdout. See [backend logging and failure diagnosis](../docs/backend-logging.md)
+for request/run IDs, sanitized errors, configuration, and offline examples.
 
 Setup/population and independent job entrypoints now reuse a shared executor.
 It validates source candidates, retains provenance and review issues, isolates
