@@ -11,6 +11,16 @@ from sqlalchemy import create_engine, text
 
 
 CATALOG_QUERIES = {
+    "pipeline_views": """
+        SELECT schemaname, viewname, definition FROM pg_views
+        WHERE schemaname = 'pipeline_api' OR (schemaname = 'public' AND viewname = 'pipeline_current')
+        ORDER BY schemaname, viewname
+    """,
+    "pipeline_view_columns": """
+        SELECT table_name, ordinal_position, column_name, data_type, udt_name, is_nullable
+        FROM information_schema.columns WHERE table_schema = 'pipeline_api'
+        ORDER BY table_name, ordinal_position
+    """,
     "tables": """
         SELECT table_name
         FROM information_schema.tables

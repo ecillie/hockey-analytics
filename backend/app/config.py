@@ -47,6 +47,7 @@ class DatabaseSettings:
     pool_size: int = 2
     max_overflow: int = 3
     pool_recycle_seconds: int = 300
+    query_schema: str = "public"
 
 
 @dataclass(frozen=True)
@@ -139,9 +140,14 @@ def get_database_settings() -> DatabaseSettings:
             raise ConfigurationError(f"{env_name} must be {qualifier}")
         pool_values[field_name] = value
 
+    query_schema = os.getenv("DATA_QUERY_SCHEMA", "public").strip()
+    if query_schema not in ("public", "pipeline_api"):
+        raise ConfigurationError("DATA_QUERY_SCHEMA must be public or pipeline_api")
+
     return DatabaseSettings(
         environment=environment,
         database_url=database_url,
         connect_timeout_seconds=timeout,
+        query_schema=query_schema,
         **pool_values,
     )

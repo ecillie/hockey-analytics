@@ -3,8 +3,9 @@
 `app.jobs.game_data_operations.game_data_operations()` registers five independent
 operations. Existing setup, backfill, validation-only, and refresh entrypoints
 use the same source parsing, identity checks, validation, and atomic upload path.
-`source_operations()` composes these with the Phase 3 registry; `datasets` remains
-unregistered. Imports make no requests and open no database connections.
+`source_operations()` composes these with the Phase 3 registry. The [Phase 6
+infrastructure runtime](local-persistence-datasets.md) adds explicitly configured
+dataset definitions. Imports make no requests and open no database connections.
 
 | Job | Collection and declared checks |
 | --- | --- |

@@ -85,6 +85,12 @@ def console_report(report):
     """
     from .data_contracts import RECORD_DEFINITIONS
     result = report_payload(report)
+    result["reason_code"] = {
+        "Source operation is not implemented/registered":"OPERATION_NOT_CONFIGURED",
+        "Required inputs are not verified ready":"INPUTS_NOT_READY",
+        "Required producer inputs exceed the configured freshness threshold":"STALE_INPUTS",
+        "Conflicting writer reservation":"WRITER_CONFLICT",
+    }.get(report.error)
     result["error"] = "See structured logs and stored run/issue records." if report.error else None
     result["issues"] = [{"issue_id": str(issue.issue_id), "run_id": str(issue.run_id),
                          "dataset": issue.dataset if issue.dataset in RECORD_DEFINITIONS else "unknown",
@@ -104,7 +110,7 @@ def console_report(report):
         coverage.append(entry)
     result["source_coverage"] = coverage
     result["run"]["scope"] = {key: value for key, value in report.run.scope.items()
-                              if key in ("first_season", "last_season", "correction_lookback_days") and type(value) is int}
+                              if key in ("first_season", "last_season", "correction_lookback_days", "max_input_age_seconds") and type(value) is int}
     result["run"]["scope"]["game_types"] = list(report.run.scope.get("game_types", ()))
     return result
 
@@ -114,19 +120,32 @@ def job_main(job, argv=None):
     command = parser(f"Run {job} with an injected replacement-pipeline runtime")
     command.add_argument("--mode", choices=("initial", "refresh", "backfill"), default="refresh")
     command.add_argument("--correction-lookback-days", type=int, default=0)
+    command.add_argument("--max-input-age-seconds", type=int, default=0)
+    command.add_argument("--disabled", action="store_true")
+    command.add_argument("--game-types", type=int, nargs="+", default=(2, 3))
+    command.add_argument("--max-batches", type=int, default=10000)
+    command.add_argument("--max-batch-records", type=int, default=1000)
     args = command.parse_args(argv)
     configure_logging(environment=args.environment)
     try:
         config = JobConfig(job=job,
             **execution_options(args, default_first_season=args.current_season),
             mode=execution_mode((job,), args.mode, validation_only=args.validation_only),
-            correction_lookback_days=args.correction_lookback_days)
+            correction_lookback_days=args.correction_lookback_days,
+            max_input_age_seconds=args.max_input_age_seconds, enabled=not args.disabled,
+            game_types=tuple(args.game_types), max_batches=args.max_batches,
+            max_batch_records=args.max_batch_records)
         report = run_job(job, runtime(args.runtime, args.environment), config)
     except Exception as exc:
         log_event(logger, "cli.failed", level=logging.ERROR, error=exc)
         command.error("Invalid runtime configuration")
     print(json.dumps(console_report(report)))
-    return 0 if report.complete else 1
+    return report_exit_code(report)
+
+
+def report_exit_code(report):
+    """0 complete; 1 failure/partial; 3 prerequisites/conflict; 4 disabled; 130 cancelled."""
+    return 0 if report.complete else {"deferred": 3, "disabled": 4, "cancelled": 130}.get(report.run.status, 1)
 
 
 def setup_main(argv=None, *, selected=None, mode="initial"):
@@ -146,4 +165,4 @@ def setup_main(argv=None, *, selected=None, mode="initial"):
         command.error("Invalid runtime configuration")
     print(json.dumps({"complete": report.complete, "requested_jobs": len(report.requested),
                       "runs": [console_report(result) for result in report.reports]}))
-    return 0 if report.complete else 1
+    return 0 if report.complete else next((report_exit_code(result) for result in report.reports if not result.complete), 1)

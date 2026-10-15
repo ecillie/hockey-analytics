@@ -17,9 +17,9 @@ same execution path in initial, refresh, backfill, and validation modes.
 | `roster_reconciliation` | Accepted NHL roster observations, typed transaction evidence, and dated manual overrides. Uncertain changes are held. |
 
 Games, MoneyPuck, and EDGE are registered separately through
-[the Phase 4 registry](game-tracking-pipelines.md). Datasets remain a later-phase
-operation and report `deferred` unless separately registered. Database connections
-and persistence remain Phase 6 local work, with Phase 9 AWS acceptance. Recurring
+[the Phase 4 registry](game-tracking-pipelines.md). [Phase 6 infrastructure](local-persistence-datasets.md)
+provides local PostgreSQL persistence and explicitly configured dataset builds.
+AWS acceptance remains Phase 9. Recurring
 workflows are created in Phase 7, verified live in Phase 10, and enabled in
 production in Phase 11.
 
