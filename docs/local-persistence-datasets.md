@@ -116,7 +116,9 @@ validation-only, and applicable resume options. Age zero disables the additional
 freshness gate. A positive value requires successful committed producer runs,
 covering every requested season/game type, within that age. Validation runs and
 future-dated success records cannot establish freshness. Source-specific readiness
-checks still apply. Phase 7 workflow configuration chooses independent job defaults.
+checks still apply. [Phase 7 workflows](data-workflows.md) supply independent job defaults, guarded
+manual dispatch, bounded refill continuation, and final audited coverage checks.
+Production schedules remain disabled.
 
 Accepted signing/extension requests coalesce by player in the contract collector.
 A successful collection commits immutable `refresh_completions` for each exact

@@ -364,3 +364,15 @@ eight. Run the dry-run and local Pavel Datsyuk smoke case
 (`--nhl-id 8467514`) before any production rollout. Production commands must
 be run only after reviewing the local coverage report; this repository never
 connects to production as part of tests or development.
+
+# Data update and manual refill workflows (Phase 7)
+
+Independent GitHub Actions workflows now wrap the existing refresh and dataset
+entrypoints. The full refill workflow is manual-dispatch-only, holds the complete
+database writer reservation across bounded partitions and final coverage checks,
+and supports explicit checkpoint-based manual continuation. Production schedules
+are disabled in code; nonproduction schedules require explicit opt-in.
+
+See [workflow configuration, local validation, and recovery](../docs/data-workflows.md)
+for approved refs/target guards, Environment secrets, per-job controls, artifact
+retention, population audits, timeout/runner-loss recovery, and remaining live gates.

@@ -194,15 +194,19 @@ GitHub repository settings and rollout sequence.
 * Reproducible Python 3.12 and Node.js 24 environments
 * CI promotion workflow, coverage gates, and Vercel/Neon deployment configuration
 
-### Next milestone: live release-candidate vertical slice
+### Next milestone: AWS readiness (Release 1.1.0 Phase 8)
 
-1. Provision the release-candidate Neon database, apply the schema, and load a validated dataset.
-2. Deploy the backend and verify health, seasons, players, teams, contracts, cap, search,
-   overview, and comparison endpoints against real data.
-3. Deploy the frontend with `VITE_USE_MOCK_API=false`, validate CORS and deep links, and
-   complete an end-to-end smoke test.
-4. Add live API contract tests for response shapes, null handling, traded-player totals,
-   pagination, sorting, and error envelopes.
+The replacement data pipeline's Phases 1–7 are implemented and verified locally:
+logical contracts, source jobs, logging, PostgreSQL persistence, compatible API/ML
+queries, reproducible datasets, and guarded GitHub Actions workflows. See
+[data workflows and recovery](docs/data-workflows.md) for independent updates,
+dataset builds, and the manual-only full refill. Production schedules are disabled.
+
+Phase 8 prepares deployment packaging, infrastructure configuration, environment
+validation, and operational runbooks, then passes all local readiness checks before
+AWS provisioning or connections. AWS population, live verification, and launch
+remain Phases 9–11. The earlier Vercel/Neon deployment configuration remains available;
+it does not establish AWS launch readiness.
 
 ### Following milestones
 
