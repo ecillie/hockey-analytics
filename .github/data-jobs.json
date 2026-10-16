@@ -1,0 +1,16 @@
+{
+  "teams_seasons": {"cron": "17 6 * * *", "enabled": true, "correction_lookback_days": 7, "max_input_age_seconds": 0},
+  "player_profiles": {"cron": "27 6 * * *", "enabled": true, "correction_lookback_days": 7, "max_input_age_seconds": 0},
+  "team_rosters": {"cron": "37 */6 * * *", "enabled": true, "correction_lookback_days": 7, "max_input_age_seconds": 172800},
+  "source_id_mappings": {"cron": "47 */6 * * *", "enabled": true, "correction_lookback_days": 7, "max_input_age_seconds": 172800},
+  "contracts": {"cron": "7 */6 * * *", "enabled": true, "correction_lookback_days": 7, "max_input_age_seconds": 172800},
+  "basic_stats": {"cron": "17 */6 * * *", "enabled": true, "correction_lookback_days": 7, "max_input_age_seconds": 172800},
+  "transactions": {"cron": "23 */3 * * *", "enabled": true, "correction_lookback_days": 3, "max_input_age_seconds": 172800},
+  "roster_reconciliation": {"cron": "43 */3 * * *", "enabled": true, "correction_lookback_days": 3, "max_input_age_seconds": 172800},
+  "game_schedule": {"cron": "13 */3 * * *", "enabled": true, "correction_lookback_days": 7, "max_input_age_seconds": 172800},
+  "game_details": {"cron": "33 */3 * * *", "enabled": true, "correction_lookback_days": 7, "max_input_age_seconds": 172800},
+  "moneypuck_stats": {"cron": "19 10 * * *", "enabled": true, "correction_lookback_days": 7, "max_input_age_seconds": 172800},
+  "moneypuck_shots": {"cron": "39 10 * * *", "enabled": true, "correction_lookback_days": 7, "max_input_age_seconds": 172800},
+  "edge": {"cron": "59 */6 * * *", "enabled": true, "correction_lookback_days": 2, "max_input_age_seconds": 172800},
+  "datasets": {"cron": "49 12 * * *", "enabled": true, "correction_lookback_days": 0, "max_input_age_seconds": 172800}
+}
