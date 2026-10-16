@@ -9,6 +9,8 @@ __pycache__/
 *.bak
 
 backend/.pytest_cache/
+/backend/logs/
+/backend/artifacts/
 .coverage
 coverage/
 
@@ -25,4 +27,6 @@ frontend/*.tsbuildinfo
 **/.env.local
 **/.env.*.local
 /release intiavitive.md
+# Local planning documents and diagrams
+/planning/
 .venv/

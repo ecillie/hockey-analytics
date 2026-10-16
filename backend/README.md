@@ -171,6 +171,172 @@ React Router URLs working when opened or refreshed directly.
 The checked-in ingestion CSVs and scripts are excluded from the Vercel Function.
 Run ingestion from a trusted machine or a separate job using
 `requirements-dev.txt` and the direct Neon database URL.
+
+## Replacement pipeline coverage policy
+
+`app.jobs.shared.coverage` defines version 3 of the required/optional dataset
+and field baseline for the replacement pipelines. It is independent of database
+selection and has no network, upload, or scheduling side effects. Final scope
+review is recorded in the local `planning/required-data-coverage.md` matrix.
+The replacement scope excludes AHL collection, AHL roster evidence, and derived
+shot-map/shooting summaries. Individual shots, MoneyPuck statistics, and NHL EDGE
+season data remain in scope.
+
+Use `check_record_coverage(dataset, record)` after source normalization to report
+missing required and optional fields without changing the input. Missing values
+stay missing; measured zeros are accepted. This is an availability check, not
+the Phase 1 validation of types, units, identity, or source-specific rules.
+
+Use `assess_coverage(requested, observations, current_season=..., mode=...)` to
+check explicit dataset/season/game-type partitions. Each observation supplies an
+independently established expected population, accepted counts, collection
+completion, and validation/identity issues. A successful fetch or an unknown
+expected count cannot establish complete required coverage. Independently check
+exact identities, duplicates, and relationships before submitting evidence;
+equal row counts alone cannot detect a missing player replaced by a duplicate.
+
+```python
+from app.jobs.shared.coverage import (
+    CoverageObservation, CoveragePartition, assess_coverage,
+)
+
+partition = CoveragePartition("contract_seasons", season=2008)
+evidence = CoverageObservation(
+    partition=partition,
+    expected_records=10,  # Historical participation audit, not loaded row count.
+    accepted_records=8,
+    collection_complete=True,
+)
+report = assess_coverage([partition], [evidence], current_season=2026)
+assert not report.complete
+assert report.issues[0].code == "MISSING_RECORDS"
+```
+
+Required gaps block completion; optional gaps remain in `report.issues` without
+blocking. `report.complete` describes only the explicitly requested scope,
+not the whole release. It does not permit uploading invalid optional records.
+Callers must enumerate the entire required scope for a setup/release gate and
+derive transaction date windows, season upper bounds, and expected populations
+from validated source/reference evidence. Source operations are implemented in
+Phases 3–4 and the local runtime in Phase 6; live coverage auditing remains open.
+The Phase 2 setup gate enumerates selected partitions and requires explicit coverage evidence; a coverage result
+alone never authorizes checkpoint advancement or upload.
+
+Run the offline policy tests with:
+
+```bash
+PYTHONPATH=backend python -m pytest backend/tests/test_data_coverage.py --no-cov
+```
+
+# Replacement data contracts (Phase 1)
+
+Local PostgreSQL persistence, durable reservations, compatible consumer views,
+event-request consumption, job controls, and reproducible dataset processing are
+implemented in Phase 6. See [local persistence and dataset usage](../docs/local-persistence-datasets.md)
+for explicit initialization/identity transition, runtime configuration, consumer
+selection, recovery, and the remaining AWS/live-coverage gates. Logical contract
+version 3 adds immutable refresh-completion records.
+
+`app.jobs.shared.data_contracts` defines 34 logical record families, their keys,
+units, relationships, and correction/history requirements. Every coverage output
+has a contract. Validate normalized Python records or JSON without a database:
+
+```python
+from app.jobs.shared.data_contracts import validate_record
+
+record = validate_record("contract_seasons", {
+    "contract_id": 1, "player_id": 7, "season": 2025,
+    "cap_hit": 800_000_000, "is_slide": False,
+})
+```
+
+`app.jobs.shared.access_contracts` supplies injectable reader, transaction, and
+checkpoint interfaces plus immutable normalized write envelopes. Adapters must
+preserve revisions, atomically commit records/provenance/progress, reject stale
+revisions, isolate environments, and recover exact batch retries. The in-memory
+adapter lives in the test package; the real PostgreSQL adapter and consumer views
+are implemented in Phase 6, followed by Phase 9 AWS verification.
+
+`app.jobs.shared.consumer_contracts` defines all existing API query projections,
+maps all 18 endpoints, and defines the ML player-season/salary-cap reader shapes.
+Existing consumers and public contracts remain unchanged. The dictionary,
+relationship diagram, access requirements, compatibility checklist, and exported
+JSON schema are local planning artifacts under the ignored `planning/` directory.
+
+Run the offline contract checks with:
+
+```bash
+PYTHONPATH=backend python -m pytest --no-cov \
+  backend/tests/test_data_contracts.py \
+  backend/tests/test_access_contracts.py \
+  backend/tests/test_consumer_contracts.py
+```
+
+# Core data pipelines (Phase 3)
+
+`app.jobs.core_operations.core_operations()` supplies reusable NHL reference,
+profile, roster, identity-mapping, and basic-statistics operations, Cap Space
+contracts with a verified CapWages fallback, current/recent USA Today transactions,
+and conservative roster reconciliation. Accepted signings/extensions atomically
+include contract-refresh requests. Source failures, coverage gaps, and uncertain
+identities/status changes preserve accepted state.
+
+See [core pipeline configuration and source policies](../docs/core-data-pipelines.md)
+for runtime injection, source precedence, coverage limits, and an offline setup
+demonstration. Games, MoneyPuck, and EDGE are implemented through the separate
+Phase 4 registry below; local database integration is implemented in Phase 6, with
+Phase 9 AWS acceptance. No recurring schedules
+are enabled.
+
+# Game, MoneyPuck, and EDGE pipelines (Phase 4)
+
+`app.jobs.game_data_operations.game_data_operations()` registers independently runnable
+NHL schedules and completed-game details, MoneyPuck statistics and streamed shot
+archives, and dated NHL EDGE summaries/breakdowns. Optional audited EDGE samples
+remain explicitly limited. Coverage evidence, correction lookbacks, missing-player
+discovery/replay, and atomic recovery use the existing executor.
+
+See [configuration, coverage, and source limitations](../docs/game-tracking-pipelines.md)
+for the offline CLI and runtime integration. Database population, live schema and
+coverage audits, and AWS consumer integration remain Phase 9 gates; local adapters
+and consumer views are implemented in Phase 6.
+
+```bash
+PYTHONPATH=backend python3 -m pytest backend/tests/test_game_data_sources.py --no-cov
+```
+
+# Replacement execution foundation (Phase 2)
+
+API and replacement setup/job entrypoints now share structured backend logging.
+Set `LOG_LEVEL=INFO` (or `DEBUG` for batch/checkpoint details). Logs use stderr;
+in `ENV=dev`, optional `LOG_FILE=logs/backend.txt` also saves rotating text logs
+under `backend/logs/`. CLI summaries use stdout. See [backend logging and failure diagnosis](../docs/backend-logging.md)
+for request/run IDs, sanitized errors, configuration, and offline examples.
+
+Setup/population and independent job entrypoints now reuse a shared executor.
+It validates source candidates, retains provenance and review issues, isolates
+execution environments, reserves conflicting datasets, and atomically commits
+accepted batches with run counters and independent checkpoints. It supports
+selected reruns, backfills, correction refreshes, failed-batch resume, bounded
+source requests, and validation-only setup with no writes.
+
+[Execution foundation usage and recovery](../docs/execution-foundation.md)
+includes runnable offline demonstrations and the infrastructure/source adapter
+boundaries. Source operations are injected; unimplemented jobs report `deferred`
+and exit unsuccessfully. Core source adapters are implemented in Phase 3; selected
+local database connections and session-fenced locks are implemented in Phase 6;
+managed-service verification and recurring schedules remain later phases.
+
+```bash
+PYTHONPATH=backend python3 -m app.database_setup.run_setup \
+  --environment dev --current-season 2026 --first-season 2026 \
+  --jobs teams_seasons player_profiles team_rosters \
+  --runtime tests.execution_fixtures:create_runtime --validation-only
+```
+
+The fixture runtime uses an in-memory test store, accepts `dev` only, and makes
+no network requests. Existing supported ingestion commands remain available.
+
 # Contract ingestion
 
 Current/recent contracts come from CapWages' active-player index. Historical
@@ -198,3 +364,15 @@ eight. Run the dry-run and local Pavel Datsyuk smoke case
 (`--nhl-id 8467514`) before any production rollout. Production commands must
 be run only after reviewing the local coverage report; this repository never
 connects to production as part of tests or development.
+
+# Data update and manual refill workflows (Phase 7)
+
+Independent GitHub Actions workflows now wrap the existing refresh and dataset
+entrypoints. The full refill workflow is manual-dispatch-only, holds the complete
+database writer reservation across bounded partitions and final coverage checks,
+and supports explicit checkpoint-based manual continuation. Production schedules
+are disabled in code; nonproduction schedules require explicit opt-in.
+
+See [workflow configuration, local validation, and recovery](../docs/data-workflows.md)
+for approved refs/target guards, Environment secrets, per-job controls, artifact
+retention, population audits, timeout/runner-loss recovery, and remaining live gates.

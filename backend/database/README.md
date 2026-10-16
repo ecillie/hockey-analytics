@@ -1,5 +1,10 @@
 # TradeValue database
 
+The replacement pipeline now uses the PostgreSQL revision ledger and opt-in
+`pipeline_api` consumer views added by forward migration `20261015_0003`.
+See [Phase 6 persistence, identity transition, recovery, and datasets](../../docs/local-persistence-datasets.md).
+The existing tables and default consumer path remain available during transition.
+
 The PostgreSQL schema is managed by Alembic. `schema.sql` is the frozen input to
 the initial migration and must not be edited; future changes belong in new
 files under `backend/migrations/versions`. The schema keeps

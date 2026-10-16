@@ -95,10 +95,11 @@ frontend project.
 ## 4. Validate the release
 
 Before deploying schema-dependent code, run the GitHub Actions
-`Database migration` workflow for `nonprod`. The selected GitHub Environment
-must contain a direct, non-pooled `DATABASE_URL`. After validation, run it for
-`prod`; configure required reviewers on the GitHub `prod` Environment so this is
-a gated operation. The workflow serializes migrations per environment, applies
+`Database migration` workflow from the newest `Release-MAJOR.MINOR.PATCH`
+branch for `nonprod`. The selected GitHub Environment must contain a direct,
+non-pooled `DATABASE_URL`. After validation, run it from `Prod` for `prod`;
+configure required reviewers on the GitHub `prod` Environment so this is a
+gated operation. The workflow serializes migrations per environment, applies
 the current Alembic head with lock and statement timeouts, verifies the catalog,
 and runs database-backed API smoke checks. It never runs from application
 startup.
@@ -113,7 +114,7 @@ After both deployments succeed:
 
 Git-based deployments handle builds automatically. The repository CI workflows
 still run unit tests, lint, and the frontend production build before promotion.
-The `Dev`, `NonProd`, and `Prod` workflows each publish an environment-specific
-`required` check. Configure those checks as branch requirements and enable the
-automatic promotion cascade by following
-[CI and automatic promotion setup](./ci-promotion.md).
+The `Dev`, `Release`, and `Prod` workflows each publish an environment-specific
+`required` check. Configure those checks as branch requirements. Promotion to
+the newest release branch is automatic, while the final merge to `Prod` is
+manual. Follow [CI and release promotion setup](./ci-promotion.md).

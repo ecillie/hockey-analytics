@@ -1,0 +1,484 @@
+{
+  "franchises": [
+    {
+      "franchise_id": 1,
+      "name": "Test franchise"
+    }
+  ],
+  "teams": [
+    {
+      "team_id": 10,
+      "nhl_team_id": 20,
+      "name": "Testers",
+      "abbreviation": "TST",
+      "active": true,
+      "city": "Test City",
+      "franchise_id": 1
+    },
+    {
+      "team_id": 11,
+      "nhl_team_id": 21,
+      "name": "Visitors",
+      "abbreviation": "VIS",
+      "active": true
+    }
+  ],
+  "seasons": [
+    {
+      "season": 2025,
+      "end_year": 2026,
+      "label": "2025-26",
+      "salary_cap": 9550000000
+    }
+  ],
+  "team_seasons": [
+    {
+      "team_id": 10,
+      "season": 2025,
+      "name": "Testers",
+      "abbreviation": "TST",
+      "franchise_id": 1
+    }
+  ],
+  "player_profiles": [
+    {
+      "player_id": 7,
+      "nhl_player_id": 1007,
+      "first_name": "Test",
+      "last_name": "Skater",
+      "birth_date": "2000-01-01",
+      "active": true,
+      "position": "C",
+      "nationality": "CAN",
+      "shoots_catches": "L"
+    },
+    {
+      "player_id": 8,
+      "nhl_player_id": 1008,
+      "first_name": "Other",
+      "last_name": "Skater",
+      "active": false
+    }
+  ],
+  "memberships": [
+    {
+      "membership_id": 1,
+      "player_id": 7,
+      "team_id": 10,
+      "season": 2025
+    }
+  ],
+  "source_mappings": [
+    {
+      "source": "NHL",
+      "source_id": "1007",
+      "entity_type": "player",
+      "canonical_id": 7
+    }
+  ],
+  "contracts": [
+    {
+      "contract_id": 1,
+      "player_id": 7,
+      "start_season": 2025,
+      "end_season": 2025,
+      "term_years": 1,
+      "is_entry_level": false,
+      "signed_on": "2025-07-01",
+      "signing_team_id": 10,
+      "total_value": 800000000,
+      "average_value": 800000000,
+      "expiry_status": "UFA"
+    }
+  ],
+  "contract_seasons": [
+    {
+      "contract_id": 1,
+      "player_id": 7,
+      "season": 2025,
+      "cap_hit": 800000000,
+      "is_slide": false,
+      "owning_team_id": 10
+    }
+  ],
+  "basic_stats": [
+    {
+      "player_id": 7,
+      "season": 2025,
+      "game_type": 2,
+      "team_scope": "TOTAL",
+      "source": "Cap Space",
+      "stat_kind": "skater",
+      "games_played": 82,
+      "goals": 30,
+      "assists": 50,
+      "points": 80,
+      "shots": 200,
+      "shooting_percentage": 0.15
+    }
+  ],
+  "transactions": [
+    {
+      "source": "USA Today",
+      "source_id": "trade:7:2026-10-09",
+      "event_date": "2026-10-09",
+      "event_type": "trade",
+      "participants": [
+        {
+          "player_id": 7
+        },
+        {
+          "player_id": 8
+        }
+      ],
+      "from_team_id": 11,
+      "to_team_id": 10
+    },
+    {
+      "source": "usatoday",
+      "source_id": "fixture-signing",
+      "event_date": "2026-10-10",
+      "event_type": "SIGNING",
+      "participants": [
+        {
+          "player_id": 7
+        }
+      ],
+      "to_team_id": 10
+    }
+  ],
+  "roster_state": [
+    {
+      "player_id": 7,
+      "status": "ACTIVE",
+      "evidence": [
+        "00000000-0000-0000-0000-000000000001"
+      ],
+      "team_id": 10,
+      "effective_date": "2026-10-10"
+    }
+  ],
+  "roster_observations": [
+    {
+      "snapshot_id": "00000000-0000-0000-0000-000000000001",
+      "player_id": 7,
+      "team_id": 10,
+      "observed_at": "2026-10-10T12:00:00Z",
+      "complete_scope": true,
+      "source": "NHL"
+    }
+  ],
+  "roster_overrides": [
+    {
+      "override_id": "00000000-0000-0000-0000-000000000002",
+      "player_id": 7,
+      "status": "LTIR",
+      "effective_from": "2026-10-10",
+      "reason": "Confirmed designation",
+      "actor": "fixture reviewer",
+      "team_id": 10
+    }
+  ],
+  "games": [
+    {
+      "game_id": 1,
+      "nhl_game_id": 2025020001,
+      "season": 2025,
+      "game_type": 2,
+      "home_team_id": 10,
+      "away_team_id": 11,
+      "start_time": "2025-10-10T19:00:00-04:00",
+      "status": "FINAL",
+      "home_score": 3,
+      "away_score": 2
+    }
+  ],
+  "game_stats": [
+    {
+      "game_id": 1,
+      "team_id": 10,
+      "entity_id": 7,
+      "entity_type": "player",
+      "goals": 1,
+      "assists": 0,
+      "shots": 2,
+      "time_on_ice": 1200
+    }
+  ],
+  "game_events": [
+    {
+      "game_id": 1,
+      "event_id": "101",
+      "source": "NHL",
+      "event_type": "shot-on-goal",
+      "period": 1,
+      "time_in_period": 120,
+      "order": 1,
+      "player_id": 7,
+      "team_id": 10,
+      "x": 80,
+      "y": 5,
+      "coordinate_system": "NHL rink feet, home orientation"
+    }
+  ],
+  "moneypuck_skater_stats": [
+    {
+      "player_id": 7,
+      "season": 2025,
+      "game_type": 2,
+      "team_scope": "TOTAL",
+      "source": "MoneyPuck",
+      "situation": "all",
+      "ice_time": 3600,
+      "expected_goals": 18.5,
+      "game_score": 2,
+      "on_ice_expected_goals_pct": 0.55
+    }
+  ],
+  "moneypuck_goalie_stats": [
+    {
+      "player_id": 8,
+      "season": 2025,
+      "game_type": 2,
+      "team_scope": "TOTAL",
+      "source": "MoneyPuck",
+      "situation": "all",
+      "ice_time": 3600,
+      "expected_goals_against": 5,
+      "goals_against": 4
+    }
+  ],
+  "moneypuck_team_stats": [
+    {
+      "team_id": 10,
+      "season": 2025,
+      "game_type": 2,
+      "source": "MoneyPuck",
+      "situation": "all",
+      "ice_time": 3600,
+      "expected_goals_for": 5,
+      "expected_goals_against": 4
+    }
+  ],
+  "moneypuck_line_stats": [
+    {
+      "team_id": 10,
+      "season": 2025,
+      "game_type": 2,
+      "source": "MoneyPuck",
+      "situation": "all",
+      "ice_time": 3600,
+      "expected_goals_for": 5,
+      "expected_goals_against": 4,
+      "player_ids": [
+        8,
+        7
+      ]
+    }
+  ],
+  "shots": [
+    {
+      "shot_id": "mp:1",
+      "game_id": 1,
+      "season": 2025,
+      "game_type": 2,
+      "source": "MoneyPuck",
+      "outcome": "SAVE",
+      "player_id": 7,
+      "team_id": 10,
+      "x": 80,
+      "y": 5,
+      "coordinate_system": "MoneyPuck adjusted rink feet",
+      "expected_goals": 0.1
+    }
+  ],
+  "edge_summaries": [
+    {
+      "entity_id": 7,
+      "entity_type": "player",
+      "season": 2025,
+      "game_type": 2,
+      "observed_at": "2026-10-10T12:00:00Z",
+      "metrics": {
+        "top_speed": {
+          "value": 23.5,
+          "unit": "mph",
+          "definition": "source-provided maximum skating speed"
+        }
+      }
+    }
+  ],
+  "edge_games": [
+    {
+      "entity_id": 7,
+      "entity_type": "player",
+      "season": 2025,
+      "game_type": 2,
+      "observed_at": "2026-10-10T12:00:00Z",
+      "metrics": {
+        "top_speed": {
+          "value": 23.5,
+          "unit": "mph",
+          "definition": "source-provided maximum skating speed"
+        }
+      },
+      "game_id": 1
+    }
+  ],
+  "edge_events": [
+    {
+      "entity_id": 7,
+      "entity_type": "player",
+      "season": 2025,
+      "game_type": 2,
+      "observed_at": "2026-10-10T12:00:00Z",
+      "metrics": {
+        "top_speed": {
+          "value": 23.5,
+          "unit": "mph",
+          "definition": "source-provided maximum skating speed"
+        }
+      },
+      "game_id": 1,
+      "event_id": "speed:101"
+    }
+  ],
+  "datasets": [
+    {
+      "dataset_id": "skater-seasons",
+      "version": "v1",
+      "input_revisions": [
+        {
+          "dataset": "basic_stats",
+          "record_key": [
+            "Cap Space",
+            7,
+            2025,
+            2,
+            "TOTAL",
+            null,
+            "skater"
+          ],
+          "revision": 1,
+          "content_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "cutoff": "2026-10-10T12:00:00Z",
+      "row_count": 1,
+      "quality_results": {
+        "coverage": "passed"
+      },
+      "schema_version": "1",
+      "transformation_version": "fixture-1",
+      "feature_definitions": {
+        "points": "goals+assists"
+      },
+      "scope": {
+        "season": 2025,
+        "game_type": 2
+      },
+      "content_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "point_in_time_supported": false
+    }
+  ],
+  "source_observations": [
+    {
+      "observation_id": "00000000-0000-0000-0000-000000000001",
+      "source": "NHL",
+      "source_key": "roster:TST",
+      "dataset": "roster_state",
+      "observed_at": "2026-10-10T12:00:00Z",
+      "content_digest": "667c7722973b710b1e17132f83acc09c37a1b82488031797baacfcb57cbeb2f6",
+      "transformation_version": "fixture-1",
+      "scope": {
+        "team_id": 10
+      },
+      "payload": {
+        "player_id": 1007
+      }
+    }
+  ],
+  "pipeline_runs": [
+    {
+      "run_id": "00000000-0000-0000-0000-000000000002",
+      "job": "rosters",
+      "environment": "dev",
+      "mode": "refresh",
+      "scope": {
+        "team_id": 10
+      },
+      "status": "succeeded",
+      "started_at": "2026-10-10T12:00:00Z",
+      "finished_at": "2026-10-10T12:01:00Z",
+      "counters": {
+        "read": 1,
+        "accepted": 1
+      },
+      "contract_version": "1",
+      "coverage_policy_version": "3"
+    }
+  ],
+  "checkpoints": [
+    {
+      "environment": "dev",
+      "job": "rosters",
+      "scope_key": "team:10",
+      "cursor": {
+        "page": 1
+      },
+      "committed_run_id": "00000000-0000-0000-0000-000000000002",
+      "committed_at": "2026-10-10T12:01:00Z"
+    }
+  ],
+  "validation_issues": [
+    {
+      "issue_id": "00000000-0000-0000-0000-000000000001",
+      "run_id": "00000000-0000-0000-0000-000000000002",
+      "dataset": "player_profiles",
+      "observation_id": "00000000-0000-0000-0000-000000000001",
+      "severity": "warning",
+      "code": "AMBIGUOUS_IDENTITY",
+      "message": "Hold unresolved source ID",
+      "disposition": "held"
+    }
+  ],
+  "model_versions": [
+    {
+      "model_id": 1,
+      "version": "existing-v1",
+      "model_type": "skater_value",
+      "active": true,
+      "created_at": "2026-10-10T12:00:00Z"
+    }
+  ],
+  "predictions": [
+    {
+      "prediction_id": 1,
+      "player_id": 7,
+      "model_id": 1,
+      "target_season": 2026,
+      "input_features": {
+        "predicted_hockey_value": 2.25
+      },
+      "created_at": "2026-10-10T12:00:00Z"
+    }
+  ],
+  "refresh_requests": [
+    {
+      "request_id": "1111111111111111111111111111111111111111111111111111111111111111",
+      "job": "contracts",
+      "player_id": 7,
+      "cause_source": "usatoday",
+      "cause_id": "fixture-signing",
+      "cause_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+      "requested_at": "2026-10-10T12:00:00Z"
+    }
+  ],
+  "refresh_completions": [
+    {
+      "request_id": "1111111111111111111111111111111111111111111111111111111111111111",
+      "run_id": "00000000-0000-0000-0000-000000000002",
+      "completed_at": "2026-10-10T12:03:00Z"
+    }
+  ]
+}
