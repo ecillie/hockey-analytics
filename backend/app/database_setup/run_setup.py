@@ -57,14 +57,14 @@ def plan_setup(*, selected, environment, target_environment, current_season,
     return tuple(configurations)
 
 
-def run_setup(executor, configurations):
+def run_setup(executor, configurations, *, max_partitions=None, finalize=None):
     configurations = tuple(configurations)
     started = perf_counter()
     with log_context(component="setup", setup_run_id=uuid4(), environment=executor.target_environment,
                      **workflow_context()):
         log_event(logger, "setup.started", requested_jobs=len(configurations))
         try:
-            report = _run_setup(executor, configurations)
+            report = _run_setup(executor, configurations, max_partitions=max_partitions, finalize=finalize)
         except BaseException as exc:
             log_event(logger, "setup.error", level=logging.ERROR, error=exc)
             log_event(logger, "setup.finished", level=logging.ERROR, complete=False,
@@ -78,9 +78,11 @@ def run_setup(executor, configurations):
         return report
 
 
-def _run_setup(executor, configurations):
+def _run_setup(executor, configurations, *, max_partitions=None, finalize=None):
     if not configurations:
         raise ValueError("Setup requires selected work")
+    if max_partitions is not None and (type(max_partitions) is not int or max_partitions < 1):
+        raise ValueError("Partition limit must be a positive integer")
     environments = {config.environment for config in configurations}
     dry_modes = {config.mode == "validation" for config in configurations}
     if len(environments) != 1 or len(dry_modes) != 1 or any(config.mode not in ("initial", "backfill", "validation") for config in configurations):
@@ -102,12 +104,26 @@ def _run_setup(executor, configurations):
     # Hold all affected scopes through setup to exclude refreshes between batches/jobs.
     try:
         with reservation as session:
+            processed = 0
             for config in configurations:
+                # Completed durable partitions must not exhaust a continuation's
+                # quota, or every manual resume would stop at the same boundary.
+                saved = executor.store.checkpoint(config.environment, config.job, config.scope_key,
+                    snapshot=executor.store.snapshot(config.environment, accepted_before=executor.now())) if config.resume else None
+                already_complete = bool(saved and saved[0].cursor.get("complete") is True)
+                if max_partitions is not None and processed >= max_partitions and not already_complete:
+                    break
                 report = executor.run(config, session=session, overlay=overlay if dry else None,
                                       validation_snapshot=snapshot)
                 reports.append(report)
+                processed += not already_complete
                 if not report.complete:
                     break
+            result = SetupReport(tuple(reports), configurations)
+            # Final coverage reads share the whole-refill reservation. No
+            # refresh can change the accepted view between loading and the gate.
+            if result.complete and finalize is not None:
+                finalize(result)
     except RevisionConflict as exc:
         log_event(logger, "setup.error", level=logging.WARNING, error=exc)
         reports.append(terminal_report(configurations[0], "deferred", executor.now(), str(exc)))

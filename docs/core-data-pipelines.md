@@ -19,9 +19,9 @@ same execution path in initial, refresh, backfill, and validation modes.
 Games, MoneyPuck, and EDGE are registered separately through
 [the Phase 4 registry](game-tracking-pipelines.md). [Phase 6 infrastructure](local-persistence-datasets.md)
 provides local PostgreSQL persistence and explicitly configured dataset builds.
-AWS acceptance remains Phase 9. Recurring
-workflows are created in Phase 7, verified live in Phase 10, and enabled in
-production in Phase 11.
+AWS acceptance remains Phase 9. [Phase 7 workflow definitions](data-workflows.md)
+are implemented locally; live verification remains Phase 10 and production
+schedule activation remains Phase 11.
 
 ## Offline usage
 
