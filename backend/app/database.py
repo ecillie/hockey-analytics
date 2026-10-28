@@ -7,16 +7,12 @@ otherwise mutate the schema.
 from __future__ import annotations
 
 from contextlib import contextmanager
-import logging
 from typing import Iterator
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import get_database_settings
-from app.observability import log_event
-
-logger = logging.getLogger(__name__)
 
 
 settings = get_database_settings()
@@ -27,45 +23,22 @@ engine = create_engine(
     max_overflow=settings.max_overflow,
     pool_recycle=settings.pool_recycle_seconds,
     pool_use_lifo=True,
-    hide_parameters=True,
-    connect_args={"connect_timeout": settings.connect_timeout_seconds,
-                  "options": f"-csearch_path={settings.query_schema}"},
+    connect_args={"connect_timeout": settings.connect_timeout_seconds},
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
-
-
-if settings.query_schema == "pipeline_api":
-    @event.listens_for(engine, "connect")
-    def verify_pipeline_environment(connection, _record):
-        # Every physical consumer connection checks the migrated target binding,
-        # including health requests; a URL label cannot authorize another target.
-        cursor = connection.cursor()
-        try:
-            cursor.execute("SELECT environment FROM public.pipeline_target")
-            target = cursor.fetchone()
-            if target is None or target[0] != settings.environment.value:
-                from sqlalchemy.exc import DisconnectionError
-                raise DisconnectionError("Database environment binding differs")
-        finally:
-            cursor.close()
-            connection.rollback()
 
 
 def init_db() -> None:
     """Verify that the migrated schema is reachable and present."""
     with engine.connect() as connection:
         players_table = connection.execute(
-            text("SELECT to_regclass(:players)"), {"players": f"{settings.query_schema}.players"}
+            text("SELECT to_regclass('public.players')")
         ).scalar_one()
     if players_table is None:
         raise RuntimeError(
             "Database schema is missing; run Alembic upgrade head first"
         )
-    if settings.query_schema == "pipeline_api":
-        from database.pipeline.store import PostgresStore
-        PostgresStore(engine, settings.environment.value)
-    log_event(logger, "database.schema_checked", level=logging.DEBUG, environment=settings.environment.value)
 
 
 def connect_database():
@@ -78,17 +51,10 @@ def connect_database():
             "run 'pip install -r backend/requirements.txt'"
         ) from exc
 
-    try:
-        connection = psycopg2.connect(
-            settings.database_url,
-            connect_timeout=settings.connect_timeout_seconds,
-        )
-    except Exception as exc:
-        log_event(logger, "database.connection_failed", level=logging.ERROR, error=exc,
-                  environment=settings.environment.value)
-        raise
-    log_event(logger, "database.connected", level=logging.DEBUG, environment=settings.environment.value)
-    return connection
+    return psycopg2.connect(
+        settings.database_url,
+        connect_timeout=settings.connect_timeout_seconds,
+    )
 
 
 @contextmanager
@@ -98,16 +64,8 @@ def database_transaction() -> Iterator[object]:
     try:
         yield connection
         connection.commit()
-        log_event(logger, "database.committed", level=logging.DEBUG, environment=settings.environment.value)
-    except BaseException as exc:
-        try:
-            connection.rollback()
-        except Exception as rollback_error:
-            log_event(logger, "database.rollback_failed", level=logging.ERROR, error=rollback_error,
-                      environment=settings.environment.value)
-            raise
-        log_event(logger, "database.rolled_back", level=logging.ERROR, error=exc,
-                  environment=settings.environment.value)
+    except Exception:
+        connection.rollback()
         raise
     finally:
         connection.close()

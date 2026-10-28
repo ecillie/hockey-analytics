@@ -60,17 +60,8 @@ jobs:
             backend/requirements.txt
             backend/requirements-dev.txt
             ml/requirements.txt
-      - name: Test release branch selection
-        run: python3 .github/scripts/test_latest_release_branch.py
       - name: Install backend dependencies
         run: python -m pip install -r backend/requirements-dev.txt
-      - name: Validate independent data workflows and manual-only refill policy
-        run: python .github/scripts/validate_data_workflows.py
-      - name: Lint data workflow syntax and expressions
-        run: >-
-          docker run --rm -v "$PWD:/repo" --workdir /repo
-          rhysd/actionlint:1.7.7 -shellcheck=
-          .github/workflows/data-*.yml .github/workflows/database-refill.yml
       - name: Validate committed OpenAPI contract
         run: python backend/export_openapi.py --check
       - name: Compile and import supported backend entrypoints

@@ -14,8 +14,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.routes import router
 from app.api.service import ApiProblem
 from app.config import get_api_settings
-from app.observability import configure_logging, log_event
-from app.request_logging import RequestLoggingMiddleware
 
 
 logger = logging.getLogger(__name__)
@@ -30,7 +28,6 @@ def _error(status: int, code: str, message: str, details=None) -> JSONResponse:
 
 def create_app() -> FastAPI:
     settings = get_api_settings()
-    configure_logging()
     application = FastAPI(title="TradeValue API", version="1.0.0")
     application.add_middleware(
         CORSMiddleware,
@@ -40,16 +37,13 @@ def create_app() -> FastAPI:
         allow_methods=["GET"],
         allow_headers=["Accept", "Content-Type"],
     )
-    application.add_middleware(RequestLoggingMiddleware)
 
     @application.exception_handler(ApiProblem)
     async def api_problem_handler(_request: Request, exc: ApiProblem):
-        log_event(logger, "api.problem", level=logging.WARNING, status_code=exc.status)
         return _error(exc.status, exc.code, exc.message, exc.details)
 
     @application.exception_handler(RequestValidationError)
     async def validation_handler(_request: Request, exc: RequestValidationError):
-        log_event(logger, "api.validation_failed", level=logging.WARNING, status_code=400)
         details: dict[str, list[str]] = {}
         for issue in exc.errors():
             field = str(issue["loc"][-1])
@@ -58,13 +52,12 @@ def create_app() -> FastAPI:
 
     @application.exception_handler(SQLAlchemyError)
     async def database_handler(_request: Request, exc: SQLAlchemyError):
-        log_event(logger, "api.database_error", level=logging.ERROR, error=exc, status_code=503)
+        logger.exception("Database request failed", exc_info=exc)
         return _error(503, "DATABASE_UNAVAILABLE", "The data service is temporarily unavailable.")
 
     @application.exception_handler(Exception)
     async def unhandled_handler(_request: Request, exc: Exception):
-        # The request middleware logs the exception while its correlation context
-        # is still active; ServerErrorMiddleware invokes this handler afterward.
+        logger.exception("Unhandled API error", exc_info=exc)
         return _error(500, "INTERNAL_ERROR", "The API could not complete this request.")
 
     application.include_router(router)
