@@ -174,13 +174,11 @@ coverage regressions and should be raised as each subsystem gains tests.
 Development follows:
 
 ```text
-Dev → latest Release-MAJOR.MINOR.PATCH → Prod
+Dev → NonProd → Prod
 ```
 
-GitHub Actions finds the release branch with the greatest major, then minor,
-then patch number. It automatically promotes through that release branch and
-opens the final pull request to `Prod`; the production merge is manual.
-See [CI and release promotion setup](docs/ci-promotion.md) for the required
+GitHub Actions handles promotion between environments.
+See [CI and automatic promotion setup](docs/ci-promotion.md) for the required
 GitHub repository settings and rollout sequence.
 
 ## Roadmap
@@ -194,19 +192,15 @@ GitHub repository settings and rollout sequence.
 * Reproducible Python 3.12 and Node.js 24 environments
 * CI promotion workflow, coverage gates, and Vercel/Neon deployment configuration
 
-### Next milestone: AWS readiness (Release 1.1.0 Phase 8)
+### Next milestone: live NonProd vertical slice
 
-The replacement data pipeline's Phases 1–7 are implemented and verified locally:
-logical contracts, source jobs, logging, PostgreSQL persistence, compatible API/ML
-queries, reproducible datasets, and guarded GitHub Actions workflows. See
-[data workflows and recovery](docs/data-workflows.md) for independent updates,
-dataset builds, and the manual-only full refill. Production schedules are disabled.
-
-Phase 8 prepares deployment packaging, infrastructure configuration, environment
-validation, and operational runbooks, then passes all local readiness checks before
-AWS provisioning or connections. AWS population, live verification, and launch
-remain Phases 9–11. The earlier Vercel/Neon deployment configuration remains available;
-it does not establish AWS launch readiness.
+1. Provision the NonProd Neon database, apply the schema, and load a validated dataset.
+2. Deploy the backend and verify health, seasons, players, teams, contracts, cap, search,
+   overview, and comparison endpoints against real data.
+3. Deploy the frontend with `VITE_USE_MOCK_API=false`, validate CORS and deep links, and
+   complete an end-to-end smoke test.
+4. Add live API contract tests for response shapes, null handling, traded-player totals,
+   pagination, sorting, and error envelopes.
 
 ### Following milestones
 
