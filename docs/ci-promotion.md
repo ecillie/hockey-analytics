@@ -3,16 +3,16 @@
 TradeValue uses four workflows:
 
 - `Route pull request` reads the PR title and sets its base to the highest
-  matching branch. A title containing the standalone word `hotfix`, regardless
-  of case, targets the highest `hotfix/x.y.z` branch. Every other title targets
-  the highest numeric `x.y.z` release branch. For example, with release
-  `1.0.1` and hotfix `hotfix/1.0.2`, `[hotfix] Fix cap calculation` targets
-  `hotfix/1.0.2`, while `Add player search` targets `1.0.1`. The router fails
-  clearly when the required branch does not exist.
+  matching branch. A title starting with `Hotfix` (case insensitive) targets
+  the highest `Hotfix-x.y.z` branch. A title containing `hotfix` later fails;
+  every other title targets the highest `Release-x.y.z` branch. For example,
+  with `Release-1.0.1` and `Hotfix-1.0.2`, `Hotfix: Fix cap calculation`
+  targets `Hotfix-1.0.2`, while `Add player search` targets `Release-1.0.1`.
+  The router fails clearly when the required branch does not exist.
 - `Dev` still validates the existing integration branch. A successful direct
-  push to `Dev` opens a promotion PR into the highest numeric release branch.
-- `Release` validates and auto-merges pull requests into `x.y.z` and
-  `hotfix/x.y.z` branches. Its required check also verifies that the PR title
+  push to `Dev` opens a promotion PR into the highest `Release-x.y.z` branch.
+- `Release` validates and auto-merges pull requests into `Release-x.y.z` and
+  `Hotfix-x.y.z` branches. Its required check also verifies that the PR title
   matches the branch type and that the base is the latest branch of that type.
   After a successful push with commits ahead of `Prod`, it opens or updates a
   promotion PR into `Prod`.
@@ -21,24 +21,24 @@ TradeValue uses four workflows:
 
 ## Release and patch branches
 
-Create the next ordinary release branch with an exact numeric name such as
-`1.1.0`. Use the latest deployed release or `Prod` as its starting point, and
-include any intended work still present only on `Dev`. The highest numeric
-branch receives ordinary PRs, so create a higher branch only when it should
-become the active destination. Numeric sorting means `1.10.0` follows `1.9.0`.
-Dev pushes target the same highest numeric branch. An older Dev promotion PR
+Create the next ordinary release branch as `Release-x.y.z`, such as
+`Release-1.1.0`. Use the latest deployed release or `Prod` as its starting
+point, and include any intended work still present only on `Dev`. The highest
+versioned release branch receives ordinary PRs, so create a higher branch only
+when it should become the active destination. Numeric sorting means
+`Release-1.10.0` follows `Release-1.9.0`.
+Dev pushes target the same highest release branch. An older Dev promotion PR
 cannot pass the release check once a newer branch becomes active.
 
 For an urgent fix to the version already in production, branch from `Prod` as
-`hotfix/x.y.z`, where `x.y.z` is the next patch version of the production line.
+`Hotfix-x.y.z`, where `x.y.z` is the next patch version of the production line.
 For example, while `1.1.0` is the active release and `1.0.0` is in production,
-name the patch branch `hotfix/1.0.1`. Put `hotfix` in the fix PR title; the
+name the patch branch `Hotfix-1.0.1`. Start the fix PR title with `Hotfix`; the
 router selects the highest hotfix branch automatically. Start the fix's working
 branch from that hotfix branch so the PR contains only the intended patch.
-Omit `hotfix` from
-ordinary PR titles so they target the current numeric release. The hotfix
-branch's push opens a `hotfix/1.0.1 → Prod` PR for manual merge. Forward-port
-the fix to the active numeric release with a separate PR so it is retained in
+Omit `hotfix` from ordinary PR titles so they target the current release. The
+hotfix branch's push opens a `Hotfix-1.0.1 → Prod` PR for manual merge. Forward-port
+the fix to the active release with a separate PR so it is retained in
 the next ordinary release.
 
 Create the hotfix branch from `Prod` only after this workflow has reached
@@ -49,6 +49,12 @@ push has no commits ahead of `Prod`, so it creates no promotion PR.
 The Dev, Release, and Prod workflows call `_reusable-ci.yml`, so backend tests,
 ML tests, frontend lint, frontend tests, and the frontend production build use
 the same implementation.
+On Dev and release pull requests, CI selects jobs by changed paths:
+`frontend/**` runs the frontend job, `backend/**` runs the backend job, and
+`ml/**` runs the ML job. Shared configuration, OpenAPI contract, and workflow
+changes run every affected job. Prod pull requests and pushes to Dev, release,
+hotfix, and Prod branches run all three jobs. Each selected job runs its full
+local suite because coverage thresholds apply to the whole area.
 Frontend promotion requires 100% statement, branch, function, and line coverage
 for production runtime modules. CI publishes the HTML, JSON, LCOV, and Cobertura
 reports in the `frontend-coverage` artifact for release review and auditability.
@@ -118,8 +124,8 @@ contents and packages**.
 
 Open **Settings → Rules → Rulesets** and create three separate active branch
 rulesets. A single ruleset cannot be used because each destination branch has a
-different required check. The Release ruleset targets both numeric release
-branches and `hotfix/` branches.
+different required check. The Release ruleset targets both versioned release
+branches and `Hotfix-` branches.
 
 Configure each ruleset as follows:
 
@@ -140,7 +146,7 @@ Add only the check matching the target branch:
 | Ruleset target | Required check |
 | --- | --- |
 | `Dev` | `Dev required` |
-| `*.*.*` and `hotfix/*.*.*` | `Release required` |
+| `Release-*.*.*` and `Hotfix-*.*.*` | `Release required` |
 | `Prod` | `Prod required` |
 
 GitHub ruleset patterns are globs, not strict version validators. The Release
@@ -158,21 +164,21 @@ and [required-status-check documentation](https://docs.github.com/en/repositorie
 
 1. Temporarily turn off repository auto-merge before updating `Prod`; its old
    workflow still enables auto-merge until the replacement reaches that branch.
-   Merge these workflow changes into `Dev`, create the first numeric release
-   branch from that commit, and configure its ruleset. Manually merge the
+   Merge these workflow changes into `Dev`, promote them to the current
+   `Release-x.y.z` branch, and configure its ruleset. Manually merge the
    workflow update into the default branch (`Prod`) after `Prod required`
    passes, then turn repository auto-merge back on for release PRs. Disable
    auto-merge on any already open Prod PRs and retire the old `NonProd` ruleset
    after its open PRs are handled. The router starts working once it is on
    `Prod`.
 2. Open an ordinary PR with a title that omits `hotfix`. Confirm the router
-   targets the highest numeric release branch, `Release required` succeeds,
+   targets the highest `Release-x.y.z` branch, `Release required` succeeds,
    and GitHub auto-merges it into that branch.
 3. Confirm the release branch opens a PR into `Prod`, `Prod required` succeeds,
    and a person merges it manually.
-4. Create a hotfix branch from `Prod`. Open a PR with `hotfix` in its title and
-   confirm the router targets the highest hotfix branch. Confirm its promotion
-   PR into `Prod` also waits for manual merge.
+4. Create a hotfix branch from `Prod`. Open a PR whose title starts with
+   `Hotfix` and confirm the router targets the highest hotfix branch. Confirm
+   its promotion PR into `Prod` also waits for manual merge.
 
 If a required job fails or is cancelled, the destination pull request remains
 open. Rerun the failed jobs or push a corrective commit. Prod promotion remains
@@ -186,7 +192,8 @@ the automatic branch cascade. Create GitHub Environments named `nonprod` and
 configure required reviewers on `prod`.
 
 Before releasing schema-dependent code, manually dispatch the `Database
-migration` workflow against `nonprod` on the current numeric release branch,
+migration` workflow against `nonprod` on the current `Release-x.y.z` branch (or
+the `Hotfix-x.y.z` branch for a patch),
 validate the application, and then
 dispatch it against `prod`. Per-environment concurrency prevents overlapping
 migration runs. The workflow records the starting and ending revision, applies

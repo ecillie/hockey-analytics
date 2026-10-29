@@ -3,9 +3,9 @@ name: Release
 on:
   pull_request:
     types: [opened, reopened, synchronize, edited]
-    branches: ['*.*.*', 'hotfix/*.*.*']
+    branches: ['Release-*.*.*', 'Hotfix-*.*.*']
   push:
-    branches: ['*.*.*', 'hotfix/*.*.*']
+    branches: ['Release-*.*.*', 'Hotfix-*.*.*']
   workflow_dispatch:
 
 concurrency:
@@ -14,6 +14,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   validate-branch:
@@ -28,17 +29,21 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           set -euo pipefail
-          if [[ ! "$TARGET_BRANCH" =~ ^(hotfix/)?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Expected an x.y.z or hotfix/x.y.z branch: $TARGET_BRANCH"
+          if [[ ! "$TARGET_BRANCH" =~ ^(Release|Hotfix)-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected a Release-x.y.z or Hotfix-x.y.z branch: $TARGET_BRANCH"
             exit 1
           fi
 
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
             shopt -s nocasematch
             if [[ "$PR_TITLE" =~ (^|[^[:alnum:]])hotfix([^[:alnum:]]|$) ]]; then
-              PREFIX=hotfix/
+              [[ "$PR_TITLE" =~ ^hotfix([^[:alnum:]]|$) ]] || {
+                echo "Hotfix PR titles must start with Hotfix."
+                exit 1
+              }
+              PREFIX=Hotfix-
             else
-              PREFIX=
+              PREFIX=Release-
             fi
             EXPECTED_BRANCH=$(gh api "repos/${{ github.repository }}/branches" --paginate \
               --jq '.[].name' | awk -v prefix="$PREFIX" '$0 ~ ("^" prefix "[0-9]+[.][0-9]+[.][0-9]+$")' \
@@ -98,8 +103,7 @@ jobs:
           RELEASE_BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          ENCODED_BRANCH=${RELEASE_BRANCH//\//%2F}
-          AHEAD=$(gh api "repos/${{ github.repository }}/compare/Prod...$ENCODED_BRANCH" --jq '.ahead_by')
+          AHEAD=$(gh api "repos/${{ github.repository }}/compare/Prod...$RELEASE_BRANCH" --jq '.ahead_by')
           if [ "$AHEAD" -eq 0 ]; then
             echo "$RELEASE_BRANCH has no commits to promote to Prod."
             exit 0

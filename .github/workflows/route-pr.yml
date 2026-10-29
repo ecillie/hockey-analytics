@@ -27,15 +27,19 @@ jobs:
           set -euo pipefail
 
           if [ "$PR_BASE" = "Prod" ] && \
-             [[ "$PR_HEAD" =~ ^(hotfix/)?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+             [[ "$PR_HEAD" =~ ^(Release|Hotfix)-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             exit 0
           fi
 
           shopt -s nocasematch
           if [[ "$PR_TITLE" =~ (^|[^[:alnum:]])hotfix([^[:alnum:]]|$) ]]; then
-            PREFIX=hotfix/
+            [[ "$PR_TITLE" =~ ^hotfix([^[:alnum:]]|$) ]] || {
+              echo "Hotfix PR titles must start with Hotfix."
+              exit 1
+            }
+            PREFIX=Hotfix-
           else
-            PREFIX=
+            PREFIX=Release-
           fi
 
           TARGET_BRANCH=$(gh api "repos/${{ github.repository }}/branches" --paginate \

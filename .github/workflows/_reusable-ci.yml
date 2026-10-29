@@ -5,10 +5,45 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
+  changes:
+    name: Select CI areas
+    runs-on: ubuntu-latest
+    outputs:
+      ml: ${{ steps.select.outputs.ml }}
+      backend: ${{ steps.select.outputs.backend }}
+      frontend: ${{ steps.select.outputs.frontend }}
+    steps:
+      - name: Select affected areas
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" != pull_request || "${GITHUB_BASE_REF:-}" == Prod ]]; then
+            for area in ml backend frontend; do echo "$area=true" >> "$GITHUB_OUTPUT"; done
+            exit 0
+          fi
+
+          files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --paginate --jq '.[].filename')
+          shared=false
+          if grep -Eq '^(\.github/workflows/|docs/openapi\.json$|\.python-version$|\.nvmrc$|constraints\.txt$|pyproject\.toml$)' <<< "$files"; then
+            shared=true
+          fi
+          for area in ml backend frontend; do
+            selected=$shared
+            if grep -q "^$area/" <<< "$files"; then selected=true; fi
+            if [[ "$area" == ml ]] && grep -qx 'backend/requirements-dev.txt' <<< "$files"; then selected=true; fi
+            echo "$area=$selected" >> "$GITHUB_OUTPUT"
+          done
+
   ml-gate:
     name: ML correctness and evaluation gate
+    needs: [changes]
+    if: ${{ needs.changes.outputs.ml == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -27,6 +62,8 @@ jobs:
 
   backend:
     name: Backend tests
+    needs: [changes]
+    if: ${{ needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -140,6 +177,8 @@ jobs:
 
   frontend:
     name: Frontend tests and build
+    needs: [changes]
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:

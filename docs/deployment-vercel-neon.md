@@ -95,9 +95,10 @@ frontend project.
 ## 4. Validate the release
 
 Before deploying schema-dependent code, run the GitHub Actions
-`Database migration` workflow for `nonprod` from the current numeric release
-branch. The selected GitHub Environment
-must contain a direct, non-pooled `DATABASE_URL`. After validation, run it for
+`Database migration` workflow for `nonprod` from the current `Release-x.y.z` or
+`Hotfix-x.y.z`
+branch. The selected GitHub Environment must contain a direct, non-pooled
+`DATABASE_URL`. After validation, run it for
 `prod`; configure required reviewers on the GitHub `prod` Environment so this is
 a gated operation. The workflow serializes migrations per environment, applies
 the current Alembic head with lock and statement timeouts, verifies the catalog,
