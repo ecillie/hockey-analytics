@@ -30,13 +30,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Verify environment branch and direct connection
-        env:
-          EXPECTED_BRANCH: ${{ inputs.environment == 'prod' && 'Prod' || 'NonProd' }}
         run: |
-          test "$GITHUB_REF_NAME" = "$EXPECTED_BRANCH" || {
-            echo "Select the $EXPECTED_BRANCH branch when migrating ${{ inputs.environment }}."
+          if [ "${{ inputs.environment }}" = "prod" ]; then
+            test "$GITHUB_REF_NAME" = "Prod" || {
+              echo "Select Prod when migrating prod."
+              exit 1
+            }
+          elif [[ ! "$GITHUB_REF_NAME" =~ ^(Release|Hotfix)-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Select a Release-x.y.z or Hotfix-x.y.z branch when migrating nonprod."
             exit 1
-          }
+          fi
           case "$DATABASE_URL" in
             *-pooler*)
               echo "DATABASE_URL must be a direct, non-pooled migration connection."

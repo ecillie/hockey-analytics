@@ -174,12 +174,12 @@ coverage regressions and should be raised as each subsystem gains tests.
 Development follows:
 
 ```text
-Dev → NonProd → Prod
+PR title → current Release-x.y.z (or Hotfix-x.y.z) → manual Prod merge
 ```
 
-GitHub Actions handles promotion between environments.
+GitHub Actions routes PRs and creates Prod promotion PRs.
 See [CI and automatic promotion setup](docs/ci-promotion.md) for the required
-GitHub repository settings and rollout sequence.
+GitHub repository settings, hotfix branch policy, and rollout sequence.
 
 ## Roadmap
 
