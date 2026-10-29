@@ -15,6 +15,9 @@ coverage/
 ml/models/*.joblib
 ml/evaluation/outputs/
 
+/backend/app/ScriptingFiles/data/line data/
+/backend/app/ScriptingFiles/data/team data/
+
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
