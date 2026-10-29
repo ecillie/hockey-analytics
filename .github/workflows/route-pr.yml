@@ -1,0 +1,49 @@
+name: Route pull request
+
+on:
+  pull_request_target:
+    types: [opened, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  route:
+    name: Choose release branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: route-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Route by title
+        env:
+          GH_TOKEN: ${{ secrets.PROMOTION_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BASE: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+
+          if [ "$PR_BASE" = "Prod" ] && \
+             [[ "$PR_HEAD" =~ ^(hotfix/)?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            exit 0
+          fi
+
+          shopt -s nocasematch
+          if [[ "$PR_TITLE" =~ (^|[^[:alnum:]])hotfix([^[:alnum:]]|$) ]]; then
+            PREFIX=hotfix/
+          else
+            PREFIX=
+          fi
+
+          TARGET_BRANCH=$(gh api "repos/${{ github.repository }}/branches" --paginate \
+            --jq '.[].name' | awk -v prefix="$PREFIX" '$0 ~ ("^" prefix "[0-9]+[.][0-9]+[.][0-9]+$")' \
+            | sort -V | tail -1)
+          test -n "$TARGET_BRANCH" || { echo "Create a ${PREFIX}x.y.z branch first."; exit 1; }
+
+          if [ "$PR_BASE" != "$TARGET_BRANCH" ]; then
+            gh pr edit "$PR_NUMBER" --repo "${{ github.repository }}" --base "$TARGET_BRANCH"
+          fi
+          echo "PR #$PR_NUMBER targets $TARGET_BRANCH."
