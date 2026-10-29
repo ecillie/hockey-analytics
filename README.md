@@ -174,7 +174,7 @@ coverage regressions and should be raised as each subsystem gains tests.
 Development follows:
 
 ```text
-PR title → current x.y.z release (or hotfix/x.y.z) → manual Prod merge
+PR title → current Release-x.y.z (or Hotfix-x.y.z) → manual Prod merge
 ```
 
 GitHub Actions routes PRs and creates Prod promotion PRs.
