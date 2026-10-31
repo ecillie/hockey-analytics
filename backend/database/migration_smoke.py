@@ -5,8 +5,9 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.database import SessionLocal
-from app.main import app
+from app.config import get_database_settings
+from app.database import database_resources
+from app.main import create_runtime_app
 
 
 def validate_reference_data(session) -> None:
@@ -51,11 +52,14 @@ def smoke_checks(client) -> None:
 
 
 def main() -> int:
-    with SessionLocal() as session:
+    with (
+        database_resources(get_database_settings()) as resources,
+        resources.sessions() as session,
+    ):
         validate_reference_data(session)
         print("PASS initial reference data")
 
-    with TestClient(app) as client:
+    with TestClient(create_runtime_app()) as client:
         smoke_checks(client)
         print("PASS /api/health")
         print("PASS /api/seasons")

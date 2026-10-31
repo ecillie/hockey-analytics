@@ -1,15 +1,11 @@
-import os
 import unittest
 from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 
-os.environ.setdefault("ENV", "dev")
-os.environ.setdefault("DATABASE_URL", "postgresql://example.test/tradevalue")
-
-from app.api.routes import get_service  # noqa: E402
-from app.main import create_app  # noqa: E402
+from app.api.routes import get_service
+from app.main import create_app
 
 
 TEAM = {

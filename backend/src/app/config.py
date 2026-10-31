@@ -1,149 +1,154 @@
-"""Environment-backed configuration for the revamped backend."""
+"""Validated settings and explicit, non-mutating environment loading."""
 
-from __future__ import annotations
-
-from dataclasses import dataclass
-from enum import Enum
-from functools import lru_cache
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from enum import StrEnum, auto
 import os
 from pathlib import Path
+import re
 from urllib.parse import quote
 
-
-BACKEND_DIR = Path(__file__).resolve().parents[2]
-ENV_FILE = Path(os.environ.get("TRADEVALUE_ENV_FILE", BACKEND_DIR / ".env"))
+from dotenv.main import DotEnv
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 
 class ConfigurationError(RuntimeError):
-    """Raised when required backend configuration is missing or invalid."""
+    def __init__(self, *, field: str, reason: str) -> None:
+        super().__init__(f"{field} {reason}")
+        self.field = field
+        self.reason = reason
 
 
-class AppEnvironment(str, Enum):
-    DEV = "dev"
-    NONPROD = "nonprod"
-    PROD = "prod"
+class AppEnvironment(StrEnum):
+    DEV = auto()
+    NONPROD = auto()
+    PROD = auto()
 
 
-def _load_backend_env() -> None:
-    try:
-        from dotenv import load_dotenv
-    except ImportError as exc:
-        if ENV_FILE.exists():
-            raise ConfigurationError(
-                "backend/.env exists but python-dotenv is not installed; "
-                "run 'pip install -r backend/requirements.txt'"
-            ) from exc
-        return
-
-    # Exported environment variables take precedence over backend/.env.
-    load_dotenv(ENV_FILE, override=False)
-
-
-@dataclass(frozen=True)
+@dataclass(slots=True, kw_only=True, frozen=True)
 class DatabaseSettings:
     environment: AppEnvironment
-    database_url: str
+    database_url: str = field(repr=False)
     connect_timeout_seconds: int = 10
     pool_size: int = 2
     max_overflow: int = 3
     pool_recycle_seconds: int = 300
+    cleanup_timeout_seconds: float = 10.0
 
 
-@dataclass(frozen=True)
+@dataclass(slots=True, kw_only=True, frozen=True)
 class ApiSettings:
-    cors_origins: tuple[str, ...]
-    cors_origin_regex: str | None
+    cors_origins: tuple[str, ...] = ("http://localhost:5173", "http://127.0.0.1:5173")
+    cors_origin_regex: str | None = None
 
 
-@lru_cache(maxsize=1)
-def get_api_settings() -> ApiSettings:
-    """Return HTTP settings without requiring database configuration."""
-    _load_backend_env()
-    raw_origins = os.getenv(
-        "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+def load_environment(*, env_file: Path | None = None) -> dict[str, str]:
+    exported = dict(os.environ)
+    selected = (
+        env_file
+        if env_file is not None
+        else Path(
+            exported.get(
+                "TRADEVALUE_ENV_FILE", Path(__file__).resolve().parents[2] / ".env"
+            )
+        )
     )
+    values = {
+        key: value
+        for key, value in DotEnv(selected, override=False).dict().items()
+        if value is not None
+    }
+    return values | exported
+
+
+def get_api_settings(values: Mapping[str, str] | None = None) -> ApiSettings:
+    values = load_environment() if values is None else values
     origins = tuple(
-        origin.strip() for origin in raw_origins.split(",") if origin.strip()
+        origin.strip()
+        for origin in values.get(
+            "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+        ).split(",")
+        if origin.strip()
     )
-    if not origins:
-        raise ConfigurationError("CORS_ORIGINS must contain at least one origin")
-    origin_regex = os.getenv("CORS_ORIGIN_REGEX", "").strip() or None
+    if len(origins) == 0:
+        raise ConfigurationError(
+            field="CORS_ORIGINS", reason="must contain at least one origin"
+        )
+    origin_regex = values.get("CORS_ORIGIN_REGEX", "").strip() or None
+    if origin_regex is not None:
+        try:
+            re.compile(origin_regex)
+        except re.error as error:
+            raise ConfigurationError(
+                field="CORS_ORIGIN_REGEX", reason="must be a valid regular expression"
+            ) from error
     return ApiSettings(cors_origins=origins, cors_origin_regex=origin_regex)
 
 
-@lru_cache(maxsize=1)
-def get_database_settings() -> DatabaseSettings:
-    _load_backend_env()
-
-    environment_text = os.getenv("ENV", "").strip().lower()
+def read_integer(
+    values: Mapping[str, str], name: str, default: int, minimum: int
+) -> int:
     try:
-        environment = AppEnvironment(environment_text)
-    except ValueError as exc:
-        raise ConfigurationError("ENV must be one of: dev, nonprod, prod") from exc
-
-    scoped_url_name = f"{environment.value.upper()}_DATABASE_URL"
-    database_url = os.getenv(scoped_url_name, "").strip()
-    if not database_url:
-        database_url = os.getenv("DATABASE_URL", "").strip()
-
-    if not database_url and environment is AppEnvironment.DEV:
-        user = os.getenv("DB_USER", "").strip()
-        database = os.getenv("DB_NAME", "").strip()
-        if not user or not database:
-            raise ConfigurationError(
-                "For ENV=dev, set DEV_DATABASE_URL, DATABASE_URL, or both "
-                "DB_USER and DB_NAME in backend/.env"
-            )
-
-        password = os.getenv("DB_PASSWORD", "")
-        host = os.getenv("DB_HOST", "localhost").strip() or "localhost"
-        port_text = os.getenv("DB_PORT", "5432").strip() or "5432"
-        try:
-            port = int(port_text)
-        except ValueError as exc:
-            raise ConfigurationError("DB_PORT must be an integer") from exc
-        if not 1 <= port <= 65535:
-            raise ConfigurationError("DB_PORT must be between 1 and 65535")
-
-        credentials = quote(user, safe="")
-        if password:
-            credentials += f":{quote(password, safe='')}"
-        database_url = (
-            f"postgresql://{credentials}@{host}:{port}/{quote(database, safe='')}"
-        )
-    elif not database_url:
+        value = int(values.get(name, str(default)).strip() or str(default))
+    except ValueError as error:
+        raise ConfigurationError(field=name, reason="must be an integer") from error
+    if value < minimum:
         raise ConfigurationError(
-            f"For ENV={environment.value}, set {scoped_url_name} or DATABASE_URL "
-            "in the deployment environment"
+            field=name,
+            reason="must be nonnegative" if minimum == 0 else "must be positive",
         )
+    return value
 
-    timeout_text = os.getenv("DB_CONNECT_TIMEOUT", "10").strip() or "10"
+
+def development_database_url(values: Mapping[str, str]) -> str:
+    user = values.get("DB_USER", "").strip()
+    database = values.get("DB_NAME", "").strip()
+    if user == "" or database == "":
+        raise ConfigurationError(
+            field="DATABASE_URL",
+            reason="requires DEV_DATABASE_URL, DATABASE_URL, or both DB_USER and DB_NAME for ENV=dev",
+        )
+    port = read_integer(values, "DB_PORT", 5432, 1)
+    if port > 65535:
+        raise ConfigurationError(field="DB_PORT", reason="must be between 1 and 65535")
+    credentials = quote(user, safe="")
+    if password := values.get("DB_PASSWORD", ""):
+        credentials += f":{quote(password, safe='')}"
+    host = values.get("DB_HOST", "localhost").strip() or "localhost"
+    return f"postgresql://{credentials}@{host}:{port}/{quote(database, safe='')}"
+
+
+def get_database_settings(values: Mapping[str, str] | None = None) -> DatabaseSettings:
+    values = load_environment() if values is None else values
     try:
-        timeout = int(timeout_text)
-    except ValueError as exc:
-        raise ConfigurationError("DB_CONNECT_TIMEOUT must be an integer") from exc
-    if timeout <= 0:
-        raise ConfigurationError("DB_CONNECT_TIMEOUT must be positive")
-
-    pool_values: dict[str, int] = {}
-    for env_name, field_name, default, minimum in (
-        ("DB_POOL_SIZE", "pool_size", 2, 1),
-        ("DB_MAX_OVERFLOW", "max_overflow", 3, 0),
-        ("DB_POOL_RECYCLE_SECONDS", "pool_recycle_seconds", 300, 1),
-    ):
-        value_text = os.getenv(env_name, str(default)).strip() or str(default)
-        try:
-            value = int(value_text)
-        except ValueError as exc:
-            raise ConfigurationError(f"{env_name} must be an integer") from exc
-        if value < minimum:
-            qualifier = "nonnegative" if minimum == 0 else "positive"
-            raise ConfigurationError(f"{env_name} must be {qualifier}")
-        pool_values[field_name] = value
-
+        environment = AppEnvironment(values.get("ENV", "").strip().lower())
+    except ValueError as error:
+        raise ConfigurationError(
+            field="ENV", reason="must be one of: dev, nonprod, prod"
+        ) from error
+    scoped_name = f"{environment.value.upper()}_DATABASE_URL"
+    database_url = (
+        values.get(scoped_name, "").strip() or values.get("DATABASE_URL", "").strip()
+    )
+    if database_url == "":
+        if environment is not AppEnvironment.DEV:
+            raise ConfigurationError(
+                field=scoped_name,
+                reason=f"or DATABASE_URL is required for ENV={environment.value}",
+            )
+        database_url = development_database_url(values)
+    try:
+        make_url(database_url)
+    except (ArgumentError, ValueError) as error:
+        raise ConfigurationError(
+            field="DATABASE_URL", reason="must be a valid database URL"
+        ) from error
     return DatabaseSettings(
         environment=environment,
         database_url=database_url,
-        connect_timeout_seconds=timeout,
-        **pool_values,
+        connect_timeout_seconds=read_integer(values, "DB_CONNECT_TIMEOUT", 10, 1),
+        pool_size=read_integer(values, "DB_POOL_SIZE", 2, 1),
+        max_overflow=read_integer(values, "DB_MAX_OVERFLOW", 3, 0),
+        pool_recycle_seconds=read_integer(values, "DB_POOL_RECYCLE_SECONDS", 300, 1),
     )

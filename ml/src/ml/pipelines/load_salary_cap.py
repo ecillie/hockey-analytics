@@ -4,6 +4,9 @@ from __future__ import annotations
 import pandas as pd
 from sqlalchemy import text
 
+from app.config import get_database_settings
+from app.database import database_resources
+
 
 SALARY_CAP_QUERY = text("""
 SELECT
@@ -23,11 +26,11 @@ ORDER BY start_year;
 
 def load_salary_cap() -> pd.DataFrame:
     """Load NHL salary-cap history by season."""
-    # Keep database configuration out of module import so callers can replace
-    # this loader in unit tests without first configuring a live database.
-    from app.database import engine
 
-    with engine.connect() as connection:
+    with (
+        database_resources(get_database_settings()) as resources,
+        resources.engine.connect() as connection,
+    ):
         return pd.read_sql(SALARY_CAP_QUERY, connection)
 
 

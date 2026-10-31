@@ -14,7 +14,7 @@ uv sync --locked --all-groups
 cp backend/.env.example backend/.env
 uv run python -m alembic -c backend/alembic.ini upgrade head
 cd backend
-uvicorn app.main:app --reload
+uv run uvicorn app.main:create_runtime_app --factory --reload
 ```
 
 If you use the individual `DB_*` variables instead of `DATABASE_URL`, apply the
@@ -198,3 +198,23 @@ eight. Run the dry-run and local Pavel Datsyuk smoke case
 (`--nhl-id 8467514`) before any production rollout. Production commands must
 be run only after reviewing the local coverage report; this repository never
 connects to production as part of tests or development.
+
+The runtime entrypoint is `app.main:create_runtime_app` with Uvicorn's `--factory`
+flag. It loads a single environment snapshot, validates HTTP and database
+settings, and returns the application. FastAPI lifespan startup creates the
+engine and session factory; shutdown disposes the engine. Each request owns
+and closes its SQLAlchemy session. Existing pooling, LIFO/pre-ping, recycling,
+and connection-timeout settings are retained.
+
+`create_app()` builds a configuration-independent application for schema
+inspection or tests. It accepts explicit frozen settings and an injectable
+resource factory; it does not read dotenv files or create an engine. Database
+requests need runtime settings or an explicit service override.
+
+`load_environment()` merges dotenv values with exported variables without
+changing the process environment, including interpolation precedence. Settings
+parsers also accept explicit mappings, and configuration failures identify the
+field and reason without including the database URL. DB-API helpers accept
+explicit settings; their command-boundary defaults resolve settings when called,
+rather than on module import. ML database loaders own and dispose their engine
+through a scoped context.

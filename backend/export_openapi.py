@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 import sys
+
+from app.main import create_app
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,15 +16,7 @@ DEFAULT_OUTPUT = ROOT / "docs" / "openapi.json"
 
 
 def _schema_text() -> str:
-    # Importing the ASGI application constructs the SQLAlchemy engine but does
-    # not connect. These inert defaults keep contract generation independent of
-    # developer secrets and hosted infrastructure.
-    os.environ["ENV"] = "dev"
-    os.environ["DEV_DATABASE_URL"] = "postgresql://openapi:openapi@127.0.0.1:9/openapi"
-
-    from app.main import app
-
-    return json.dumps(app.openapi(), indent=2, sort_keys=True) + "\n"
+    return json.dumps(create_app().openapi(), indent=2, sort_keys=True) + "\n"
 
 
 def main() -> int:
