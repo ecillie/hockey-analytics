@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
+from dataclasses import dataclass
 from datetime import date
 import json
 from pathlib import Path
@@ -21,6 +22,16 @@ from app.ScriptingFiles.FullDataScript.roster_status.domain import (
 )
 from app.ScriptingFiles.FullDataScript.roster_status.tests.fakes import FixedRosterFeed
 from sqlalchemy import text
+from app.ScriptingFiles.FullDataScript.source_ingestion import util as source_utils
+from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.repository import (
+    PostgresMoneyPuckRepository,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.services import (
+    MoneyPuckService,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.tests.fakes import (
+    MemorySourceClient,
+)
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ingestion"
@@ -169,8 +180,12 @@ class NhlRosterSession:
 def test_season_and_ordered_team_helpers():
     assert ingestion._season_start_year(date(2026, 6, 30)) == 2025
     assert ingestion._season_start_year(date(2026, 7, 1)) == 2026
-    assert ingestion._ordered_team_abbreviations("COL,CAR,DAL") == ("COL", "CAR", "DAL")
-    assert ingestion._ordered_team_abbreviations(" TOT, bad value,NYR ") == ("NYR",)
+    assert source_utils.ordered_team_abbreviations("COL,CAR,DAL") == (
+        "COL",
+        "CAR",
+        "DAL",
+    )
+    assert source_utils.ordered_team_abbreviations(" TOT, bad value,NYR ") == ("NYR",)
 
 
 def nhl_stat_rows(kind, season, game_type, *, goals=5):
@@ -206,10 +221,10 @@ def test_csv_parser_rejects_duplicate_columns_and_extra_values():
     with pytest.raises(
         ingestion.IngestionValidationError, match="duplicate CSV columns"
     ):
-        ingestion._parse_csv("playerId,playerId\n1,2\n", source="fixture")
+        source_utils.parse_csv("playerId,playerId\n1,2\n", source="fixture")
 
     with pytest.raises(ingestion.IngestionValidationError, match="too many values"):
-        ingestion._parse_csv("playerId,season\n1,2025,extra\n", source="fixture")
+        source_utils.parse_csv("playerId,season\n1,2025,extra\n", source="fixture")
 
 
 @pytest.mark.parametrize(
@@ -322,10 +337,10 @@ def test_validation_deduplicates_at_player_season_stat_grain_and_checks_coverage
 
 
 def test_value_coercion_contract_money_and_capwages_player_parsing():
-    assert ingestion._number("12.75") == 12.75
-    assert ingestion._number("12", integer=True) == 12
-    assert ingestion._number("NaN") is None
-    assert ingestion._number("bad") is None
+    assert source_utils.parse_number("12.75") == 12.75
+    assert source_utils.parse_number("12", integer=True) == 12
+    assert source_utils.parse_number("NaN") is None
+    assert source_utils.parse_number("bad") is None
     assert ingestion._money_cents("$1,234.56") == 123456
     assert ingestion._money_cents("bad") is None
     assert ingestion._capwages_birth_date("97-1-13") == "1997-01-13"
@@ -474,7 +489,7 @@ def test_roster_command_exit_codes():
 
 
 @pytest.fixture()
-def migrated_database(monkeypatch):
+def migrated_database(monkeypatch, tmp_path):
     if not TEST_DATABASE_URL or "tradevalue_test" not in TEST_DATABASE_URL:
         raise pytest.skip.Exception("a disposable tradevalue_test database is required")
     from sqlalchemy import create_engine, text
@@ -507,12 +522,14 @@ def migrated_database(monkeypatch):
             connection.close()
 
     monkeypatch.setattr(ingestion, "database_transaction", test_transaction)
-    monkeypatch.setitem(
-        ingestion.MONEYPUCK_FILES, "skater", FIXTURES / "moneypuck_skaters.csv"
-    )
-    monkeypatch.setitem(
-        ingestion.MONEYPUCK_FILES, "goalie", FIXTURES / "moneypuck_goalies.csv"
-    )
+    for folder, name, fixture_name in (
+        ("skater advanced", "skaters_2008_to_2024.csv", "moneypuck_skaters.csv"),
+        ("goalie_advanced", "goalies_2008_to_2024.csv", "moneypuck_goalies.csv"),
+    ):
+        destination = tmp_path.joinpath(folder, name)
+        destination.parent.mkdir()
+        destination.write_text(FIXTURES.joinpath(fixture_name).read_text())
+    monkeypatch.setenv("TRADEVALUE_DATA_DIR", str(tmp_path))
     yield engine
     engine.dispose()
 
@@ -742,22 +759,12 @@ def test_nhl_stats_are_deduplicated_idempotent_and_retain_missing_rows(
 ):
     from sqlalchemy import text
 
-    monkeypatch.setattr(
-        ingestion,
-        "_nhl_stats_pages",
-        lambda session, kind, season, game_type: nhl_stat_rows(
-            kind, season, game_type, goals=5
-        ),
+    first = ingestion.ingest_nhl_stats(
+        first_season=2025, last_season=2025, client_factory=FixtureStatsFactory(goals=5)
     )
-    first = ingestion.ingest_nhl_stats(Mock(), first_season=2025, last_season=2025)
-    monkeypatch.setattr(
-        ingestion,
-        "_nhl_stats_pages",
-        lambda session, kind, season, game_type: nhl_stat_rows(
-            kind, season, game_type, goals=8
-        ),
+    second = ingestion.ingest_nhl_stats(
+        first_season=2025, last_season=2025, client_factory=FixtureStatsFactory(goals=8)
     )
-    second = ingestion.ingest_nhl_stats(Mock(), first_season=2025, last_season=2025)
     expected_common = {
         "skater": 2,
         "goalie": 2,
@@ -879,12 +886,9 @@ def test_cross_source_identity_uses_external_id_and_avoids_ambiguous_names(
         "maximum_duplicate_ratio": 0.5,
     }
     ingestion.ingest_moneypuck(MoneyPuckSession(), **options)
-    monkeypatch.setattr(
-        ingestion,
-        "_nhl_stats_pages",
-        lambda session, kind, season, game_type: nhl_stat_rows(kind, season, game_type),
+    ingestion.ingest_nhl_stats(
+        first_season=2025, last_season=2025, client_factory=FixtureStatsFactory(goals=5)
     )
-    ingestion.ingest_nhl_stats(Mock(), first_season=2025, last_season=2025)
     with migrated_database.begin() as connection:
         assert (
             connection.execute(text("SELECT count(*) FROM players")).scalar_one() == 2
@@ -1136,4 +1140,78 @@ class TestRosterTransactions:
                     )
                 ).scalar_one()
                 == "failed"
+            )
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class FixtureStatsClient:
+    goals: int
+    csv_text: str = ""
+
+    def get_json(self, url, *, timeout=30, params=None):
+        kind = "skater" if "/skater/" in url else "goalie"
+        assert params is not None
+        season = int(params["cayenneExp"].split("=", 1)[1][:4])
+        game_type = int(params["cayenneExp"][-1])
+        return {"data": nhl_stat_rows(kind, season, game_type, goals=self.goals)}
+
+    def get_csv(self, url, *, timeout=60):
+        return self.csv_text
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class FixtureStatsFactory:
+    goals: int
+
+    def __call__(self):
+        return nullcontext(FixtureStatsClient(goals=self.goals))
+
+
+class TestRetainedMoneyPuckRows:
+    @pytest.fixture
+    def results(self, migrated_database, source_puck_options, source_puck_csv):
+        repository = PostgresMoneyPuckRepository(
+            transaction=ingestion.database_transaction
+        )
+        initial_csv = dict(source_puck_csv)
+        initial_csv[source_puck_options.skater_url] += (
+            "3,2025,Extra Player,AAA,C,all,20,1800,7.5\n"
+        )
+        first = MoneyPuckService(
+            client=MemorySourceClient(csv_files=initial_csv),
+            repository=repository,
+            options=source_puck_options,
+        ).ingest()
+        second = MoneyPuckService(
+            client=MemorySourceClient(csv_files=source_puck_csv),
+            repository=repository,
+            options=source_puck_options,
+        ).ingest()
+        return migrated_database, first, second
+
+    def test_absent_stat_rows_and_external_identity_are_retained(self, results):
+        database, first, second = results
+        assert (
+            first.counts.records_created,
+            second.counts.records_created,
+            second.counts.records_updated,
+        ) == (5, 0, 4)
+        with database.connect() as connection:
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM skater_advanced_season_stats")
+                ).scalar_one()
+                == 3
+            )
+            assert (
+                connection.execute(text("SELECT count(*) FROM players")).scalar_one()
+                == 3
+            )
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM player_external_ids WHERE external_id='3'"
+                    )
+                ).scalar_one()
+                == 1
             )

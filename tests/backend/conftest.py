@@ -1,3 +1,6 @@
 """Explicit fixture plugins for backend concept tests."""
 
-pytest_plugins = ("app.ScriptingFiles.FullDataScript.roster_status.tests.fixtures",)
+pytest_plugins = (
+    "app.ScriptingFiles.FullDataScript.roster_status.tests.fixtures",
+    "app.ScriptingFiles.FullDataScript.source_ingestion.tests.fixtures",
+)

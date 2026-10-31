@@ -62,7 +62,8 @@ uv run pytest -q tests/backend tests/ml
 ```
 
 The API service receives an `ApiRepository`; `SqlApiRepository` owns parameterized
-queries and validates database rows into immutable values. Calendar visibility
+queries and validates database rows into immutable values. The July 1 calendar
+primitive is shared with ingestion in `app.shared.calendar`. Calendar visibility
 and buried-contract relief live in `app.api.policy`, response conversion in
 `app.api.util`, and typed failures in `app.api.errors`. HTTP routes own request
 validation and preserve the shared error envelope. In-memory repositories and
@@ -72,7 +73,7 @@ runtime artifacts.
 The 100% line-and-branch gate covers the service and its extracted behavior:
 
 ```bash
-uv run python -m coverage report --include='backend/src/app/api/service.py,backend/src/app/api/repository.py,backend/src/app/api/policy.py,backend/src/app/api/util.py,backend/src/app/api/errors.py' --fail-under=100
+uv run python -m coverage report --include='backend/src/app/api/service.py,backend/src/app/api/repository.py,backend/src/app/api/policy.py,backend/src/app/api/util.py,backend/src/app/api/errors.py,backend/src/app/shared/calendar.py' --fail-under=100
 ```
 
 HTTP and service tests verify response contracts, validation errors, route

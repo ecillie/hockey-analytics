@@ -28,7 +28,10 @@ import requests
 from psycopg2.extras import Json, execute_values
 
 from app.database import database_transaction, init_db
-from app.ScriptingFiles.FullDataScript.ingestion import _slug_from_name, http_session
+from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
+    slug_from_name as _slug_from_name,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.http import http_session
 from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingestion
 
 

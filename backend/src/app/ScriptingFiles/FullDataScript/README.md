@@ -54,6 +54,55 @@ DATABASE_URL=postgresql://localhost/hockey_analytics_dev \
 The remaining Python modules in this directory and `roster_status/` are
 implementation modules used by those commands. Required CI imports every one
 of them in a fresh interpreter and compiles the complete backend application.
+## Source ingestion boundaries
+
+`ingestion.py` remains the supported composition entrypoint. MoneyPuck, NHL
+roster/statistics, and schedule work is implemented under `source_ingestion/`:
+
+| Concern | Modules |
+| --- | --- |
+| MoneyPuck fetching, quality gates, advanced-stat persistence | `moneypuck/domain.py`, `moneypuck/services.py`, `moneypuck/repository.py` |
+| NHL metadata, traditional statistics, roster identity linking | `nhl/domain.py`, `nhl/services.py`, `nhl/repository.py` |
+| Schedule pagination and game upserts | `schedule/domain.py`, `schedule/services.py`, `schedule/repository.py` |
+| Frozen values and metric layouts | `domain.py` |
+| Source response validation and localized values | `schemas.py` |
+| Quality policies and structured violations | `policy.py`, `errors.py` |
+| Numeric, CSV, identity, and team normalization | `util.py` |
+| Shared PostgreSQL identity/upsert helpers | `repository.py` |
+| Retry sessions and transport protocols | `http.py` |
+
+Services receive source clients and repositories. They finish source coverage,
+required-column/value, finite-number, duplicate-ratio, row-count, and statistical
+consistency checks before handing immutable snapshots to persistence. Each
+PostgreSQL repository owns one stage transaction through an injected transaction
+factory. A failed batch rolls back that stage. Upserts retain records absent
+from a later snapshot; they do not infer deletion from absence. Existing
+external-ID links and season-ending team assignments are preserved.
+
+NHL statistics use at most six workers by default. Each job owns and closes its
+HTTP session; pagination uses pages of 100 and a configurable 1,000-page limit.
+Invalid totals, nonadvancing schedule dates, and empty pages before an announced
+total cause validation failures. A caller-supplied session remains caller-owned
+and its requests are synchronized when shared across statistics jobs. JSON and
+CSV requests retain 30- and 60-second default timeouts, respectively, with four
+GET retries and the existing 0.6 backoff factor and retry statuses. Frozen options
+make these settings explicit and injectable.
+
+The July 1 calendar primitive is shared with the API in `app/shared/calendar.py`.
+Historical MoneyPuck/statistics ranges and the schedule's explicit season default
+retain their existing meanings. `TRADEVALUE_DATA_DIR` is resolved when composing
+a MoneyPuck stage, rather than during module import. Optional numeric parsing
+keeps missing/unrepresentable values as missing; contract money parsing remains
+separate. Typed stage summaries are flattened deliberately at the run-tracking
+boundary into the existing summary keys.
+
+The current CapWages contract refresh remains in `ingestion.py` for its later
+contract phases; its shared identity and HTTP imports use the extracted helpers.
+No live upstream calls are needed for verification. Source fakes and fixture
+plugins live under `source_ingestion/tests/`, with executable unit and PostgreSQL
+tests under root `tests/backend/`. Test support is excluded from production
+coverage, and source ingestion remains outside the request-serving API wheel.
+
 # Historical contract gap filling
 
 The supported historical contract stage is `capspace.py`. It selects NHL
