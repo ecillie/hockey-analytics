@@ -1,38 +1,58 @@
-"""Database connections for the API and ingestion scripts.
+"""Factories and scoped ownership for SQLAlchemy and DB-API resources."""
 
-Alembic owns schema changes. This module does not call metadata.create_all() or
-otherwise mutate the schema.
-"""
-
-from __future__ import annotations
-
-from contextlib import contextmanager
 from collections.abc import Generator
+from contextlib import contextmanager
+from dataclasses import dataclass
+
+import psycopg2
 from psycopg2.extensions import connection as PgConnection
+from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.orm import Session, sessionmaker
 
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import declarative_base, sessionmaker
-
-from app.config import get_database_settings
-
-
-settings = get_database_settings()
-engine = create_engine(
-    settings.database_url,
-    pool_pre_ping=True,
-    pool_size=settings.pool_size,
-    max_overflow=settings.max_overflow,
-    pool_recycle=settings.pool_recycle_seconds,
-    pool_use_lifo=True,
-    connect_args={"connect_timeout": settings.connect_timeout_seconds},
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+from app.config import DatabaseSettings, get_database_settings
 
 
-def init_db() -> None:
-    """Verify that the migrated schema is reachable and present."""
-    with engine.connect() as connection:
+@dataclass(slots=True, kw_only=True, frozen=True)
+class DatabaseResources:
+    engine: Engine
+    sessions: sessionmaker[Session]
+
+
+def create_database_resources(settings: DatabaseSettings) -> DatabaseResources:
+    engine = create_engine(
+        settings.database_url,
+        pool_pre_ping=True,
+        pool_size=settings.pool_size,
+        max_overflow=settings.max_overflow,
+        pool_recycle=settings.pool_recycle_seconds,
+        pool_use_lifo=True,
+        connect_args={"connect_timeout": settings.connect_timeout_seconds},
+    )
+    try:
+        return DatabaseResources(
+            engine=engine,
+            sessions=sessionmaker(autocommit=False, autoflush=False, bind=engine),
+        )
+    except Exception:
+        engine.dispose()
+        raise
+
+
+@contextmanager
+def database_resources(settings: DatabaseSettings) -> Generator[DatabaseResources]:
+    resources = create_database_resources(settings)
+    try:
+        yield resources
+    finally:
+        resources.engine.dispose()
+
+
+def init_db(settings: DatabaseSettings | None = None) -> None:
+    selected = get_database_settings() if settings is None else settings
+    with (
+        database_resources(selected) as resources,
+        resources.engine.connect() as connection,
+    ):
         players_table = connection.execute(
             text("SELECT to_regclass('public.players')")
         ).scalar_one()
@@ -40,26 +60,18 @@ def init_db() -> None:
         raise RuntimeError("Database schema is missing; run Alembic upgrade head first")
 
 
-def connect_database() -> PgConnection:
-    """Return a psycopg2 connection for bulk loaders using DB-API directly."""
-    try:
-        import psycopg2
-    except ImportError as exc:
-        raise RuntimeError(
-            "Database access requires psycopg2-binary; "
-            "run 'pip install -r backend/requirements.txt'"
-        ) from exc
-
+def connect_database(settings: DatabaseSettings | None = None) -> PgConnection:
+    selected = get_database_settings() if settings is None else settings
     return psycopg2.connect(
-        settings.database_url,
-        connect_timeout=settings.connect_timeout_seconds,
+        selected.database_url, connect_timeout=selected.connect_timeout_seconds
     )
 
 
 @contextmanager
-def database_transaction() -> Generator[PgConnection]:
-    """Provide a DB-API connection that commits or rolls back atomically."""
-    connection = connect_database()
+def database_transaction(
+    settings: DatabaseSettings | None = None,
+) -> Generator[PgConnection]:
+    connection = connect_database(settings)
     try:
         yield connection
         connection.commit()

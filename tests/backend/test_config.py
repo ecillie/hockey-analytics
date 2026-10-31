@@ -1,6 +1,4 @@
-import os
 import unittest
-from unittest.mock import patch
 
 from app.config import (
     AppEnvironment,
@@ -11,17 +9,8 @@ from app.config import (
 
 
 class DatabaseSettingsTests(unittest.TestCase):
-    def tearDown(self):
-        get_database_settings.cache_clear()
-        get_api_settings.cache_clear()
-
     def load_with(self, environment):
-        get_database_settings.cache_clear()
-        with (
-            patch("app.config._load_backend_env"),
-            patch.dict(os.environ, environment, clear=True),
-        ):
-            return get_database_settings()
+        return get_database_settings(environment)
 
     def test_database_url_takes_precedence(self):
         settings = self.load_with(
@@ -89,40 +78,20 @@ class DatabaseSettingsTests(unittest.TestCase):
             )
 
     def test_api_cors_origins_are_trimmed(self):
-        get_api_settings.cache_clear()
-        with (
-            patch("app.config._load_backend_env"),
-            patch.dict(
-                os.environ,
-                {"CORS_ORIGINS": "https://trade.example, https://preview.example"},
-                clear=True,
-            ),
-        ):
-            settings = get_api_settings()
+        settings = get_api_settings(
+            {"CORS_ORIGINS": "https://trade.example, https://preview.example"}
+        )
         self.assertEqual(
-            settings.cors_origins,
-            ("https://trade.example", "https://preview.example"),
+            settings.cors_origins, ("https://trade.example", "https://preview.example")
         )
         self.assertIsNone(settings.cors_origin_regex)
 
     def test_api_cors_preview_regex_is_optional(self):
-        get_api_settings.cache_clear()
-        with (
-            patch("app.config._load_backend_env"),
-            patch.dict(
-                os.environ,
-                {
-                    "CORS_ORIGINS": "https://trade.example",
-                    "CORS_ORIGIN_REGEX": r"^https://trade-[a-z0-9-]+\.vercel\.app$",
-                },
-                clear=True,
-            ),
-        ):
-            settings = get_api_settings()
-        self.assertEqual(
-            settings.cors_origin_regex,
-            r"^https://trade-[a-z0-9-]+\.vercel\.app$",
+        pattern = r"^https://trade-[a-z0-9-]+\.vercel\.app$"
+        settings = get_api_settings(
+            {"CORS_ORIGINS": "https://trade.example", "CORS_ORIGIN_REGEX": pattern}
         )
+        self.assertEqual(settings.cors_origin_regex, pattern)
 
 
 if __name__ == "__main__":

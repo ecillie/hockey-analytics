@@ -121,12 +121,6 @@ def test_supported_cli_manifest_matches_executable_modules():
 def test_supported_ingestion_module_imports_in_fresh_interpreter(module):
     environment = os.environ.copy()
     environment.pop("PYTHONPATH", None)
-    environment.update(
-        {
-            "ENV": "dev",
-            "DATABASE_URL": "postgresql://fixture:fixture@127.0.0.1:9/fixture",
-        }
-    )
     completed = subprocess.run(
         [sys.executable, "-c", f"import {module}"],
         cwd=ROOT,

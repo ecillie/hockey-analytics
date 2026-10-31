@@ -76,7 +76,7 @@ The FastAPI backend implements the complete contract in
 ```bash
 uv sync --locked --all-groups
 cd backend
-uvicorn app.main:app --reload
+uv run uvicorn app.main:create_runtime_app --factory --reload
 ```
 
 The API listens on `http://localhost:8000`, serves interactive documentation at

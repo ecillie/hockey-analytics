@@ -2,7 +2,7 @@ name: Release
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, edited]
+    types: [opened, reopened, synchronize, edited, ready_for_review, converted_to_draft]
     branches: ['Release-*.*.*', 'Hotfix-*.*.*']
   push:
     branches: ['Release-*.*.*', 'Hotfix-*.*.*']
@@ -73,7 +73,7 @@ jobs:
 
   merge-to-release:
     name: Enable automatic merge to release
-    if: ${{ github.event_name == 'pull_request' && needs.required.result == 'success' }}
+    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && needs.required.result == 'success' }}
     needs: [required]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -82,6 +82,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PROMOTION_TOKEN }}
         run: |
+          is_draft=$(gh pr view "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" --json isDraft --jq '.isDraft')
+          if [ "$is_draft" != false ]; then
+            echo "PR is currently a draft; skipping auto-merge."
+            exit 0
+          fi
           gh pr merge "${{ github.event.pull_request.number }}" \
             --repo "${{ github.repository }}" \
             --auto \
