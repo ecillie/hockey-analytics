@@ -13,3 +13,5 @@ requirements-dev.txt
 data
 legacy_loaders
 .venv
+
+src/app/api/tests

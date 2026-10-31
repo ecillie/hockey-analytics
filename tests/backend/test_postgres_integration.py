@@ -7,7 +7,9 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from app.api.service import ApiProblem, TradeValueService
+from app.api.errors import ApiProblem
+from app.api.repository import SqlApiRepository
+from app.api.service import TradeValueService
 
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
@@ -140,7 +142,7 @@ def engine():
 @pytest.fixture()
 def service(engine):
     with Session(engine) as session:
-        yield TradeValueService(session)
+        yield TradeValueService(repository=SqlApiRepository(session=session))
 
 
 def test_listing_prefers_total_rows_and_current_team(service):
@@ -203,7 +205,9 @@ def test_validation_missing_entities_and_nullable_identity(service):
 
 def test_season_catalog_and_validation_share_the_july_first_boundary(engine):
     with Session(engine) as session:
-        before_cutoff = TradeValueService(session, as_of=date(2026, 6, 30))
+        before_cutoff = TradeValueService(
+            repository=SqlApiRepository(session=session), as_of=date(2026, 6, 30)
+        )
         before_info = before_cutoff.seasons()
         assert before_info["currentSeason"] == 2025
         assert max(s["startYear"] for s in before_info["availableSeasons"]) == 2025
@@ -211,7 +215,9 @@ def test_season_catalog_and_validation_share_the_july_first_boundary(engine):
             before_cutoff.require_season(2026)
         assert future.value.code == "INVALID_SEASON"
 
-        on_cutoff = TradeValueService(session, as_of=date(2026, 7, 1))
+        on_cutoff = TradeValueService(
+            repository=SqlApiRepository(session=session), as_of=date(2026, 7, 1)
+        )
         on_cutoff_info = on_cutoff.seasons()
         assert on_cutoff_info["currentSeason"] == 2026
         assert max(s["startYear"] for s in on_cutoff_info["availableSeasons"]) == 2026
@@ -300,7 +306,7 @@ def test_known_player_without_season_data_returns_empty_stat_groups(service):
 
 def test_only_the_active_model_can_supply_the_current_projection(service):
     """A newer prediction from an inactive model must not replace the published model."""
-    service.session.execute(
+    service.repository.session.execute(
         text(
             """INSERT INTO model_versions
                  (id, model_type, version, artifact_uri, feature_schema,
@@ -310,7 +316,7 @@ def test_only_the_active_model_can_supply_the_current_projection(service):
                   2024, 2025, FALSE, CURRENT_TIMESTAMP + INTERVAL '1 day')"""
         )
     )
-    service.session.execute(
+    service.repository.session.execute(
         text(
             """INSERT INTO predictions
                  (model_version_id, player_id, target_season, position_group,
@@ -330,7 +336,7 @@ def test_only_the_active_model_can_supply_the_current_projection(service):
 
 def test_replacement_level_excludes_players_below_twenty_games(service):
     """A 19-game call-up cannot move the established replacement baseline."""
-    service.session.execute(
+    service.repository.session.execute(
         text(
             """INSERT INTO players
                  (id, first_name, last_name, primary_position, active, roster_status)
@@ -355,7 +361,7 @@ def test_replacement_level_excludes_players_below_twenty_games(service):
 
 def test_measured_zero_is_not_reported_as_missing(service):
     """A player who recorded zero production must remain distinct from absent data."""
-    service.session.execute(
+    service.repository.session.execute(
         text(
             """INSERT INTO players
                  (id, first_name, last_name, primary_position, active, roster_status)
@@ -385,3 +391,75 @@ def test_minor_league_contract_uses_the_cba_buried_relief(service):
     assert cap["minorsCapCents"] == 0
     assert cap["totalCommitmentsCents"] == 0
     assert cap["capSpaceCents"] == cap["salaryCapCents"]
+
+
+@pytest.mark.parametrize(
+    ("position", "team"),
+    [
+        pytest.param(None, None, id="all-eligible-players"),
+        pytest.param("C", None, id="position-only"),
+        pytest.param(None, "bbb", id="team-only"),
+    ],
+)
+def test_leader_filters_and_null_values(service, position, team):
+    leaders = service.leaders(2025, position, team, 10)
+    assert all(row["hockeyValue"] is not None for row in leaders)
+    if position is not None:
+        assert all(row["primaryPosition"] == position for row in leaders)
+    if team is not None:
+        assert all(row["team"]["abbreviation"].casefold() == team for row in leaders)
+
+
+class TestQueryBoundaries:
+    @pytest.fixture
+    def tied_service(self, service):
+        service.repository.session.execute(
+            text(
+                "UPDATE skater_season_stats SET points=30 WHERE player_id IN (1003, 1005)"
+            )
+        )
+        return service
+
+    @pytest.fixture
+    def missing_prediction_payload(self, service):
+        service.repository.session.execute(
+            text("""INSERT INTO predictions
+                (model_version_id, player_id, target_season, position_group,
+                 predicted_aav_cents, input_features)
+                VALUES (3001, 1002, 2026, 'forward', 999999999, '{}')""")
+        )
+        return service
+
+    @pytest.mark.parametrize(
+        ("order", "expected"),
+        [
+            pytest.param(
+                "desc", [1001, 1004, 1003, 1005, 1002, 1006], id="descending-nulls-last"
+            ),
+            pytest.param(
+                "asc", [1002, 1003, 1005, 1004, 1001, 1006], id="ascending-nulls-last"
+            ),
+        ],
+    )
+    def test_ties_and_null_ordering_across_page_boundaries(
+        self, tied_service, order, expected
+    ):
+        pages = [
+            tied_service.players(2025, None, None, None, None, "points", order, page, 2)
+            for page in range(1, 4)
+        ]
+        assert [row["id"] for page in pages for row in page["data"]] == expected
+        assert all(page["pagination"]["totalItems"] == 6 for page in pages)
+
+    def test_search_text_is_bound_as_data(self, service):
+        result = service.players(
+            2025, None, None, None, "' OR TRUE --", "name", "asc", 1, 10
+        )
+        assert result["data"] == []
+        assert result["pagination"]["totalItems"] == 0
+
+    def test_aav_prediction_without_value_payload_is_not_a_value_projection(
+        self, missing_prediction_payload
+    ):
+        result = missing_prediction_payload.hockey_value(1002, 2025)
+        assert result["projectedNextSeasonHockeyValue"] is None

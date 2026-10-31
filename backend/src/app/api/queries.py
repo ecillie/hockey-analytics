@@ -5,7 +5,7 @@ aggregates team stints. That rule prevents traded players from being counted
 twice while still supporting seasons whose source has no TOTAL row.
 """
 
-SUMMARY_CTES = r"""
+SUMMARY_CTES = """
 WITH team_choice AS (
     SELECT DISTINCT ON (pts.player_id, pts.season_start_year)
         pts.player_id, pts.season_start_year, t.id team_id,
@@ -156,47 +156,7 @@ summary AS (
 """
 
 
-PLAYER_IDENTITY_SQL = r"""
-SELECT p.id, p.first_name, p.last_name, CONCAT_WS(' ', p.first_name, p.last_name) full_name,
-    p.birth_date,
-    CASE WHEN p.birth_date IS NULL THEN NULL
-         ELSE EXTRACT(YEAR FROM age(CURRENT_DATE, p.birth_date))::int END age,
-    p.primary_position, p.shoots_catches, p.nationality, p.active,
-    p.roster_status::text roster_status,
-    t.id team_id, t.nhl_team_id, t.abbreviation, t.name team_name, t.city team_city, t.active team_active
-FROM players p
-LEFT JOIN LATERAL (
-    SELECT pts.team_id FROM player_team_stints pts
-    WHERE pts.player_id = p.id
-    ORDER BY pts.season_start_year DESC, (pts.departed_on IS NULL) DESC,
-             pts.departed_on DESC NULLS LAST, pts.id DESC LIMIT 1
-) current_stint ON true
-LEFT JOIN teams t ON t.id = current_stint.team_id
-WHERE p.id = :player_id
-"""
-
-
-TEAM_SQL = """
-SELECT id, nhl_team_id, abbreviation, name team_name, city team_city, active team_active
-FROM teams WHERE id = :team_id
-"""
-
-
-CONTRACT_SQL = r"""
-SELECT c.id, c.player_id, c.signed_on, c.start_season, c.end_season, c.term_years,
-    c.contract_type, c.expiry_status, c.total_value_cents, c.average_value_cents,
-    c.is_entry_level,
-    st.id signing_team_id, st.nhl_team_id signing_nhl_team_id,
-    st.abbreviation signing_abbreviation, st.name signing_team_name,
-    st.city signing_team_city, st.active signing_team_active
-FROM contracts c LEFT JOIN teams st ON st.id = c.signing_team_id
-WHERE c.player_id = :player_id
-ORDER BY (c.start_season <= :current_season AND c.end_season >= :current_season) DESC,
-         c.end_season DESC, c.start_season DESC, c.id DESC LIMIT 1
-"""
-
-
-CONTRACT_SEASONS_SQL = r"""
+CONTRACT_SEASONS_SQL = """
 SELECT cs.season_start_year, cs.base_salary_cents, cs.signing_bonus_cents,
     cs.performance_bonus_cents, cs.total_cash_cents, cs.cap_hit_cents,
     cs.cap_percentage, cs.is_slide,
@@ -207,14 +167,14 @@ WHERE cs.contract_id = :contract_id ORDER BY cs.season_start_year
 """
 
 
-TEAM_SQL = r"""
+TEAM_SQL = """
 SELECT id, nhl_team_id, abbreviation, name team_name, city team_city,
        active team_active
 FROM teams WHERE id = :team_id
 """
 
 
-PLAYER_IDENTITY_SQL = r"""
+PLAYER_IDENTITY_SQL = """
 SELECT p.id, p.first_name, p.last_name,
     CONCAT_WS(' ', p.first_name, p.last_name) full_name, p.birth_date,
     CASE WHEN p.birth_date IS NULL THEN NULL
@@ -236,7 +196,7 @@ WHERE p.id = :player_id
 """
 
 
-CONTRACT_SQL = r"""
+CONTRACT_SQL = """
 SELECT c.id, c.player_id, c.signed_on, c.start_season, c.end_season,
     c.term_years, c.contract_type, c.expiry_status, c.total_value_cents,
     c.average_value_cents, c.is_entry_level,
@@ -249,3 +209,80 @@ ORDER BY (:current_season BETWEEN c.start_season AND c.end_season) DESC,
          c.end_season DESC, c.signed_on DESC NULLS LAST, c.id DESC
 LIMIT 1
 """
+
+
+SEASONS_SQL = """SELECT start_year, end_year, label, salary_cap_cents
+               FROM seasons
+               WHERE start_year <= :latest_started_season
+               ORDER BY start_year"""
+
+
+CURRENT_SEASON_SQL = """SELECT MAX(start_year) FROM seasons
+                    WHERE start_year <= :latest_started_season"""
+
+
+HAS_SEASON_SQL = """SELECT EXISTS(
+                    SELECT 1 FROM seasons
+                    WHERE start_year = :season
+                        AND start_year <= :latest_started_season
+                    )"""
+
+
+TEAMS_SQL = "SELECT id, nhl_team_id, abbreviation, name team_name, city team_city, active team_active FROM teams WHERE active ORDER BY name, id"
+
+
+ROSTER_COUNTS_SQL = """SELECT p.roster_status::text roster_status, COUNT(*) count
+               FROM players p JOIN LATERAL (
+                 SELECT team_id FROM player_team_stints pts WHERE pts.player_id = p.id
+                 ORDER BY season_start_year DESC, (departed_on IS NULL) DESC,
+                          departed_on DESC NULLS LAST, pts.id DESC LIMIT 1
+               ) stint ON true WHERE stint.team_id = :team_id GROUP BY p.roster_status"""
+
+
+GOALIE_SQL = """
+        WITH basic AS (
+          SELECT SUM(g.games_played)::int games_played, SUM(g.wins)::int wins,
+            SUM(g.losses)::int losses, SUM(g.overtime_losses)::int overtime_losses,
+            SUM(g.shots_against)::int shots_against, SUM(g.saves)::int saves,
+            CASE WHEN SUM(g.shots_against) > 0 THEN SUM(g.saves)::float / SUM(g.shots_against) END save_percentage,
+            SUM(g.goals_against)::int goals_against, SUM(g.time_on_ice_seconds)::int time_on_ice_seconds,
+            CASE WHEN SUM(g.time_on_ice_seconds) > 0 THEN SUM(g.goals_against) * 3600.0 / SUM(g.time_on_ice_seconds) END gaa,
+            SUM(g.shutouts)::int shutouts
+          FROM goalie_season_stats g WHERE g.player_id=:player_id AND g.season_start_year=:season AND g.game_type=2
+            AND (g.stat_scope='TOTAL' OR NOT EXISTS (SELECT 1 FROM goalie_season_stats x WHERE x.player_id=g.player_id AND x.season_start_year=g.season_start_year AND x.game_type=2 AND x.stat_scope='TOTAL'))
+        ), advanced AS (
+          SELECT SUM(a.expected_goals_against)::float xga, SUM(a.goals_against)::float ga
+          FROM goalie_advanced_season_stats a WHERE a.player_id=:player_id AND a.season_start_year=:season AND a.game_type=2 AND a.situation='all'
+            AND (a.stat_scope='TOTAL' OR NOT EXISTS (SELECT 1 FROM goalie_advanced_season_stats x WHERE x.player_id=a.player_id AND x.season_start_year=a.season_start_year AND x.game_type=2 AND x.situation=a.situation AND x.stat_scope='TOTAL'))
+        ) SELECT *, CASE WHEN xga IS NOT NULL AND ga IS NOT NULL THEN xga-ga END gsae FROM basic CROSS JOIN advanced
+        """
+
+
+PLAYER_SEASONS_SQL = """SELECT DISTINCT season_start_year season FROM (
+                 SELECT season_start_year FROM skater_season_stats WHERE player_id=:player_id AND game_type=2
+                 UNION SELECT season_start_year FROM goalie_season_stats WHERE player_id=:player_id AND game_type=2
+               ) history ORDER BY season DESC LIMIT 40"""
+
+
+CONTRACT_PLAYERS_SQL = """SELECT c.player_id FROM contracts c JOIN contract_seasons cs ON cs.contract_id=c.id
+                           WHERE cs.owning_team_id=:team_id AND cs.season_start_year=:season ORDER BY c.player_id"""
+
+
+CAP_SQL = """SELECT s.salary_cap_cents,
+             COALESCE(SUM(cs.cap_hit_cents) FILTER (WHERE p.roster_status='ACTIVE'),0)::bigint active_cap,
+             COALESCE(SUM(cs.cap_hit_cents) FILTER (WHERE p.roster_status='LTIR'),0)::bigint ltir_cap,
+             COALESCE(SUM(GREATEST(cs.cap_hit_cents - :buried_relief_cents, 0))
+                 FILTER (WHERE p.roster_status='MINORS'),0)::bigint minors_cap,
+             COALESCE(SUM(CASE WHEN p.roster_status='MINORS'
+                 THEN GREATEST(cs.cap_hit_cents - :buried_relief_cents, 0)
+                 ELSE cs.cap_hit_cents END),0)::bigint total_cap
+           FROM seasons s LEFT JOIN contract_seasons cs ON cs.season_start_year=s.start_year AND cs.owning_team_id=:team_id
+           LEFT JOIN contracts c ON c.id=cs.contract_id LEFT JOIN players p ON p.id=c.player_id
+           WHERE s.start_year=:season GROUP BY s.salary_cap_cents"""
+
+
+SEARCH_PLAYERS_SQL = "SELECT id FROM players WHERE CONCAT_WS(' ', first_name, last_name) ILIKE :q ORDER BY active DESC, last_name, first_name, id LIMIT :limit"
+
+
+SEARCH_TEAMS_SQL = """SELECT id, nhl_team_id, abbreviation, name team_name, city team_city, active team_active FROM teams
+                              WHERE CONCAT_WS(' ', city, name, abbreviation) ILIKE :q ORDER BY active DESC, name, id LIMIT :limit"""
