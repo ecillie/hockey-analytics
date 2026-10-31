@@ -351,7 +351,6 @@ def run_command(database_url: str, *arguments: str, success=True):
         "DEV_DATABASE_URL": database_url,
         "TEST_DATABASE_URL": database_url,
         "ENV": "dev",
-        "PYTHONPATH": "backend",
     }
     result = subprocess.run(
         [sys.executable, *arguments],

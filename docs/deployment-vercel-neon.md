@@ -119,3 +119,21 @@ The `Dev`, `Release`, and `Prod` workflows each publish an environment-specific
 `required` check. Configure those checks as branch requirements and enable the
 release PR routing and manually merged Prod promotions by following
 [CI and automatic promotion setup](./ci-promotion.md).
+
+## Installed API distribution
+
+The Vercel project root remains `backend/`, and `index.py` imports the installed
+`app.main` package. Generated `backend/requirements.txt` pins runtime dependencies
+and ends with `.` to build and install the backend distribution from that root.
+It works without a workspace lockfile or editable installation in the deployment
+context. Keep this fallback until the hosted builder's workspace discovery has
+been verified. `pyproject.toml` excludes `src/app/ScriptingFiles` from both the
+runtime wheel and source distribution; ignore rules exclude jobs, datasets,
+and archived loaders from upload, and `excludeFiles` removes source trees from
+the final function. Docker installs the same distribution and removes its build
+sources. No ML or development dependencies enter these API artifacts.
+
+The migration workflow uses the locked `migration` group for its HTTP smoke
+client. For an equivalent local operational environment, use
+`uv sync --locked --no-default-groups --group migration` and prefix commands with
+`uv run --no-default-groups --group migration python`.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from importlib.resources import as_file, files
 from pathlib import Path
 
 import numpy as np
@@ -114,12 +115,10 @@ def stable_metadata_json(metadata: dict) -> str:
 
 
 def main() -> None:
-    path = (
-        Path(__file__).resolve().parents[1]
-        / "models"
-        / "skater_value_model_metadata.json"
-    )
-    metadata = validate_committed_model_metadata(path)
+    with as_file(
+        files("ml").joinpath("resources/skater_value_model_metadata.json")
+    ) as path:
+        metadata = validate_committed_model_metadata(path)
     # These are the accepted ceilings/floor for the currently published model.
     limits = {
         "train": {"mae": 7.6307295257, "rmse": 10.3311876346, "r2": 0.6501067487},

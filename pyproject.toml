@@ -2,14 +2,12 @@
 name = "tradevalue"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
-dependencies = [
-  "alembic==1.19.2", "SQLAlchemy==2.0.23", "psycopg2-binary==2.9.9",
-  "python-dotenv==1.0.0", "fastapi==0.141.1", "uvicorn==0.49.0", "pydantic==2.13.4",
-]
+dependencies = ["tradevalue-backend"]
 
 [dependency-groups]
+migration = ["httpx==0.28.1"]
 ingestion = ["pandas==2.3.3", "requests==2.31.0"]
-ml = ["numpy==2.4.4", "pandas==2.3.3", "scikit-learn==1.8.0", "joblib==1.5.1"]
+ml = ["tradevalue-ml"]
 dev = ["httpx==0.28.1", "pytest==8.4.2", "pytest-cov==7.0.0", "hypothesis==6.156.4", "ruff==0.17.1", "ty==0.0.89"]
 
 [tool.uv]
@@ -70,12 +68,10 @@ select = ["E4", "E7", "E9", "F"]
 
 [tool.ty.environment]
 python-version = "3.12"
-extra-paths = ["backend", "."]
 
 [tool.pytest.ini_options]
 addopts = "--cov=app --cov=ml --cov-branch --cov-report=term-missing --cov-report=html:coverage/python/html --cov-report=xml:coverage/python/coverage.xml --cov-report=lcov:coverage/python/lcov.info --cov-fail-under=58.80"
-pythonpath = ["backend", "."]
-testpaths = ["backend/tests", "ml/tests"]
+testpaths = ["tests/backend", "tests/ml"]
 
 [tool.coverage.run]
 branch = true
@@ -86,3 +82,10 @@ source = ["app", "ml"]
 precision = 2
 show_missing = true
 skip_empty = true
+
+[tool.uv.workspace]
+members = ["backend", "ml"]
+
+[tool.uv.sources]
+tradevalue-backend = { workspace = true }
+tradevalue-ml = { workspace = true }

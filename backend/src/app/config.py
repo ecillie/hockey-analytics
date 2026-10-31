@@ -10,8 +10,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 
-BACKEND_DIR = Path(__file__).resolve().parent.parent
-ENV_FILE = BACKEND_DIR / ".env"
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+ENV_FILE = Path(os.environ.get("TRADEVALUE_ENV_FILE", BACKEND_DIR / ".env"))
 
 
 class ConfigurationError(RuntimeError):

@@ -58,7 +58,7 @@ origins. Do not use `*` when credentials are introduced later.
 ## Tests
 
 ```bash
-PYTHONPATH=backend uv run pytest -q backend/tests ml/tests
+uv run pytest -q tests/backend tests/ml
 ```
 
 HTTP and service tests verify response contracts, validation errors, route
@@ -95,7 +95,7 @@ createdb tradevalue_test
 DATABASE_URL=postgresql://localhost/tradevalue_test \
   uv run python -m alembic -c backend/alembic.ini upgrade head
 TEST_DATABASE_URL=postgresql://localhost/tradevalue_test \
-  PYTHONPATH=backend uv run pytest -q backend/tests/test_postgres_integration.py
+  uv run pytest -q tests/backend/test_postgres_integration.py
 ```
 
 ## Container
@@ -179,9 +179,9 @@ missing player-seasons directly: CapSpace by NHL ID first, then CapWages when
 the first source has no contract covering a requested season.
 
 ```bash
-PYTHONPATH=backend ENV=dev DATABASE_URL=postgresql://... \
+ENV=dev DATABASE_URL=postgresql://... \
   uv run python -m app.ScriptingFiles.FullDataScript.capspace --dry-run
-PYTHONPATH=backend ENV=dev DATABASE_URL=postgresql://... \
+ENV=dev DATABASE_URL=postgresql://... \
   uv run python -m app.ScriptingFiles.FullDataScript.capspace --apply --first-season 2008
 ```
 

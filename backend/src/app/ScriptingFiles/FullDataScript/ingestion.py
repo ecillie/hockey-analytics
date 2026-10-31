@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
+import os
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -33,7 +34,9 @@ from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingesti
 
 LOGGER = logging.getLogger(__name__)
 SCRIPT_DIR = Path(__file__).resolve().parent
-DATA_DIR = SCRIPT_DIR.parent / "data"
+DATA_DIR = Path(
+    os.environ.get("TRADEVALUE_DATA_DIR", Path(__file__).resolve().parents[4] / "data")
+)
 HEADERS = {
     "User-Agent": "TradeValue/1.0 (NHL analytics data ingestion)",
     "Accept": "application/json,text/csv,text/html",

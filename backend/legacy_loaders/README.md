@@ -35,7 +35,7 @@ set-based repair afterward so those values become normalized season-ending
 assignments:
 
 ```bash
-PYTHONPATH=backend DATABASE_URL=postgresql://... \
+DATABASE_URL=postgresql://... \
   uv run python backend/database/backfill_team_stints.py --apply
 ```
 
