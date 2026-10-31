@@ -1,7 +1,13 @@
 """Validated options for historical contract ingestion."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class HistoricalContractLimits:
+    maximum_workers: int = 8
+    maximum_batch_size: int = 1000
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -14,6 +20,7 @@ class HistoricalContractOptions:
     player_id: int | None = None
     nhl_id: str | None = None
     force: bool = False
+    limits: HistoricalContractLimits = field(default_factory=HistoricalContractLimits)
 
 
 class ContractOptionError(ValueError):
@@ -26,13 +33,15 @@ class ContractOptionError(ValueError):
 def find_option_violation(
     options: HistoricalContractOptions,
 ) -> ContractOptionError | None:
-    if not 1 <= options.workers <= 8:
+    if not 1 <= options.workers <= options.limits.maximum_workers:
         return ContractOptionError(
-            option="workers", requirement="must be between 1 and 8"
+            option="workers",
+            requirement=f"must be between 1 and {options.limits.maximum_workers}",
         )
-    if not 1 <= options.batch_size <= 1000:
+    if not 1 <= options.batch_size <= options.limits.maximum_batch_size:
         return ContractOptionError(
-            option="batch_size", requirement="must be between 1 and 1000"
+            option="batch_size",
+            requirement=f"must be between 1 and {options.limits.maximum_batch_size}",
         )
     if options.first_season > options.last_season:
         return ContractOptionError(option="season range", requirement="must be ordered")

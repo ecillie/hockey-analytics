@@ -52,6 +52,7 @@ from app.ScriptingFiles.FullDataScript.contracts.http import (
 )
 from app.ScriptingFiles.FullDataScript.contracts.options import (
     HistoricalContractOptions,
+    ProfileHttpOptions,
     find_option_violation,
 )
 from app.ScriptingFiles.FullDataScript.contracts.repository import (
@@ -83,8 +84,8 @@ from app.ScriptingFiles.FullDataScript.contracts.util import (
 from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingestion
 from app.shared.cli import ExitCode
 
-CAPSPACE_BASE_URL = "https://cap-space.com"
-CAPWAGES_BASE_URL = "https://capwages.com"
+CAPSPACE_BASE_URL = ProfileHttpOptions().capspace_base_url
+CAPWAGES_BASE_URL = ProfileHttpOptions().capwages_base_url
 CAPSPACE_SOURCE = ProfileSource.CAPSPACE
 CAPWAGES_SOURCE = ProfileSource.CAPWAGES
 STATUS_FAILED = ProfileStatus.FAILED
@@ -95,13 +96,13 @@ STATUS_NOT_FOUND = ProfileStatus.NOT_FOUND
 STATUS_PARSE_FAILED = ProfileStatus.PARSE_FAILED
 STATUS_SUCCEEDED = ProfileStatus.SUCCEEDED
 FAILURE_STATUSES = frozenset({STATUS_FAILED, STATUS_PARSE_FAILED})
-RETRYABLE_HTTP_STATUSES = frozenset({429, 500, 502, 503, 504})
-CAPWAGES_SLUG_SUFFIXES = ("", "-1", "-2", "-3")
-DEFAULT_FIRST_SEASON = 2008
-DEFAULT_LAST_SEASON = 2025
-MAX_WORKERS = 8
-DEFAULT_BATCH_SIZE = 100
-MAX_BATCH_SIZE = 1000
+RETRYABLE_HTTP_STATUSES = frozenset(ProfileHttpOptions().retryable_statuses)
+CAPWAGES_SLUG_SUFFIXES = ProfileHttpOptions().capwages_slug_suffixes
+DEFAULT_FIRST_SEASON = HistoricalContractOptions().first_season
+DEFAULT_LAST_SEASON = HistoricalContractOptions().last_season
+MAX_WORKERS = HistoricalContractOptions().limits.maximum_workers
+DEFAULT_BATCH_SIZE = HistoricalContractOptions().batch_size
+MAX_BATCH_SIZE = HistoricalContractOptions().limits.maximum_batch_size
 
 
 def _run(
@@ -111,7 +112,7 @@ def _run(
     first_season: int = DEFAULT_FIRST_SEASON,
     last_season: int = DEFAULT_LAST_SEASON,
     limit: int | None = None,
-    workers: int = 4,
+    workers: int = HistoricalContractOptions().workers,
     batch_size: int = DEFAULT_BATCH_SIZE,
     player_id: int | None = None,
     nhl_id: str | None = None,
@@ -166,7 +167,7 @@ def ingest_historical_contracts(
     first_season: int = DEFAULT_FIRST_SEASON,
     last_season: int = DEFAULT_LAST_SEASON,
     limit: int | None = None,
-    workers: int = 4,
+    workers: int = HistoricalContractOptions().workers,
     batch_size: int = DEFAULT_BATCH_SIZE,
     player_id: int | None = None,
     nhl_id: str | None = None,
@@ -193,7 +194,7 @@ def preview_historical_contracts(
     first_season: int = DEFAULT_FIRST_SEASON,
     last_season: int = DEFAULT_LAST_SEASON,
     limit: int | None = None,
-    workers: int = 4,
+    workers: int = HistoricalContractOptions().workers,
     batch_size: int = DEFAULT_BATCH_SIZE,
     player_id: int | None = None,
     nhl_id: str | None = None,
@@ -243,6 +244,7 @@ logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
+    defaults = HistoricalContractOptions()
     parser = argparse.ArgumentParser(
         description="Gap-fill historical NHL contracts from CapSpace and CapWages"
     )
@@ -271,15 +273,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--nhl-id")
     parser.add_argument("--player-id", type=int)
-    parser.add_argument("--first-season", type=int, default=DEFAULT_FIRST_SEASON)
-    parser.add_argument("--last-season", type=int, default=DEFAULT_LAST_SEASON)
+    parser.add_argument("--first-season", type=int, default=defaults.first_season)
+    parser.add_argument("--last-season", type=int, default=defaults.last_season)
     parser.add_argument("--limit", type=int)
-    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=defaults.workers)
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=DEFAULT_BATCH_SIZE,
-        help=f"players fetched and committed per batch (1-{MAX_BATCH_SIZE})",
+        default=defaults.batch_size,
+        help=f"players fetched and committed per batch (1-{defaults.limits.maximum_batch_size})",
     )
     parser.add_argument("--force", action="store_true")
     return parser

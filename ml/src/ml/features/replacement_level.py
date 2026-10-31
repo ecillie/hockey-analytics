@@ -9,9 +9,6 @@ from ml.errors import ReplacementPercentileError
 from ml.configuration import HIGHER_IS_BETTER, LOWER_IS_BETTER, FeatureOptions
 from ml.features.build_features import build_features
 
-REPLACEMENT_PERCENTILE = FeatureOptions().replacement_percentile
-
-
 REPLACEMENT_FEATURES = HIGHER_IS_BETTER + LOWER_IS_BETTER
 
 
@@ -111,7 +108,9 @@ def calculate_replacement_level(
             result[f"replacement_{feature}"] - result[feature]
         )
 
-    return result.reset_index(drop=True)
+    result = result.reset_index(drop=True)
+    result.attrs["replacement_percentile"] = percentile
+    return result
 
 
 def print_replacement_diagnostics(
@@ -125,7 +124,10 @@ def print_replacement_diagnostics(
 
     print(f"Replacement-pool rows: {replacement_count:,}")
 
-    print(f"Replacement percentile: {REPLACEMENT_PERCENTILE:.0%}")
+    percentile = df.attrs.get(
+        "replacement_percentile", FeatureOptions().replacement_percentile
+    )
+    print(f"Replacement percentile: {percentile:.0%}")
 
     print("\nReplacement players by position:")
 
