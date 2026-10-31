@@ -1,9 +1,13 @@
+import argparse
 import json
+import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from app.shared.cli import ExitCode
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.impute import SimpleImputer
@@ -256,11 +260,29 @@ def train(
     return result.model
 
 
-if __name__ == "__main__":
-    directory = artifact_directory("TRADEVALUE_MODEL_DIR", Path("models"))
-    train(
-        paths=ArtifactPaths(
-            model=directory.joinpath("skater_value_model.joblib"),
-            metadata=directory.joinpath("skater_value_model_metadata.json"),
+logger = logging.getLogger(__name__)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(description="train skater value")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.INFO)
+    try:
+        directory = artifact_directory("TRADEVALUE_MODEL_DIR", Path("models"))
+        train(
+            paths=ArtifactPaths(
+                model=directory.joinpath("skater_value_model.joblib"),
+                metadata=directory.joinpath("skater_value_model_metadata.json"),
+            )
         )
-    )
+    except Exception:
+        logger.exception("Command failed")
+        return ExitCode.FAILURE
+    return ExitCode.SUCCESS
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

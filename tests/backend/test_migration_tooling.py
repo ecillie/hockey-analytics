@@ -1,10 +1,8 @@
-from __future__ import annotations
-
 import importlib.util
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from uuid import uuid4
@@ -14,7 +12,6 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 
 from backend.database import migration_preflight, schema_snapshot, verify_migrations
-
 
 ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_CONFIG = ROOT / "backend" / "alembic.ini"
@@ -176,7 +173,7 @@ def test_schema_snapshot_update_then_compare(tmp_path):
     assert expected.read_text(encoding="utf-8") == actual.read_text(encoding="utf-8")
 
 
-def test_schema_snapshot_reports_missing_and_drifted_contracts(tmp_path, capsys):
+def test_schema_snapshot_reports_missing_and_drifted_contracts(tmp_path, caplog):
     expected = tmp_path / "expected.json"
     actual = tmp_path / "actual.json"
     expected.write_text(schema_snapshot.render({"tables": []}), encoding="utf-8")
@@ -187,12 +184,12 @@ def test_schema_snapshot_reports_missing_and_drifted_contracts(tmp_path, capsys)
         return_value={"tables": [{"table_name": "players"}]},
     ):
         assert run_snapshot_main("--expected", expected, "--actual", actual) == 1
-    assert "does not match" in capsys.readouterr().out
+    assert "does not match" in caplog.text
     assert "players" in actual.read_text(encoding="utf-8")
 
     with patch.object(schema_snapshot, "snapshot", return_value={"tables": []}):
         assert run_snapshot_main("--expected", tmp_path / "missing.json") == 1
-    assert "snapshot is missing" in capsys.readouterr().out
+    assert "snapshot is missing" in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -415,7 +412,7 @@ def test_complete_migration_lifecycle_on_isolated_database(tmp_path):
             "backend/database/migration_preflight.py",
             success=False,
         )
-        assert "has no Alembic revision" in unsafe.stdout
+        assert "has no Alembic revision" in unsafe.stderr
         with isolated.begin() as connection:
             connection.execute(text("DROP TABLE players"))
         isolated.dispose()

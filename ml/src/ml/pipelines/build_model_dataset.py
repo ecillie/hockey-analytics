@@ -1,4 +1,9 @@
+import argparse
+import logging
+from collections.abc import Sequence
+
 import pandas as pd
+from app.shared.cli import ExitCode
 
 from ml.configuration import FeatureOptions
 from ml.pipelines.load_player_stats import load_player_stats
@@ -145,6 +150,24 @@ def print_model_dataset_diagnostics(
     print(df[sample_columns].head(15).to_string(index=False))
 
 
+logger = logging.getLogger(__name__)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(description="build model dataset")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.INFO)
+    try:
+        dataset = build_model_dataset()
+        print_model_dataset_diagnostics(dataset)
+    except Exception:
+        logger.exception("Command failed")
+        return ExitCode.FAILURE
+    return ExitCode.SUCCESS
+
+
 if __name__ == "__main__":
-    dataset = build_model_dataset()
-    print_model_dataset_diagnostics(dataset)
+    raise SystemExit(main())

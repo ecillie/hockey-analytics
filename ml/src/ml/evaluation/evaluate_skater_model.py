@@ -1,9 +1,13 @@
 """Model evaluation over an owned dataset with explicit artifact adapters."""
 
+import argparse
+import logging
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from app.shared.cli import ExitCode
 from numpy.typing import ArrayLike
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.pipeline import Pipeline
@@ -117,7 +121,25 @@ def evaluate_model(
     return result
 
 
-def main() -> None:
+logger = logging.getLogger(__name__)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(description=__doc__)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.INFO)
+    try:
+        execute_command()
+    except Exception:
+        logger.exception("Command failed")
+        return ExitCode.FAILURE
+    return ExitCode.SUCCESS
+
+
+def execute_command() -> None:
     directory = artifact_directory("TRADEVALUE_MODEL_DIR", Path("models"))
     output = artifact_directory("TRADEVALUE_EVALUATION_DIR", Path("evaluation/outputs"))
     paths = ArtifactPaths(
@@ -132,4 +154,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

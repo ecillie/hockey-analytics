@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import os
 from contextlib import contextmanager, nullcontext
@@ -480,7 +478,7 @@ def test_roster_command_exit_codes():
             populate_roster_status, "sync_roster_status", return_value=success
         ),
     ):
-        assert populate_roster_status.main() == 0
+        assert populate_roster_status.main([]) == 0
     with (
         patch.object(populate_roster_status, "init_db"),
         patch.object(
@@ -491,7 +489,7 @@ def test_roster_command_exit_codes():
             ),
         ),
     ):
-        assert populate_roster_status.main() == 2
+        assert populate_roster_status.main([]) == 2
     with (
         patch.object(populate_roster_status, "init_db"),
         patch.object(
@@ -500,7 +498,7 @@ def test_roster_command_exit_codes():
             side_effect=RuntimeError("database unavailable"),
         ),
     ):
-        assert populate_roster_status.main() == 1
+        assert populate_roster_status.main([]) == 1
 
 
 @pytest.fixture()

@@ -4,14 +4,25 @@ Usage from the repository root:
     uv run python -m app.ScriptingFiles.FullDataScript.populate_roster_status
 """
 
-from dataclasses import asdict
-from datetime import date
+import argparse
+import json
 import logging
 import os
+from collections.abc import Sequence
+from dataclasses import asdict
+from datetime import date
 
 from app.database import database_transaction, init_db
+from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingestion
 from app.ScriptingFiles.FullDataScript.roster_status.ahl_roster_service import (
     AhlRosterService,
+)
+from app.ScriptingFiles.FullDataScript.roster_status.domain import AhlFeedOptions
+from app.ScriptingFiles.FullDataScript.roster_status.errors import (
+    IncompleteRosterFeedError,
+)
+from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import (
+    JsonHttpClient,
 )
 from app.ScriptingFiles.FullDataScript.roster_status.nhl_roster_service import (
     NhlRosterService,
@@ -20,20 +31,12 @@ from app.ScriptingFiles.FullDataScript.roster_status.repository import (
     PostgresRosterRepository,
 )
 from app.ScriptingFiles.FullDataScript.roster_status.services import (
-    RosterStatusService,
     RosterFeed,
+    RosterStatusService,
 )
-from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingestion
-from app.ScriptingFiles.FullDataScript.roster_status.domain import AhlFeedOptions
-from app.ScriptingFiles.FullDataScript.roster_status.errors import (
-    IncompleteRosterFeedError,
-)
-from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import (
-    JsonHttpClient,
-)
+from app.shared.cli import ExitCode
 
-
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @tracked_ingestion("nhl", "populate_roster_status")
@@ -74,7 +77,12 @@ def sync_roster_status(
         return result
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(description=__doc__)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    build_parser().parse_args(argv)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -83,15 +91,15 @@ def main() -> int:
         init_db()
         summary = sync_roster_status()
     except IncompleteRosterFeedError:
-        LOGGER.exception(
+        logger.exception(
             "Roster-status sync refused an incomplete feed; changes were rolled back"
         )
-        return 2
+        return ExitCode.INCOMPLETE
     except Exception:
-        LOGGER.exception("Roster-status sync failed; database changes were rolled back")
-        return 1
+        logger.exception("Roster-status sync failed; database changes were rolled back")
+        return ExitCode.FAILURE
 
-    LOGGER.info(
+    logger.info(
         "Roster sync complete: updated=%s active=%s minors=%s ltir=%s "
         "unknown=%s preserved=%s",
         summary["statuses_updated"],
@@ -101,7 +109,8 @@ def main() -> int:
         summary["unknown_count"],
         summary["preserved_count"],
     )
-    return 0
+    print(json.dumps(summary, indent=2, sort_keys=True, default=str))
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":

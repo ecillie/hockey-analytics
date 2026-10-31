@@ -1,6 +1,11 @@
+import argparse
+import logging
+from collections.abc import Sequence
+
 import pandas as pd
 from app.config import get_database_settings
 from app.database import database_resources
+from app.shared.cli import ExitCode
 from sqlalchemy import Connection, text
 
 PLAYER_SEASON_QUERY = """
@@ -345,6 +350,24 @@ def print_diagnostics(
     print(df[sample_columns].head(15).to_string(index=False))
 
 
+logger = logging.getLogger(__name__)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(description="load player stats")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.INFO)
+    try:
+        player_stats = load_player_stats()
+        print_diagnostics(player_stats)
+    except Exception:
+        logger.exception("Command failed")
+        return ExitCode.FAILURE
+    return ExitCode.SUCCESS
+
+
 if __name__ == "__main__":
-    player_stats = load_player_stats()
-    print_diagnostics(player_stats)
+    raise SystemExit(main())

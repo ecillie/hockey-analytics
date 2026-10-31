@@ -1,11 +1,15 @@
 """Small, data-independent correctness gate for the skater value model."""
 
+import argparse
 import json
+import logging
+from collections.abc import Sequence
 from importlib.resources import as_file, files
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from app.shared.cli import ExitCode
 
 from ml.configuration import CATEGORICAL_FEATURES, NUMERIC_FEATURES, MetricTolerance
 from ml.schemas import ModelMetadata, validate_frame
@@ -112,7 +116,25 @@ def stable_metadata_json(metadata: dict) -> str:
     return json.dumps(metadata, indent=2, sort_keys=True) + "\n"
 
 
-def main() -> None:
+logger = logging.getLogger(__name__)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(description=__doc__)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.INFO)
+    try:
+        execute_command()
+    except Exception:
+        logger.exception("Command failed")
+        return ExitCode.FAILURE
+    return ExitCode.SUCCESS
+
+
+def execute_command() -> None:
     with as_file(
         files("ml").joinpath("resources/skater_value_model_metadata.json")
     ) as path:
@@ -133,4 +155,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
