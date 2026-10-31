@@ -14,9 +14,6 @@ from app.api.tests.fakes import MemoryApiRepository
 from app.api.util import identity_data, summary_data
 
 
-pytest_plugins = ("app.api.tests.fixtures",)
-
-
 class TestSeasonPolicy:
     @pytest.mark.parametrize(
         ("season", "expected"),

@@ -1,7 +1,7 @@
 """Contract option validation and bounded profile session ownership."""
 
 import json
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import Barrier, Lock
 
@@ -49,6 +49,13 @@ from app.ScriptingFiles.FullDataScript.tracking.repository import (
     close_run_resources,
     open_ingestion_run,
 )
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ProfileOptionScenario:
+    probe: ProfileSessionProbe
+    fetcher: ProfileFetcher
+    candidate: Candidate
 
 
 class TestContractOptionValidation:
@@ -429,10 +436,10 @@ class TestProfileOptionsBeforeOwnership:
             nhl_id="8467514",
             missing_seasons=(2008,),
         )
-        return probe, fetcher, candidate
+        return ProfileOptionScenario(probe=probe, fetcher=fetcher, candidate=candidate)
 
     def test_invalid_profile_options_open_no_session(self, scenario):
-        probe, fetcher, candidate = scenario
+        probe, fetcher, candidate = scenario.probe, scenario.fetcher, scenario.candidate
         with pytest.raises(ContractOptionError):
             fetcher.fetch_profiles((candidate,), workers=1)
         assert probe.opened == []

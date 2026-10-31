@@ -1,6 +1,6 @@
 """In-memory read repository for API behavior tests."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections.abc import Mapping
 from operator import attrgetter
 
@@ -20,6 +20,8 @@ from app.api.domain import (
 
 @dataclass(slots=True, kw_only=True, frozen=True)
 class MemoryApiRepository:
+    health_failure: Exception | None = None
+    health_checks: list[bool] = field(default_factory=list)
     season_rows: tuple[SeasonRow, ...] = ()
     player_rows: tuple[IdentityRow, ...] = ()
     team_rows: tuple[TeamRow, ...] = ()
@@ -32,7 +34,9 @@ class MemoryApiRepository:
     missing_history: tuple[int, ...] = ()
 
     def check_health(self) -> None:
-        pass
+        self.health_checks.append(True)
+        if self.health_failure is not None:
+            raise self.health_failure
 
     def current_season(self, latest: int) -> int | None:
         return max(

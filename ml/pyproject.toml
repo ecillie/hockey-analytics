@@ -20,8 +20,8 @@ tradevalue-backend = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ml"]
-exclude = ["**/__pycache__/**", "**/outputs/**"]
+exclude = ["**/__pycache__/**", "**/outputs/**", "src/ml/**/tests/**"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src/ml", "pyproject.toml"]
-exclude = ["**/__pycache__/**", "**/outputs/**"]
+exclude = ["**/__pycache__/**", "**/outputs/**", "src/ml/**/tests/**"]

@@ -1,22 +1,11 @@
 """Alembic environment for TradeValue's PostgreSQL schema."""
 
-from __future__ import annotations
-
 import os
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
-
-
-config = context.config
-
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
-
-# The project currently owns its schema as reviewed SQL migrations rather than
-# SQLAlchemy ORM metadata. Schema drift is checked from PostgreSQL's catalogs.
-target_metadata = None
+from app.shared.cli import ExitCode
 
 
 def database_url() -> str:
@@ -34,7 +23,7 @@ def configure(connection=None, *, url: str | None = None) -> None:
     context.configure(
         connection=connection,
         url=url,
-        target_metadata=target_metadata,
+        target_metadata=None,
         literal_binds=url is not None,
         dialect_opts={"paramstyle": "named"},
         transaction_per_migration=True,
@@ -50,6 +39,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    config = context.config
     settings = config.get_section(config.config_ini_section, {})
     settings["sqlalchemy.url"] = database_url()
     connectable = engine_from_config(
@@ -65,7 +55,15 @@ def run_migrations_online() -> None:
             context.run_migrations()
 
 
-if context.is_offline_mode():
-    run_migrations_offline()
-else:
+def main() -> int:
+    config = context.config
+    if config.config_file_name is not None:
+        fileConfig(config.config_file_name)
+    if context.is_offline_mode():
+        run_migrations_offline()
+        return ExitCode.SUCCESS
     run_migrations_online()
+    return ExitCode.SUCCESS
+
+
+main()

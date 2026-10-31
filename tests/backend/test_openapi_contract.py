@@ -1,7 +1,5 @@
 """Checks for the committed frontend/backend API contract artifact."""
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 
@@ -9,7 +7,7 @@ from app.main import create_app
 
 
 ROOT = Path(__file__).resolve().parents[2]
-OPENAPI = ROOT / "docs" / "openapi.json"
+OPENAPI = ROOT.joinpath("docs", "openapi.json")
 
 
 def test_committed_openapi_schema_matches_backend():

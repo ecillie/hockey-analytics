@@ -5,8 +5,6 @@ loads the same sources directly into ``backend/database/schema.sql`` and keeps
 each source stage transactional and repeatable.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 from collections.abc import Mapping
@@ -143,7 +141,6 @@ def track_active_contracts(
 
 
 def existing_capwages_summary() -> dict[str, int]:
-    """Return the durable last-good CapWages snapshot already in PostgreSQL."""
     with database_transaction() as connection:
         cursor = connection.cursor()
         cursor.execute(

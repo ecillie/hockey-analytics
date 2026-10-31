@@ -51,6 +51,19 @@ class SyncScenario:
     expected: RosterStatus | None
 
 
+@dataclass(slots=True, kw_only=True, frozen=True)
+class EmptyRosterScenario:
+    service: RosterStatusService
+    repository: MemoryRosterRepository
+    feed: FixedRosterFeed
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class AhlClientScenario:
+    service: AhlRosterService
+    client: MemoryHttpClient
+
+
 class TestStatusPrecedence:
     @pytest.fixture(
         params=[
@@ -135,16 +148,20 @@ class TestStatusPrecedence:
         repository = MemoryRosterRepository(
             players=(replace(player, nhl_external_id=None),)
         )
-        return RosterStatusService(
+        return SyncScenario(
+            service=RosterStatusService(
+                repository=repository,
+                nhl_service=FixedRosterFeed(),
+                ahl_service=FixedRosterFeed(),
+            ),
             repository=repository,
-            nhl_service=FixedRosterFeed(),
-            ahl_service=FixedRosterFeed(),
-        ), repository
+            expected=None,
+        )
 
     def test_complete_feeds_do_not_guess_unknown_without_nhl_identity(
         self, missing_nhl_id
     ):
-        service, repository = missing_nhl_id
+        service, repository = missing_nhl_id.service, missing_nhl_id.repository
         assert service.sync().preserved_count == 1
         assert repository.updates == {}
 
@@ -152,16 +169,20 @@ class TestStatusPrecedence:
     def empty_collaborators(self):
         repository = MemoryRosterRepository()
         feed = FixedRosterFeed()
-        return (
-            RosterStatusService(
+        return EmptyRosterScenario(
+            service=RosterStatusService(
                 repository=repository, nhl_service=feed, ahl_service=feed
             ),
-            repository,
-            feed,
+            repository=repository,
+            feed=feed,
         )
 
     def test_empty_valid_collaborators_are_retained(self, empty_collaborators):
-        service, repository, feed = empty_collaborators
+        service, repository, feed = (
+            empty_collaborators.service,
+            empty_collaborators.repository,
+            empty_collaborators.feed,
+        )
         assert isinstance(repository, RosterRepository)
         assert isinstance(feed, RosterFeed)
         assert service.repository is repository
@@ -227,7 +248,9 @@ class TestFeedAdapters:
     @pytest.fixture
     def ahl(self, ahl_payloads):
         client = MemoryHttpClient(responses=ahl_payloads)
-        return AhlRosterService(http_client=client), client
+        return AhlClientScenario(
+            service=AhlRosterService(http_client=client), client=client
+        )
 
     def test_nhl_players_and_immutable_result(self, nhl):
         result = nhl.fetch_current_rosters()
@@ -237,7 +260,7 @@ class TestFeedAdapters:
         assert result.items[0].full_name == "NHL Player"
 
     def test_ahl_identity_and_request_configuration(self, ahl):
-        service, client = ahl
+        service, client = ahl.service, ahl.client
         assert isinstance(client, JsonClient)
         result = service.fetch_current_rosters()
         assert result.complete
@@ -254,13 +277,16 @@ class TestFeedAdapters:
         monkeypatch.setenv("AHL_FEED_KEY", "ambient-key")
         monkeypatch.setenv("AHL_SEASON_ID", "ambient-season")
         client = MemoryHttpClient(responses=ahl_payloads)
-        return AhlRosterService(
-            http_client=client,
-            options=AhlFeedOptions(feed_key="explicit-key", season_id="91"),
-        ), client
+        return AhlClientScenario(
+            service=AhlRosterService(
+                http_client=client,
+                options=AhlFeedOptions(feed_key="explicit-key", season_id="91"),
+            ),
+            client=client,
+        )
 
     def test_options_and_empty_client_are_not_replaced(self, explicit_options):
-        service, client = explicit_options
+        service, client = explicit_options.service, explicit_options.client
         assert len(client) == 0
         assert service.http_client is client
         service.fetch_current_rosters()

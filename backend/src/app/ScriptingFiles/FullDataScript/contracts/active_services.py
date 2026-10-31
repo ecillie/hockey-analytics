@@ -1,6 +1,6 @@
 """Validate a bounded active CapWages fetch before opening its write transaction."""
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 import requests
@@ -63,10 +63,11 @@ class ActiveContractService:
             }
             for future in as_completed(futures):
                 slug = futures[future]
-                try:
-                    contracts[slug] = future.result()
-                except requests.RequestException:
+                completed = resolve_profile_future(future)
+                if completed is None:
                     failed.append(slug)
+                if completed is not None:
+                    contracts[slug] = completed
         ratio = (len(players) - len(failed)) / len(players)
         if ratio < options.minimum_profile_success_ratio:
             raise ActiveProfileCoverageError(
@@ -88,3 +89,12 @@ class ActiveContractService:
         snapshot = self.fetch_snapshot(options)
         with self.repository_factory() as repository:
             return repository.save_snapshot(snapshot)
+
+
+def resolve_profile_future(
+    future: Future[tuple[ParsedContract, ...]],
+) -> tuple[ParsedContract, ...] | None:
+    try:
+        return future.result()
+    except requests.RequestException:
+        return None

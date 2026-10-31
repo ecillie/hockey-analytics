@@ -1,10 +1,19 @@
 """Typed ingestion stages validate before persistence and own their clients."""
 
 from dataclasses import replace
+from app.ScriptingFiles.FullDataScript.source_ingestion.tests.scenarios import (
+    RepositoryStage,
+    ClientStage,
+    BorrowedTransport,
+    WorkerStage,
+)
 from threading import Barrier, Lock
 import json
 from math import isfinite
-from hypothesis import given, strategies as st
+from hypothesis import given
+from app.ScriptingFiles.FullDataScript.source_ingestion.tests.strategies import (
+    optional_numbers,
+)
 
 import pytest
 
@@ -60,16 +69,16 @@ class TestMoneyPuckBoundary:
     def stage(self, source_puck_options, source_puck_csv):
         repository = MemoryMoneyPuckRepository()
         client = MemorySourceClient(csv_files=source_puck_csv)
-        return (
-            MoneyPuckService(
+        return ClientStage(
+            service=MoneyPuckService(
                 client=client, repository=repository, options=source_puck_options
             ),
-            repository,
-            client,
+            repository=repository,
+            client=client,
         )
 
     def test_last_snapshot_wins_and_values_are_normalized_before_writes(self, stage):
-        service, repository, client = stage
+        service, repository, client = stage.service, stage.repository, stage.client
         assert len(client) == 0
         result = service.ingest()
         assert serialize_summary(result) == {
@@ -119,14 +128,17 @@ class TestMoneyPuckBoundary:
                 options.skater_url
             ].replace(",15,", ",15.5,")
         repository = MemoryMoneyPuckRepository()
-        return MoneyPuckService(
-            client=MemorySourceClient(csv_files=source_puck_csv),
+        return RepositoryStage(
+            service=MoneyPuckService(
+                client=MemorySourceClient(csv_files=source_puck_csv),
+                repository=repository,
+                options=options,
+            ),
             repository=repository,
-            options=options,
-        ), repository
+        )
 
     def test_invalid_snapshots_never_reach_the_repository(self, invalid_stage):
-        service, repository = invalid_stage
+        service, repository = invalid_stage.service, invalid_stage.repository
         with pytest.raises(IngestionValidationError):
             service.ingest()
         assert repository.snapshots == []
@@ -226,10 +238,20 @@ class TestNhlWorkerOwnership:
             repository=repository,
             options=NhlStatsOptions(first_season=2025, last_season=2025, workers=2),
         )
-        return service, repository, factory, request.param
+        return WorkerStage(
+            service=service,
+            repository=repository,
+            factory=factory,
+            invalid=request.param,
+        )
 
     def test_worker_bound_and_cleanup_on_success_or_failure(self, stage):
-        service, repository, factory, invalid = stage
+        service, repository, factory, invalid = (
+            stage.service,
+            stage.repository,
+            stage.factory,
+            stage.invalid,
+        )
         if invalid:
             with pytest.raises(IngestionValidationError):
                 service.ingest()
@@ -252,14 +274,17 @@ class TestScheduleValidation:
                 ): source_schedule_page
             }
         )
-        return ScheduleService(
-            client=client,
+        return RepositoryStage(
+            service=ScheduleService(
+                client=client,
+                repository=repository,
+                options=ScheduleOptions(season=2025, minimum_games=1),
+            ),
             repository=repository,
-            options=ScheduleOptions(season=2025, minimum_games=1),
-        ), repository
+        )
 
     def test_schedule_is_normalized_before_upsert(self, stage):
-        service, repository = stage
+        service, repository = stage.service, stage.repository
         result = service.ingest()
         assert result.games == 1
         assert repository.snapshots[0].games[0].away_team == "AAA"
@@ -292,12 +317,15 @@ class TestScheduleValidation:
                 ): source_schedule_page
             }
         )
-        return ScheduleService(
-            client=client, repository=repository, options=options
-        ), repository
+        return RepositoryStage(
+            service=ScheduleService(
+                client=client, repository=repository, options=options
+            ),
+            repository=repository,
+        )
 
     def test_invalid_schedule_cannot_write(self, invalid):
-        service, repository = invalid
+        service, repository = invalid.service, invalid.repository
         with pytest.raises(IngestionValidationError):
             service.ingest()
         assert repository.snapshots == []
@@ -319,16 +347,19 @@ class TestRosterValidation:
                 },
             }
         )
-        return NhlRosterService(
-            client=client,
-            repository=repository,
-            options=NhlRosterOptions(
-                season=2025, minimum_teams=1, minimum_active_players=2
+        return RepositoryStage(
+            service=NhlRosterService(
+                client=client,
+                repository=repository,
+                options=NhlRosterOptions(
+                    season=2025, minimum_teams=1, minimum_active_players=2
+                ),
             ),
-        ), repository
+            repository=repository,
+        )
 
     def test_insufficient_active_roster_is_rejected_before_identity_writes(self, stage):
-        service, repository = stage
+        service, repository = stage.service, stage.repository
         with pytest.raises(IngestionValidationError):
             service.ingest()
         assert repository.snapshots == []
@@ -384,14 +415,16 @@ class TestInvalidQualityOptions:
         options = replace(source_puck_options, maximum_duplicate_ratio=request.param)
         client = MemorySourceClient(csv_files=source_puck_csv)
         repository = MemoryMoneyPuckRepository()
-        return (
-            MoneyPuckService(client=client, repository=repository, options=options),
-            repository,
-            client,
+        return ClientStage(
+            service=MoneyPuckService(
+                client=client, repository=repository, options=options
+            ),
+            repository=repository,
+            client=client,
         )
 
     def test_invalid_options_fail_before_fetching_or_writing(self, stage):
-        service, repository, client = stage
+        service, repository, client = stage.service, stage.repository, stage.client
         with pytest.raises(IngestionValidationError):
             service.ingest()
         assert repository.snapshots == []
@@ -411,7 +444,7 @@ class TestOptionalNumericParsing:
         assert source_utils.parse_number(value) is None
 
 
-@given(st.decimals(allow_nan=True, allow_infinity=True))
+@given(optional_numbers())
 def test_optional_decimal_values_are_finite_or_missing(value):
     result = source_utils.parse_number(value)
     assert result is None or isfinite(result)
@@ -433,16 +466,19 @@ class TestLocalizedScheduleNormalization:
                 ): source_schedule_page
             }
         )
-        return ScheduleService(
-            client=client,
+        return RepositoryStage(
+            service=ScheduleService(
+                client=client,
+                repository=repository,
+                options=ScheduleOptions(season=2025, minimum_games=1),
+            ),
             repository=repository,
-            options=ScheduleOptions(season=2025, minimum_games=1),
-        ), repository
+        )
 
     def test_localized_fallback_and_team_normalization_preserve_input(
         self, stage, source_schedule_page
     ):
-        service, repository = stage
+        service, repository = stage.service, stage.repository
         service.ingest()
         game = repository.snapshots[0].games[0]
         assert (game.away_team, game.venue) == ("AAA", "Fixture Arena")
@@ -461,12 +497,14 @@ class TestBorrowedTransport:
         client = SynchronizedSourceClient(
             client=SessionSourceClient(session=session), lock=lock
         )
-        return BorrowedSourceClientFactory(client=client), session
+        return BorrowedTransport(
+            factory=BorrowedSourceClientFactory(client=client), session=session
+        )
 
     def test_borrowed_requests_are_guarded_without_taking_session_ownership(
         self, transport
     ):
-        factory, session = transport
+        factory, session = transport.factory, transport.session
         with factory() as client:
             assert client.get_json("https://source.test") == {"ok": True}
             assert client.get_csv("https://source.test/file.csv") == "csv-content"
