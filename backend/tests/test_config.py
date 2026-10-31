@@ -2,7 +2,12 @@ import os
 import unittest
 from unittest.mock import patch
 
-from app.config import AppEnvironment, ConfigurationError, get_api_settings, get_database_settings
+from app.config import (
+    AppEnvironment,
+    ConfigurationError,
+    get_api_settings,
+    get_database_settings,
+)
 
 
 class DatabaseSettingsTests(unittest.TestCase):
@@ -12,8 +17,9 @@ class DatabaseSettingsTests(unittest.TestCase):
 
     def load_with(self, environment):
         get_database_settings.cache_clear()
-        with patch("app.config._load_backend_env"), patch.dict(
-            os.environ, environment, clear=True
+        with (
+            patch("app.config._load_backend_env"),
+            patch.dict(os.environ, environment, clear=True),
         ):
             return get_database_settings()
 
@@ -28,9 +34,7 @@ class DatabaseSettingsTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(
-            settings.database_url, "postgresql://example.test/tradevalue"
-        )
+        self.assertEqual(settings.database_url, "postgresql://example.test/tradevalue")
         self.assertEqual(settings.environment, AppEnvironment.NONPROD)
         self.assertEqual(settings.connect_timeout_seconds, 7)
         self.assertEqual(settings.pool_size, 2)
@@ -51,8 +55,7 @@ class DatabaseSettingsTests(unittest.TestCase):
 
         self.assertEqual(
             settings.database_url,
-            "postgresql://trade%20value:secret%2F%40word@localhost:5433/"
-            "hockey%20data",
+            "postgresql://trade%20value:secret%2F%40word@localhost:5433/hockey%20data",
         )
 
     def test_missing_database_settings_are_rejected(self):
@@ -69,9 +72,7 @@ class DatabaseSettingsTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(
-            settings.database_url, "postgresql://prod.test/tradevalue"
-        )
+        self.assertEqual(settings.database_url, "postgresql://prod.test/tradevalue")
 
     def test_environment_is_required_and_validated(self):
         with self.assertRaisesRegex(ConfigurationError, "ENV must be one of"):
@@ -89,10 +90,13 @@ class DatabaseSettingsTests(unittest.TestCase):
 
     def test_api_cors_origins_are_trimmed(self):
         get_api_settings.cache_clear()
-        with patch("app.config._load_backend_env"), patch.dict(
-            os.environ,
-            {"CORS_ORIGINS": "https://trade.example, https://preview.example"},
-            clear=True,
+        with (
+            patch("app.config._load_backend_env"),
+            patch.dict(
+                os.environ,
+                {"CORS_ORIGINS": "https://trade.example, https://preview.example"},
+                clear=True,
+            ),
         ):
             settings = get_api_settings()
         self.assertEqual(
@@ -103,13 +107,16 @@ class DatabaseSettingsTests(unittest.TestCase):
 
     def test_api_cors_preview_regex_is_optional(self):
         get_api_settings.cache_clear()
-        with patch("app.config._load_backend_env"), patch.dict(
-            os.environ,
-            {
-                "CORS_ORIGINS": "https://trade.example",
-                "CORS_ORIGIN_REGEX": r"^https://trade-[a-z0-9-]+\.vercel\.app$",
-            },
-            clear=True,
+        with (
+            patch("app.config._load_backend_env"),
+            patch.dict(
+                os.environ,
+                {
+                    "CORS_ORIGINS": "https://trade.example",
+                    "CORS_ORIGIN_REGEX": r"^https://trade-[a-z0-9-]+\.vercel\.app$",
+                },
+                clear=True,
+            ),
         ):
             settings = get_api_settings()
         self.assertEqual(

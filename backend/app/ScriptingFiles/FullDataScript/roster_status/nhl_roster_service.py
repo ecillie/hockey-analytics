@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import logging
 
-from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import JsonHttpClient
+from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import (
+    JsonHttpClient,
+    JsonClient,
+)
 from app.ScriptingFiles.FullDataScript.roster_status.roster_models import (
     ExternalRosterPlayer,
     FetchResult,
@@ -18,8 +21,8 @@ class NhlRosterService:
     STANDINGS_URL = "https://api-web.nhle.com/v1/standings/now"
     ROSTER_URL = "https://api-web.nhle.com/v1/roster/{team}/current"
 
-    def __init__(self, http_client: JsonHttpClient | None = None) -> None:
-        self.http_client = http_client or JsonHttpClient()
+    def __init__(self, http_client: JsonClient | None = None) -> None:
+        self.http_client = http_client if http_client is not None else JsonHttpClient()
 
     def fetch_current_rosters(self) -> FetchResult[dict[str, ExternalRosterPlayer]]:
         try:

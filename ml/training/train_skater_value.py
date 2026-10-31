@@ -34,34 +34,26 @@ NUMERIC_FEATURES = [
     "games_played",
     "toi_hours",
     "toi_per_game",
-
     "goals_per_60",
     "primary_assists_per_60",
     "secondary_assists_per_60",
     "points_per_60",
-
     "xg_per_60",
     "shots_on_goal_per_60",
     "unblocked_attempts_per_60",
-
     "game_score_per_60",
-
     "takeaways_per_60",
     "giveaways_per_60",
     "net_takeaways_per_60",
     "blocks_per_60",
-
     "penalties_per_60",
     "penalties_drawn_per_60",
     "penalty_differential_per_60",
-
     "goals_above_expected_per_60",
     "on_ice_expected_goals_pct",
-
     "offensive_zone_start_pct",
     "defensive_zone_start_pct",
     "neutral_zone_start_pct",
-
     "goals_per_60_above_replacement",
     "primary_assists_per_60_above_replacement",
     "secondary_assists_per_60_above_replacement",
@@ -99,8 +91,7 @@ def build_training_data() -> pd.DataFrame:
     # Calculate hockey value for EVERY player-season.
     # Do not apply the 20-game filter to target seasons.
     all_rows["hockey_value"] = (
-        all_rows["game_score_per_60_above_replacement"]
-        * all_rows["toi_hours"]
+        all_rows["game_score_per_60_above_replacement"] * all_rows["toi_hours"]
     )
 
     # Build next-season targets from all available NHL rows.
@@ -121,13 +112,11 @@ def build_training_data() -> pd.DataFrame:
 
     # Only current-season feature rows need >=20 games.
     df = all_rows[
-        all_rows["eligible_for_training"]
-        & all_rows["position_group"].notna()
+        all_rows["eligible_for_training"] & all_rows["position_group"].notna()
     ].copy()
 
     df["current_hockey_value"] = (
-        df["game_score_per_60_above_replacement"]
-        * df["toi_hours"]
+        df["game_score_per_60_above_replacement"] * df["toi_hours"]
     )
 
     df["target_season"] = df["season"] + 1
@@ -142,22 +131,15 @@ def build_training_data() -> pd.DataFrame:
         validate="one_to_one",
     )
 
-    latest_season = int(
-        all_rows["season"].max()
-    )
+    latest_season = int(all_rows["season"].max())
 
     # Only keep observations where the target season exists
     # somewhere in our database.
-    df = df[
-        df["target_season"] <= latest_season
-    ].copy()
+    df = df[df["target_season"] <= latest_season].copy()
 
     # If the player has no NHL player-season row next year,
     # next-season NHL contribution is zero.
-    df["next_season_hockey_value"] = (
-        df["next_season_hockey_value"]
-        .fillna(0.0)
-    )
+    df["next_season_hockey_value"] = df["next_season_hockey_value"].fillna(0.0)
 
     df.replace(
         [np.inf, -np.inf],
@@ -231,10 +213,7 @@ def evaluate(
     df: pd.DataFrame,
 ) -> dict[str, float]:
 
-    X = df[
-        NUMERIC_FEATURES
-        + CATEGORICAL_FEATURES
-    ]
+    X = df[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
 
     y = df["next_season_hockey_value"]
 
@@ -260,21 +239,13 @@ def evaluate(
     print(f"\n{name}")
     print("-" * len(name))
 
-    print(
-        f"Rows: {len(df):,}"
-    )
+    print(f"Rows: {len(df):,}")
 
-    print(
-        f"MAE:  {mae:.4f}"
-    )
+    print(f"MAE:  {mae:.4f}")
 
-    print(
-        f"RMSE: {rmse:.4f}"
-    )
+    print(f"RMSE: {rmse:.4f}")
 
-    print(
-        f"R²:   {r2:.4f}"
-    )
+    print(f"R²:   {r2:.4f}")
 
     return {
         "rows": int(len(df)),
@@ -293,81 +264,42 @@ def train() -> Pipeline:
 
     df = build_training_data()
 
-    print(
-        f"Observations: {len(df):,}"
-    )
+    print(f"Observations: {len(df):,}")
 
-    print(
-        f"Players: {df['player_id'].nunique():,}"
-    )
+    print(f"Players: {df['player_id'].nunique():,}")
 
-    print(
-        f"Source seasons: "
-        f"{df['season'].min()} - "
-        f"{df['season'].max()}"
-    )
+    print(f"Source seasons: {df['season'].min()} - {df['season'].max()}")
 
-    print(
-        f"Target seasons: "
-        f"{df['target_season'].min()} - "
-        f"{df['target_season'].max()}"
-    )
+    print(f"Target seasons: {df['target_season'].min()} - {df['target_season'].max()}")
 
     # ---------------------------------------------------------
     # Chronological split
     # ---------------------------------------------------------
 
-    unique_target_seasons = sorted(
-        df["target_season"]
-        .dropna()
-        .unique()
-    )
+    unique_target_seasons = sorted(df["target_season"].dropna().unique())
 
     if len(unique_target_seasons) < 3:
         raise RuntimeError(
-            "Not enough seasons for chronological "
-            "train/validation/test splits."
+            "Not enough seasons for chronological train/validation/test splits."
         )
 
-    test_season = int(
-        unique_target_seasons[-1]
-    )
+    test_season = int(unique_target_seasons[-1])
 
-    validation_season = int(
-        unique_target_seasons[-2]
-    )
+    validation_season = int(unique_target_seasons[-2])
 
-    train_df = df[
-        df["target_season"]
-        < validation_season
-    ].copy()
+    train_df = df[df["target_season"] < validation_season].copy()
 
-    validation_df = df[
-        df["target_season"]
-        == validation_season
-    ].copy()
+    validation_df = df[df["target_season"] == validation_season].copy()
 
-    test_df = df[
-        df["target_season"]
-        == test_season
-    ].copy()
+    test_df = df[df["target_season"] == test_season].copy()
 
     print("\nChronological split:")
 
-    print(
-        f"Train:      target seasons < "
-        f"{validation_season}"
-    )
+    print(f"Train:      target seasons < {validation_season}")
 
-    print(
-        f"Validation: target season "
-        f"{validation_season}"
-    )
+    print(f"Validation: target season {validation_season}")
 
-    print(
-        f"Test:       target season "
-        f"{test_season}"
-    )
+    print(f"Test:       target season {test_season}")
 
     # ---------------------------------------------------------
     # Fit initial model
@@ -375,14 +307,9 @@ def train() -> Pipeline:
 
     model = build_model()
 
-    X_train = train_df[
-        NUMERIC_FEATURES
-        + CATEGORICAL_FEATURES
-    ]
+    X_train = train_df[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
 
-    y_train = train_df[
-        "next_season_hockey_value"
-    ]
+    y_train = train_df["next_season_hockey_value"]
 
     print("\nTraining model...")
 
@@ -417,21 +344,13 @@ def train() -> Pipeline:
     # Refit on everything except final test season
     # ---------------------------------------------------------
 
-    final_training_df = df[
-        df["target_season"]
-        < test_season
-    ].copy()
+    final_training_df = df[df["target_season"] < test_season].copy()
 
     final_model = build_model()
 
     final_model.fit(
-        final_training_df[
-            NUMERIC_FEATURES
-            + CATEGORICAL_FEATURES
-        ],
-        final_training_df[
-            "next_season_hockey_value"
-        ],
+        final_training_df[NUMERIC_FEATURES + CATEGORICAL_FEATURES],
+        final_training_df["next_season_hockey_value"],
     )
 
     # ---------------------------------------------------------
@@ -483,13 +402,9 @@ def train() -> Pipeline:
     print(" MODEL SAVED")
     print("========================================")
 
-    print(
-        f"\nModel:    {MODEL_PATH}"
-    )
+    print(f"\nModel:    {MODEL_PATH}")
 
-    print(
-        f"Metadata: {METADATA_PATH}"
-    )
+    print(f"Metadata: {METADATA_PATH}")
 
     return final_model
 

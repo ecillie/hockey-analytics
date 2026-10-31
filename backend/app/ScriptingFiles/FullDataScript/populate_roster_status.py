@@ -44,11 +44,13 @@ def sync_roster_status() -> dict[str, object]:
         if summary.errors:
             raise IncompleteRosterFeedError("; ".join(summary.errors))
         result = asdict(summary)
-        result.update({
-            "records_read": summary.statuses_updated + summary.preserved_count,
-            "records_updated": summary.statuses_updated,
-            "records_skipped": summary.preserved_count,
-        })
+        result.update(
+            {
+                "records_read": summary.statuses_updated + summary.preserved_count,
+                "records_updated": summary.statuses_updated,
+                "records_skipped": summary.preserved_count,
+            }
+        )
         return result
 
 
@@ -61,7 +63,9 @@ def main() -> int:
         init_db()
         summary = sync_roster_status()
     except IncompleteRosterFeedError:
-        LOGGER.exception("Roster-status sync refused an incomplete feed; changes were rolled back")
+        LOGGER.exception(
+            "Roster-status sync refused an incomplete feed; changes were rolled back"
+        )
         return 2
     except Exception:
         LOGGER.exception("Roster-status sync failed; database changes were rolled back")

@@ -22,7 +22,9 @@ target_metadata = None
 def database_url() -> str:
     url = os.getenv("DATABASE_URL") or os.getenv("TEST_DATABASE_URL")
     if not url:
-        raise RuntimeError("DATABASE_URL or TEST_DATABASE_URL is required for migrations")
+        raise RuntimeError(
+            "DATABASE_URL or TEST_DATABASE_URL is required for migrations"
+        )
     if not url.startswith(("postgresql://", "postgresql+psycopg2://")):
         raise RuntimeError("TradeValue migrations require PostgreSQL")
     return url

@@ -47,10 +47,7 @@ if __name__ == "__main__":
     print(f"Rows: {len(df):,}")
 
     if not df.empty:
-        print(
-            f"Seasons: {df['season'].min()} - "
-            f"{df['season'].max()}"
-        )
+        print(f"Seasons: {df['season'].min()} - {df['season'].max()}")
 
         print("\nSalary caps:")
         print(

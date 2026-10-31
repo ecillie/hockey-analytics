@@ -64,7 +64,10 @@ def _ordered_team_abbreviations(value: Any) -> tuple[str, ...]:
     abbreviations = []
     for item in str(value or "").split(","):
         abbreviation = item.strip().upper()
-        if re.fullmatch(r"[A-Z]{2,4}", abbreviation) and abbreviation not in {"ALL", "TOT"}:
+        if re.fullmatch(r"[A-Z]{2,4}", abbreviation) and abbreviation not in {
+            "ALL",
+            "TOT",
+        }:
             abbreviations.append(abbreviation)
     return tuple(abbreviations)
 
@@ -105,7 +108,12 @@ def validate_stat_invariants(kind: str, row: dict[str, Any], *, source: str) -> 
         goals = _number(row.get("goals"), integer=True)
         assists = _number(row.get("assists"), integer=True)
         points = _number(row.get("points"), integer=True)
-        if None not in (goals, assists, points) and points != goals + assists:
+        if (
+            goals is not None
+            and assists is not None
+            and points is not None
+            and points != goals + assists
+        ):
             raise IngestionValidationError(
                 f"{source}: points must equal goals plus assists for player {row.get('playerId')}"
             )
@@ -113,7 +121,12 @@ def validate_stat_invariants(kind: str, row: dict[str, Any], *, source: str) -> 
         shots = _number(row.get("shotsAgainst"), integer=True)
         saves = _number(row.get("saves"), integer=True)
         goals = _number(row.get("goalsAgainst"), integer=True)
-        if None not in (shots, saves, goals) and shots != saves + goals:
+        if (
+            shots is not None
+            and saves is not None
+            and goals is not None
+            and shots != saves + goals
+        ):
             raise IngestionValidationError(
                 f"{source}: shotsAgainst must equal saves plus goalsAgainst for player {row.get('playerId')}"
             )
@@ -250,7 +263,9 @@ def _position(value: Any, goalie: bool = False) -> str | None:
     if goalie:
         return "G"
     text = str(value or "").upper().split(",", 1)[0].strip()
-    return {"L": "LW", "R": "RW"}.get(text, text if text in {"C", "LW", "RW", "D", "G", "F"} else None)
+    return {"L": "LW", "R": "RW"}.get(
+        text, text if text in {"C", "LW", "RW", "D", "G", "F"} else None
+    )
 
 
 def _nationality(value: Any) -> str | None:
@@ -306,12 +321,18 @@ def _capwages_birth_date(value: Any) -> str | None:
 
 def _slug_from_name(name: str) -> str:
     first, last = _split_name(name)
-    ascii_name = unicodedata.normalize("NFKD", f"{first} {last}").encode("ascii", "ignore").decode()
+    ascii_name = (
+        unicodedata.normalize("NFKD", f"{first} {last}")
+        .encode("ascii", "ignore")
+        .decode()
+    )
     return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", ascii_name.lower())).strip("-")
 
 
 def _row_hash(row: dict[str, Any]) -> str:
-    encoded = json.dumps(row, sort_keys=True, separators=(",", ":"), default=str).encode()
+    encoded = json.dumps(
+        row, sort_keys=True, separators=(",", ":"), default=str
+    ).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -326,7 +347,9 @@ def _team_ids(cursor) -> dict[str, int]:
 
 
 def _ensure_seasons(cursor, years: Iterable[int]) -> None:
-    rows = [(year, year + 1, f"{year}-{str(year + 1)[-2:]}") for year in sorted(set(years))]
+    rows = [
+        (year, year + 1, f"{year}-{str(year + 1)[-2:]}") for year in sorted(set(years))
+    ]
     if rows:
         execute_values(
             cursor,
@@ -336,20 +359,29 @@ def _ensure_seasons(cursor, years: Iterable[int]) -> None:
         )
 
 
-def _ensure_teams(cursor, abbreviations: Iterable[str], details: dict[str, dict] | None = None) -> dict[str, int]:
+def _ensure_teams(
+    cursor, abbreviations: Iterable[str], details: dict[str, dict] | None = None
+) -> dict[str, int]:
     details = details or {}
     rows = []
-    for abbreviation in sorted({str(item).strip().upper() for item in abbreviations if item}):
-        if not re.fullmatch(r"[A-Z]{2,4}", abbreviation) or abbreviation in {"ALL", "TOT"}:
+    for abbreviation in sorted(
+        {str(item).strip().upper() for item in abbreviations if item}
+    ):
+        if not re.fullmatch(r"[A-Z]{2,4}", abbreviation) or abbreviation in {
+            "ALL",
+            "TOT",
+        }:
             continue
         item = details.get(abbreviation, {})
-        rows.append((
-            abbreviation,
-            item.get("name") or abbreviation,
-            item.get("city"),
-            item.get("nhl_team_id"),
-            item.get("nhl_franchise_id"),
-        ))
+        rows.append(
+            (
+                abbreviation,
+                item.get("name") or abbreviation,
+                item.get("city"),
+                item.get("nhl_team_id"),
+                item.get("nhl_franchise_id"),
+            )
+        )
     if rows:
         execute_values(
             cursor,
@@ -367,7 +399,9 @@ def _ensure_teams(cursor, abbreviations: Iterable[str], details: dict[str, dict]
     return _team_ids(cursor)
 
 
-def _upsert_player(cursor, source_id: int, external_id: Any, full_name: str, **fields: Any) -> int:
+def _upsert_player(
+    cursor, source_id: int, external_id: Any, full_name: str, **fields: Any
+) -> int:
     external_text = str(external_id)
     cursor.execute(
         "SELECT player_id FROM player_external_ids WHERE source_id = %s AND external_id = %s",
@@ -385,16 +419,29 @@ def _upsert_player(cursor, source_id: int, external_id: Any, full_name: str, **f
                    shoots_catches = COALESCE(%s, shoots_catches),
                    nationality = COALESCE(%s, nationality), updated_at = CURRENT_TIMESTAMP
                WHERE id = %s""",
-            (first_name or None, last_name or None, fields.get("birth_date"), fields.get("position"),
-             fields.get("shoots_catches"), fields.get("nationality"), player_id),
+            (
+                first_name or None,
+                last_name or None,
+                fields.get("birth_date"),
+                fields.get("position"),
+                fields.get("shoots_catches"),
+                fields.get("nationality"),
+                player_id,
+            ),
         )
     else:
         cursor.execute(
             """INSERT INTO players
                    (first_name, last_name, birth_date, primary_position, shoots_catches, nationality)
                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
-            (first_name or "Unknown", last_name or "Unknown", fields.get("birth_date"), fields.get("position"),
-             fields.get("shoots_catches"), fields.get("nationality")),
+            (
+                first_name or "Unknown",
+                last_name or "Unknown",
+                fields.get("birth_date"),
+                fields.get("position"),
+                fields.get("shoots_catches"),
+                fields.get("nationality"),
+            ),
         )
         player_id = cursor.fetchone()[0]
         cursor.execute(
@@ -406,7 +453,14 @@ def _upsert_player(cursor, source_id: int, external_id: Any, full_name: str, **f
     return player_id
 
 
-def _link_external_id(cursor, player_id: int, source_id: int, external_id: str, name: str, slug: str | None = None) -> None:
+def _link_external_id(
+    cursor,
+    player_id: int,
+    source_id: int,
+    external_id: str,
+    name: str,
+    slug: str | None = None,
+) -> None:
     cursor.execute(
         """INSERT INTO player_external_ids
                (player_id, source_id, external_id, source_slug, source_name)
@@ -428,7 +482,9 @@ def _parse_csv(text: str, *, source: str) -> list[dict[str, str]]:
         )
     rows = list(reader)
     if any(None in row for row in rows):
-        raise IngestionValidationError(f"{source}: malformed CSV row has too many values")
+        raise IngestionValidationError(
+            f"{source}: malformed CSV row has too many values"
+        )
     return rows
 
 
@@ -454,12 +510,19 @@ def ingest_moneypuck(
     frames = {}
     quality_reports = {}
     for kind in ("skater", "goalie"):
-        rows = _read_csv(MONEYPUCK_FILES[kind]) + _download_csv(session, MONEYPUCK_URLS[kind])
+        rows = _read_csv(MONEYPUCK_FILES[kind]) + _download_csv(
+            session, MONEYPUCK_URLS[kind]
+        )
         frames[kind], report = validate_and_deduplicate_rows(
             rows,
             source=f"MoneyPuck {kind}",
             required_fields=(
-                "playerId", "season", "name", "situation", "games_played", "icetime"
+                "playerId",
+                "season",
+                "name",
+                "situation",
+                "games_played",
+                "icetime",
             ),
             grain_fields=("playerId", "season", "team", "situation"),
             expected_seasons=expected_seasons,
@@ -473,7 +536,14 @@ def ingest_moneypuck(
             maximum_duplicate_ratio=maximum_duplicate_ratio,
         )
         for row in frames[kind]:
-            if _strict_integer(row["games_played"]) < 0 or _number(row["icetime"]) < 0:
+            games_played = _strict_integer(row["games_played"])
+            icetime = _number(row["icetime"])
+            if (
+                games_played is None
+                or icetime is None
+                or games_played < 0
+                or icetime < 0
+            ):
                 raise IngestionValidationError(
                     f"MoneyPuck {kind}: games_played and icetime must be nonnegative"
                 )
@@ -487,7 +557,9 @@ def ingest_moneypuck(
     with database_transaction() as connection:
         cursor = connection.cursor()
         source_id = _source_ids(cursor)["moneypuck"]
-        team_ids = _ensure_teams(cursor, (row.get("team") for rows in frames.values() for row in rows))
+        team_ids = _ensure_teams(
+            cursor, (row.get("team") for rows in frames.values() for row in rows)
+        )
         player_ids: dict[str, int] = {}
         latest: dict[str, tuple[int, str, str, bool]] = {}
         for kind, rows in frames.items():
@@ -495,18 +567,27 @@ def ingest_moneypuck(
                 external_id = str(row.get("playerId") or "").strip()
                 if not external_id:
                     continue
-                season = _number(row.get("season"), integer=True)
+                season = _strict_integer(row.get("season"))
                 if season is None:
                     continue
-                candidate = (season, row.get("name") or "Unknown", row.get("position") or "", kind == "goalie")
+                candidate = (
+                    season,
+                    row.get("name") or "Unknown",
+                    row.get("position") or "",
+                    kind == "goalie",
+                )
                 if external_id not in latest or season >= latest[external_id][0]:
                     latest[external_id] = candidate
         for external_id, (_, name, position, goalie) in latest.items():
             player_ids[external_id] = _upsert_player(
-                cursor, source_id, external_id, name, position=_position(position, goalie)
+                cursor,
+                source_id,
+                external_id,
+                name,
+                position=_position(position, goalie),
             )
 
-        counts = {}
+        counts: dict[str, int] = {}
         records_created = records_updated = 0
         for kind, rows in frames.items():
             values_by_grain = {}
@@ -520,38 +601,77 @@ def ingest_moneypuck(
                 team_id = team_ids.get(team_abbr)
                 stat_scope = "TEAM" if team_id else "TOTAL"
                 situation = str(row.get("situation") or "all")[:24]
-                extra = {key: _number(value) if value not in (None, "") else None for key, value in row.items()}
+                extra = {
+                    key: _number(value) if value not in (None, "") else None
+                    for key, value in row.items()
+                }
                 if kind == "skater":
                     value = (
-                        player_id, season, team_id, stat_scope, situation, source_id,
-                        _number(row.get("games_played"), True), _number(row.get("icetime")),
-                        _number(row.get("shifts"), True), _number(row.get("gameScore")),
-                        _number(row.get("I_F_points"), True), _number(row.get("I_F_goals"), True),
-                        _number(row.get("I_F_primaryAssists"), True), _number(row.get("I_F_secondaryAssists"), True),
-                        _number(row.get("I_F_xGoals")), _number(row.get("I_F_shotsOnGoal"), True),
-                        _number(row.get("I_F_unblockedShotAttempts"), True), _number(row.get("onIce_xGoalsPercentage")),
-                        _number(row.get("shotsBlockedByPlayer"), True), _number(row.get("I_F_takeaways"), True),
-                        _number(row.get("I_F_giveaways"), True), _number(row.get("penalties"), True),
-                        _number(row.get("penaltiesDrawn"), True), _number(row.get("I_F_oZoneShiftStarts"), True),
-                        _number(row.get("I_F_dZoneShiftStarts"), True), _number(row.get("I_F_neutralZoneShiftStarts"), True),
-                        Json(extra), _row_hash(row),
+                        player_id,
+                        season,
+                        team_id,
+                        stat_scope,
+                        situation,
+                        source_id,
+                        _number(row.get("games_played"), True),
+                        _number(row.get("icetime")),
+                        _number(row.get("shifts"), True),
+                        _number(row.get("gameScore")),
+                        _number(row.get("I_F_points"), True),
+                        _number(row.get("I_F_goals"), True),
+                        _number(row.get("I_F_primaryAssists"), True),
+                        _number(row.get("I_F_secondaryAssists"), True),
+                        _number(row.get("I_F_xGoals")),
+                        _number(row.get("I_F_shotsOnGoal"), True),
+                        _number(row.get("I_F_unblockedShotAttempts"), True),
+                        _number(row.get("onIce_xGoalsPercentage")),
+                        _number(row.get("shotsBlockedByPlayer"), True),
+                        _number(row.get("I_F_takeaways"), True),
+                        _number(row.get("I_F_giveaways"), True),
+                        _number(row.get("penalties"), True),
+                        _number(row.get("penaltiesDrawn"), True),
+                        _number(row.get("I_F_oZoneShiftStarts"), True),
+                        _number(row.get("I_F_dZoneShiftStarts"), True),
+                        _number(row.get("I_F_neutralZoneShiftStarts"), True),
+                        Json(extra),
+                        _row_hash(row),
                     )
                 else:
                     value = (
-                        player_id, season, team_id, stat_scope, situation, source_id,
-                        _number(row.get("games_played"), True), _number(row.get("icetime")), _number(row.get("xGoals")),
-                        _number(row.get("goals")), _number(row.get("unblocked_shot_attempts"), True),
-                        _number(row.get("blocked_shot_attempts"), True), _number(row.get("xRebounds")),
-                        _number(row.get("rebounds"), True), _number(row.get("xFreeze")), _number(row.get("freeze"), True),
-                        _number(row.get("xOnGoal")), _number(row.get("ongoal"), True),
-                        _number(row.get("flurryAdjustedxGoals")), _number(row.get("lowDangerShots"), True),
-                        _number(row.get("mediumDangerShots"), True), _number(row.get("highDangerShots"), True),
-                        _number(row.get("lowDangerxGoals")), _number(row.get("mediumDangerxGoals")),
-                        _number(row.get("highDangerxGoals")), _number(row.get("lowDangerGoals"), True),
-                        _number(row.get("mediumDangerGoals"), True), _number(row.get("highDangerGoals"), True),
-                        Json(extra), _row_hash(row),
+                        player_id,
+                        season,
+                        team_id,
+                        stat_scope,
+                        situation,
+                        source_id,
+                        _number(row.get("games_played"), True),
+                        _number(row.get("icetime")),
+                        _number(row.get("xGoals")),
+                        _number(row.get("goals")),
+                        _number(row.get("unblocked_shot_attempts"), True),
+                        _number(row.get("blocked_shot_attempts"), True),
+                        _number(row.get("xRebounds")),
+                        _number(row.get("rebounds"), True),
+                        _number(row.get("xFreeze")),
+                        _number(row.get("freeze"), True),
+                        _number(row.get("xOnGoal")),
+                        _number(row.get("ongoal"), True),
+                        _number(row.get("flurryAdjustedxGoals")),
+                        _number(row.get("lowDangerShots"), True),
+                        _number(row.get("mediumDangerShots"), True),
+                        _number(row.get("highDangerShots"), True),
+                        _number(row.get("lowDangerxGoals")),
+                        _number(row.get("mediumDangerxGoals")),
+                        _number(row.get("highDangerxGoals")),
+                        _number(row.get("lowDangerGoals"), True),
+                        _number(row.get("mediumDangerGoals"), True),
+                        _number(row.get("highDangerGoals"), True),
+                        Json(extra),
+                        _row_hash(row),
                     )
-                values_by_grain[(player_id, season, team_id or 0, stat_scope, situation, source_id)] = value
+                values_by_grain[
+                    (player_id, season, team_id or 0, stat_scope, situation, source_id)
+                ] = value
             values = list(values_by_grain.values())
             if kind == "skater":
                 columns = """player_id,season_start_year,team_id,stat_scope,situation,source_id,games_played,
@@ -575,7 +695,9 @@ def ingest_moneypuck(
             update_columns = ",".join(
                 f"{name}=EXCLUDED.{name}" for name in mutable_columns
             )
-            cursor.execute(f"SELECT count(*) FROM {table} WHERE source_id=%s", (source_id,))
+            cursor.execute(
+                f"SELECT count(*) FROM {table} WHERE source_id=%s", (source_id,)
+            )
             before_count = cursor.fetchone()[0]
             execute_values(
                 cursor,
@@ -586,20 +708,29 @@ def ingest_moneypuck(
                 values,
                 page_size=1000,
             )
-            cursor.execute(f"SELECT count(*) FROM {table} WHERE source_id=%s", (source_id,))
+            cursor.execute(
+                f"SELECT count(*) FROM {table} WHERE source_id=%s", (source_id,)
+            )
             created = cursor.fetchone()[0] - before_count
             records_created += created
             records_updated += len(values) - created
             counts[kind] = len(values)
         cursor.close()
-    LOGGER.info("MoneyPuck loaded: players=%s skater_rows=%s goalie_rows=%s", len(player_ids), counts["skater"], counts["goalie"])
+    LOGGER.info(
+        "MoneyPuck loaded: players=%s skater_rows=%s goalie_rows=%s",
+        len(player_ids),
+        counts["skater"],
+        counts["goalie"],
+    )
     return {
         "players": len(player_ids),
         **counts,
         "records_read": sum(report.records_read for report in quality_reports.values()),
         "records_created": records_created,
         "records_updated": records_updated,
-        "records_skipped": sum(report.duplicate_records for report in quality_reports.values()),
+        "records_skipped": sum(
+            report.duplicate_records for report in quality_reports.values()
+        ),
         "reconciliation_policy": RECONCILIATION_POLICY,
     }
 
@@ -613,7 +744,11 @@ def ingest_nhl_rosters(
     season_start_year: int | None = None,
 ) -> dict[str, int]:
     season_start_year = season_start_year or _season_start_year()
-    standings = session.get("https://api-web.nhle.com/v1/standings/now", timeout=30).json().get("standings", [])
+    standings = (
+        session.get("https://api-web.nhle.com/v1/standings/now", timeout=30)
+        .json()
+        .get("standings", [])
+    )
     teams = {}
     for row in standings:
         abbreviation = _default(row.get("teamAbbrev"))
@@ -628,7 +763,9 @@ def ingest_nhl_rosters(
         )
     rosters = {}
     for abbreviation in teams:
-        response = session.get(f"https://api-web.nhle.com/v1/roster/{abbreviation}/current", timeout=30)
+        response = session.get(
+            f"https://api-web.nhle.com/v1/roster/{abbreviation}/current", timeout=30
+        )
         response.raise_for_status()
         rosters[abbreviation] = response.json()
     roster_player_count = sum(
@@ -661,18 +798,33 @@ def ingest_nhl_rosters(
                     found = cursor.fetchone()
                     if found:
                         player_id = found[0]
-                        _link_external_id(cursor, player_id, nhl_id, external_id, full_name)
+                        _link_external_id(
+                            cursor, player_id, nhl_id, external_id, full_name
+                        )
                         cursor.execute(
                             """UPDATE players SET first_name=%s,last_name=%s,birth_date=%s,primary_position=%s,
                                    shoots_catches=%s,nationality=%s,active=TRUE,updated_at=CURRENT_TIMESTAMP WHERE id=%s""",
-                            (*_split_name(full_name), row.get("birthDate"), _position(row.get("positionCode"), group == "goalies"),
-                             row.get("shootsCatches"), row.get("birthCountry"), player_id),
+                            (
+                                *_split_name(full_name),
+                                row.get("birthDate"),
+                                _position(row.get("positionCode"), group == "goalies"),
+                                row.get("shootsCatches"),
+                                row.get("birthCountry"),
+                                player_id,
+                            ),
                         )
                     else:
                         player_id = _upsert_player(
-                            cursor, nhl_id, external_id, full_name, birth_date=row.get("birthDate"),
-                            position=_position(row.get("positionCode"), group == "goalies"),
-                            shoots_catches=row.get("shootsCatches"), nationality=_nationality(row.get("birthCountry")),
+                            cursor,
+                            nhl_id,
+                            external_id,
+                            full_name,
+                            birth_date=row.get("birthDate"),
+                            position=_position(
+                                row.get("positionCode"), group == "goalies"
+                            ),
+                            shoots_catches=row.get("shootsCatches"),
+                            nationality=_nationality(row.get("birthCountry")),
                         )
                     cursor.execute(
                         """INSERT INTO player_team_stints (player_id,season_start_year,team_id,roster_status)
@@ -685,14 +837,19 @@ def ingest_nhl_rosters(
     return {"teams": len(teams), "active_players": active}
 
 
-def _nhl_stats_pages(session: requests.Session, endpoint: str, season: int, game_type: int) -> list[dict]:
+def _nhl_stats_pages(
+    session: requests.Session, endpoint: str, season: int, game_type: int
+) -> list[dict]:
     rows = []
     start = 0
     while True:
         response = session.get(
             f"https://api.nhle.com/stats/rest/en/{endpoint}/summary",
             params={
-                "isAggregate": "false", "isGame": "false", "start": start, "limit": 100,
+                "isAggregate": "false",
+                "isGame": "false",
+                "start": start,
+                "limit": 100,
                 "cayenneExp": f"seasonId={season}{season + 1} and gameTypeId={game_type}",
             },
             timeout=30,
@@ -717,12 +874,20 @@ def _nhl_stats_pages(session: requests.Session, endpoint: str, season: int, game
 
 
 @tracked_ingestion("nhl")
-def ingest_nhl_stats(session: requests.Session, first_season: int = 2008, last_season: int = 2025) -> dict[str, int | str]:
+def ingest_nhl_stats(
+    session: requests.Session, first_season: int = 2008, last_season: int = 2025
+) -> dict[str, int | str]:
     fetched = defaultdict(list)
-    jobs = [(kind, season, game_type) for kind in ("skater", "goalie")
-            for season in range(first_season, last_season + 1) for game_type in (2, 3)]
+    jobs = [
+        (kind, season, game_type)
+        for kind in ("skater", "goalie")
+        for season in range(first_season, last_season + 1)
+        for game_type in (2, 3)
+    ]
     with ThreadPoolExecutor(max_workers=6) as executor:
-        futures = {executor.submit(_nhl_stats_pages, session, *job): job for job in jobs}
+        futures = {
+            executor.submit(_nhl_stats_pages, session, *job): job for job in jobs
+        }
         for future in as_completed(futures):
             kind, season, game_type = futures[future]
             page_rows = future.result()
@@ -739,8 +904,7 @@ def ingest_nhl_stats(session: requests.Session, first_season: int = 2008, last_s
                 malformed = [
                     field
                     for field in required_stats
-                    if _strict_integer(row.get(field)) is None
-                    or _strict_integer(row.get(field)) < 0
+                    if (number := _strict_integer(row.get(field))) is None or number < 0
                 ]
                 if malformed:
                     raise IngestionValidationError(
@@ -761,11 +925,13 @@ def ingest_nhl_stats(session: requests.Session, first_season: int = 2008, last_s
         abbreviations = []
         for rows in fetched.values():
             for _, _, row in rows:
-                abbreviations.extend(_ordered_team_abbreviations(row.get("teamAbbrevs")))
+                abbreviations.extend(
+                    _ordered_team_abbreviations(row.get("teamAbbrevs"))
+                )
         team_ids = _ensure_teams(cursor, abbreviations)
         player_cache = {}
         final_team_by_player_season: dict[tuple[int, int], int] = {}
-        counts = {}
+        counts: dict[str, int] = {}
         records_created = records_updated = 0
         for kind, records in fetched.items():
             values_by_grain = {}
@@ -779,38 +945,84 @@ def ingest_nhl_stats(session: requests.Session, first_season: int = 2008, last_s
                         (nhl_id, moneypuck_id, external_id, nhl_id),
                     )
                     found = cursor.fetchone()
-                    name = row.get("skaterFullName") or row.get("goalieFullName") or row.get("lastName") or "Unknown"
-                    player_id = found[0] if found else _upsert_player(
-                        cursor, nhl_id, external_id, name,
-                        position=_position(row.get("positionCode"), kind == "goalie"),
-                        shoots_catches=row.get("shootsCatches"),
+                    name = (
+                        row.get("skaterFullName")
+                        or row.get("goalieFullName")
+                        or row.get("lastName")
+                        or "Unknown"
+                    )
+                    player_id = (
+                        found[0]
+                        if found
+                        else _upsert_player(
+                            cursor,
+                            nhl_id,
+                            external_id,
+                            name,
+                            position=_position(
+                                row.get("positionCode"), kind == "goalie"
+                            ),
+                            shoots_catches=row.get("shootsCatches"),
+                        )
                     )
                     _link_external_id(cursor, player_id, nhl_id, external_id, name)
                     player_cache[external_id] = player_id
                 player_id = player_cache[external_id]
                 team_text = str(row.get("teamAbbrevs") or "")
                 ordered_teams = _ordered_team_abbreviations(team_text)
-                team_id = team_ids.get(ordered_teams[0]) if len(ordered_teams) == 1 else None
+                team_id = (
+                    team_ids.get(ordered_teams[0]) if len(ordered_teams) == 1 else None
+                )
                 if game_type == 2 and ordered_teams:
-                    final_team_by_player_season[(player_id, season)] = team_ids[ordered_teams[-1]]
+                    final_team_by_player_season[(player_id, season)] = team_ids[
+                        ordered_teams[-1]
+                    ]
                 scope = "TEAM" if team_id else "TOTAL"
                 if kind == "skater":
-                    value = (player_id, season, team_id, scope, game_type, nhl_id,
-                        _number(row.get("gamesPlayed"), True), _number(row.get("goals"), True),
-                        _number(row.get("assists"), True), _number(row.get("points"), True),
-                        _number(row.get("plusMinus"), True), _number(row.get("penaltyMinutes"), True),
-                        _number(row.get("ppGoals"), True), _number(row.get("ppPoints"), True),
-                        _number(row.get("shGoals"), True), _number(row.get("shots"), True),
-                        _number(row.get("shootingPct")), _row_hash(row))
+                    value = (
+                        player_id,
+                        season,
+                        team_id,
+                        scope,
+                        game_type,
+                        nhl_id,
+                        _number(row.get("gamesPlayed"), True),
+                        _number(row.get("goals"), True),
+                        _number(row.get("assists"), True),
+                        _number(row.get("points"), True),
+                        _number(row.get("plusMinus"), True),
+                        _number(row.get("penaltyMinutes"), True),
+                        _number(row.get("ppGoals"), True),
+                        _number(row.get("ppPoints"), True),
+                        _number(row.get("shGoals"), True),
+                        _number(row.get("shots"), True),
+                        _number(row.get("shootingPct")),
+                        _row_hash(row),
+                    )
                 else:
-                    value = (player_id, season, team_id, scope, game_type, nhl_id,
-                        _number(row.get("gamesPlayed"), True), _number(row.get("wins"), True),
-                        _number(row.get("losses"), True), _number(row.get("otLosses"), True),
-                        _number(row.get("shotsAgainst"), True), _number(row.get("saves"), True),
-                        _number(row.get("savePct")), _number(row.get("goalsAgainst"), True),
-                        _number(row.get("goalsAgainstAverage")), _number(row.get("shutouts"), True),
-                        _number(row.get("timeOnIce"), True), _row_hash(row))
-                values_by_grain[(player_id, season, team_id or 0, scope, game_type, nhl_id)] = value
+                    value = (
+                        player_id,
+                        season,
+                        team_id,
+                        scope,
+                        game_type,
+                        nhl_id,
+                        _number(row.get("gamesPlayed"), True),
+                        _number(row.get("wins"), True),
+                        _number(row.get("losses"), True),
+                        _number(row.get("otLosses"), True),
+                        _number(row.get("shotsAgainst"), True),
+                        _number(row.get("saves"), True),
+                        _number(row.get("savePct")),
+                        _number(row.get("goalsAgainst"), True),
+                        _number(row.get("goalsAgainstAverage")),
+                        _number(row.get("shutouts"), True),
+                        _number(row.get("timeOnIce"), True),
+                        _row_hash(row),
+                    )
+                values_by_grain[
+                    (player_id, season, team_id or 0, scope, game_type, nhl_id)
+                ] = value
             values = list(values_by_grain.values())
             if kind == "skater":
                 columns = "player_id,season_start_year,team_id,stat_scope,game_type,source_id,games_played,goals,assists,points,plus_minus,penalty_minutes,power_play_goals,power_play_points,short_handed_goals,shots,shooting_percentage,source_row_hash"
@@ -828,13 +1040,22 @@ def ingest_nhl_stats(session: requests.Session, first_season: int = 2008, last_s
                     saves=EXCLUDED.saves,save_percentage=EXCLUDED.save_percentage,
                     goals_against=EXCLUDED.goals_against,goals_against_average=EXCLUDED.goals_against_average,
                     shutouts=EXCLUDED.shutouts,time_on_ice_seconds=EXCLUDED.time_on_ice_seconds"""
-            cursor.execute(f"SELECT count(*) FROM {table} WHERE source_id=%s", (nhl_id,))
+            cursor.execute(
+                f"SELECT count(*) FROM {table} WHERE source_id=%s", (nhl_id,)
+            )
             before_count = cursor.fetchone()[0]
-            execute_values(cursor, f"""INSERT INTO {table} ({columns}) VALUES %s
+            execute_values(
+                cursor,
+                f"""INSERT INTO {table} ({columns}) VALUES %s
                 ON CONFLICT (player_id,season_start_year,(COALESCE(team_id,0)),stat_scope,game_type,source_id)
                 DO UPDATE SET {update_columns},source_row_hash=EXCLUDED.source_row_hash,
-                    updated_at=CURRENT_TIMESTAMP""", values, page_size=1000)
-            cursor.execute(f"SELECT count(*) FROM {table} WHERE source_id=%s", (nhl_id,))
+                    updated_at=CURRENT_TIMESTAMP""",
+                values,
+                page_size=1000,
+            )
+            cursor.execute(
+                f"SELECT count(*) FROM {table} WHERE source_id=%s", (nhl_id,)
+            )
             created = cursor.fetchone()[0] - before_count
             records_created += created
             records_updated += len(values) - created
@@ -847,13 +1068,18 @@ def ingest_nhl_stats(session: requests.Session, first_season: int = 2008, last_s
                    VALUES %s ON CONFLICT DO NOTHING""",
                 [
                     (player_id, season, team_id)
-                    for (player_id, season), team_id
-                    in sorted(final_team_by_player_season.items())
+                    for (player_id, season), team_id in sorted(
+                        final_team_by_player_season.items()
+                    )
                 ],
                 page_size=1000,
             )
         cursor.close()
-    LOGGER.info("NHL stats loaded: skater_rows=%s goalie_rows=%s", counts["skater"], counts["goalie"])
+    LOGGER.info(
+        "NHL stats loaded: skater_rows=%s goalie_rows=%s",
+        counts["skater"],
+        counts["goalie"],
+    )
     records_read = sum(len(records) for records in fetched.values())
     return {
         **counts,
@@ -871,22 +1097,45 @@ def _capwages_active(
 ) -> list[list[Any]]:
     response = session.get("https://capwages.com/players/active", timeout=60)
     response.raise_for_status()
-    match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', response.text, re.DOTALL)
+    match = re.search(
+        r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+        response.text,
+        re.DOTALL,
+    )
     if not match:
-        raise RuntimeError("CapWages active-player page no longer contains __NEXT_DATA__")
-    players = json.loads(match.group(1)).get("props", {}).get("pageProps", {}).get("playersArray", [])
+        raise RuntimeError(
+            "CapWages active-player page no longer contains __NEXT_DATA__"
+        )
+    players = (
+        json.loads(match.group(1))
+        .get("props", {})
+        .get("pageProps", {})
+        .get("playersArray", [])
+    )
     if len(players) < minimum_rows:
-        raise RuntimeError(f"CapWages returned an unexpectedly partial active-player list ({len(players)} rows)")
+        raise RuntimeError(
+            f"CapWages returned an unexpectedly partial active-player list ({len(players)} rows)"
+        )
     return players
 
 
 def _capwages_contracts(session: requests.Session, slug: str) -> list[dict]:
     response = session.get(f"https://capwages.com/players/{slug}", timeout=30)
     response.raise_for_status()
-    match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', response.text, re.DOTALL)
+    match = re.search(
+        r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+        response.text,
+        re.DOTALL,
+    )
     if not match:
         return []
-    return json.loads(match.group(1)).get("props", {}).get("pageProps", {}).get("player", {}).get("contracts", [])
+    return (
+        json.loads(match.group(1))
+        .get("props", {})
+        .get("pageProps", {})
+        .get("player", {})
+        .get("contracts", [])
+    )
 
 
 def _parse_capwages_players(
@@ -899,14 +1148,16 @@ def _parse_capwages_players(
         slug = row[1] or _slug_from_name(row[0])
         if not slug:
             continue
-        players.append({
-            "name": row[0],
-            "slug": slug,
-            "team": row[2],
-            "position": row[3],
-            "nationality": row[7] if len(row) > 7 else None,
-            "birth_date": _capwages_birth_date(row[30] if len(row) > 30 else None),
-        })
+        players.append(
+            {
+                "name": row[0],
+                "slug": slug,
+                "team": row[2],
+                "position": row[3],
+                "nationality": row[7] if len(row) > 7 else None,
+                "birth_date": _capwages_birth_date(row[30] if len(row) > 30 else None),
+            }
+        )
     if len(players) < minimum_rows:
         raise IngestionValidationError(
             f"Only {len(players)} CapWages player rows could be assigned profile slugs; "
@@ -927,7 +1178,10 @@ def ingest_capwages(
     contracts_by_slug = {}
     profile_failures = []
     with ThreadPoolExecutor(max_workers=10) as executor:
-        futures = {executor.submit(_capwages_contracts, session, item["slug"]): item["slug"] for item in players}
+        futures = {
+            executor.submit(_capwages_contracts, session, item["slug"]): item["slug"]
+            for item in players
+        }
         for future in as_completed(futures):
             slug = futures[future]
             try:
@@ -951,7 +1205,9 @@ def ingest_capwages(
             for contracts in contracts_by_slug.values()
             for contract in contracts
         ]
-        team_ids = _ensure_teams(cursor, [item["team"] for item in players] + contract_teams)
+        team_ids = _ensure_teams(
+            cursor, [item["team"] for item in players] + contract_teams
+        )
         contract_years = []
         for contracts in contracts_by_slug.values():
             for contract in contracts:
@@ -960,7 +1216,9 @@ def ingest_capwages(
                     if match:
                         contract_years.append(int(match.group(1)))
         _ensure_seasons(cursor, contract_years)
-        cursor.execute("""SELECT p.id, lower(p.first_name), lower(p.last_name) FROM players p""")
+        cursor.execute(
+            """SELECT p.id, lower(p.first_name), lower(p.last_name) FROM players p"""
+        )
         by_name = defaultdict(list)
         for player_id, first, last in cursor.fetchall():
             by_name[(first, last)].append(player_id)
@@ -971,11 +1229,25 @@ def ingest_capwages(
             matches = by_name.get((first.lower(), last.lower()), [])
             if len(matches) == 1:
                 player_id = matches[0]
-                _link_external_id(cursor, player_id, capwages_id, item["slug"], item["name"], item["slug"])
+                _link_external_id(
+                    cursor,
+                    player_id,
+                    capwages_id,
+                    item["slug"],
+                    item["name"],
+                    item["slug"],
+                )
             else:
-                player_id = _upsert_player(cursor, capwages_id, item["slug"], item["name"],
-                    source_slug=item["slug"], birth_date=item["birth_date"],
-                    position=_position(item["position"]), nationality=_nationality(item["nationality"]))
+                player_id = _upsert_player(
+                    cursor,
+                    capwages_id,
+                    item["slug"],
+                    item["name"],
+                    source_slug=item["slug"],
+                    birth_date=item["birth_date"],
+                    position=_position(item["position"]),
+                    nationality=_nationality(item["nationality"]),
+                )
                 by_name[(first.lower(), last.lower())].append(player_id)
             for index, contract in enumerate(contracts_by_slug.get(item["slug"], [])):
                 details = contract.get("details") or []
@@ -1005,7 +1277,9 @@ def ingest_capwages(
                 total_cents = _money_cents(contract.get("value"))
                 average_cents = _money_cents(details[0].get("capHit"))
                 expiry = str(contract.get("expiryStatus") or "").upper()
-                expiry = "RFA" if "RFA" in expiry else "UFA" if "UFA" in expiry else None
+                expiry = (
+                    "RFA" if "RFA" in expiry else "UFA" if "UFA" in expiry else None
+                )
                 contract_type = str(contract.get("type") or "")[:32] or None
                 cursor.execute(
                     """INSERT INTO contracts (player_id,signing_team_id,source_id,external_id,start_season,end_season,
@@ -1018,9 +1292,24 @@ def ingest_capwages(
                            expiry_status=EXCLUDED.expiry_status,total_value_cents=EXCLUDED.total_value_cents,
                            average_value_cents=EXCLUDED.average_value_cents,is_entry_level=EXCLUDED.is_entry_level,
                            source_payload=EXCLUDED.source_payload,updated_at=CURRENT_TIMESTAMP RETURNING id""",
-                    (player_id, team_ids.get(str(contract.get("signingTeam") or item["team"]).upper()), capwages_id,
-                     external_id, start, end, len(years), contract_type, expiry, total_cents, average_cents,
-                     "ENTRY" in (contract_type or "").upper() or "ELC" in (contract_type or "").upper(), Json(contract)),
+                    (
+                        player_id,
+                        team_ids.get(
+                            str(contract.get("signingTeam") or item["team"]).upper()
+                        ),
+                        capwages_id,
+                        external_id,
+                        start,
+                        end,
+                        len(years),
+                        contract_type,
+                        expiry,
+                        total_cents,
+                        average_cents,
+                        "ENTRY" in (contract_type or "").upper()
+                        or "ELC" in (contract_type or "").upper(),
+                        Json(contract),
+                    ),
                 )
                 contract_id = cursor.fetchone()[0]
                 contract_count += 1
@@ -1035,9 +1324,16 @@ def ingest_capwages(
                         raise IngestionValidationError(
                             f"CapWages contract {external_id} has an invalid cap hit"
                         )
-                    cursor.execute("SELECT salary_cap_cents FROM seasons WHERE start_year=%s", (year,))
+                    cursor.execute(
+                        "SELECT salary_cap_cents FROM seasons WHERE start_year=%s",
+                        (year,),
+                    )
                     cap_row = cursor.fetchone()
-                    cap_pct = Decimal(cap_hit) / cap_row[0] if cap_row and cap_row[0] else None
+                    cap_pct = (
+                        Decimal(cap_hit) / cap_row[0]
+                        if cap_row and cap_row[0]
+                        else None
+                    )
                     if cap_pct is not None and cap_pct > 1:
                         raise IngestionValidationError(
                             f"CapWages contract {external_id} exceeds the season salary cap"
@@ -1054,13 +1350,24 @@ def ingest_capwages(
                            owning_team_id=EXCLUDED.owning_team_id,cap_hit_cents=EXCLUDED.cap_hit_cents,
                            cap_percentage=EXCLUDED.cap_percentage,
                            is_slide=EXCLUDED.is_slide,updated_at=CURRENT_TIMESTAMP""",
-                        (contract_id, year, team_ids.get(item["team"]), cap_hit, cap_pct,
-                         "slide" in str(detail.get("type") or "").lower()),
+                        (
+                            contract_id,
+                            year,
+                            team_ids.get(item["team"]),
+                            cap_hit,
+                            cap_pct,
+                            "slide" in str(detail.get("type") or "").lower(),
+                        ),
                     )
                     season_count += 1
                     season_created_count += int(not season_existed)
         cursor.close()
-    LOGGER.info("CapWages loaded: active_players=%s contracts=%s contract_seasons=%s", len(players), contract_count, season_count)
+    LOGGER.info(
+        "CapWages loaded: active_players=%s contracts=%s contract_seasons=%s",
+        len(players),
+        contract_count,
+        season_count,
+    )
     records_created = contract_created_count + season_created_count
     return {
         "players": len(players),
@@ -1092,7 +1399,9 @@ def existing_capwages_summary() -> dict[str, int]:
         players, contracts, contract_seasons = cursor.fetchone()
         cursor.close()
     if not contracts:
-        raise RuntimeError("CapWages is unavailable and no last-good database snapshot exists")
+        raise RuntimeError(
+            "CapWages is unavailable and no last-good database snapshot exists"
+        )
     return {
         "players": players,
         "contracts": contracts,
@@ -1109,7 +1418,9 @@ def ingest_schedule(
     games = {}
     records_read = 0
     while cursor_date:
-        response = session.get(f"https://api-web.nhle.com/v1/schedule/{cursor_date}", timeout=30)
+        response = session.get(
+            f"https://api-web.nhle.com/v1/schedule/{cursor_date}", timeout=30
+        )
         response.raise_for_status()
         payload = response.json()
         for day in payload.get("gameWeek", []):
@@ -1143,7 +1454,11 @@ def ingest_schedule(
             (list(games),),
         )
         incoming_before = cursor.fetchone()[0]
-        abbreviations = [game[side]["abbrev"] for game in games.values() for side in ("awayTeam", "homeTeam")]
+        abbreviations = [
+            game[side]["abbrev"]
+            for game in games.values()
+            for side in ("awayTeam", "homeTeam")
+        ]
         team_ids = _ensure_teams(cursor, abbreviations)
         for game in games.values():
             cursor.execute(
@@ -1153,10 +1468,19 @@ def ingest_schedule(
                    ON CONFLICT (nhl_game_id) DO UPDATE SET game_state=EXCLUDED.game_state,
                        away_score=EXCLUDED.away_score,home_score=EXCLUDED.home_score,last_synced_at=CURRENT_TIMESTAMP,
                        updated_at=CURRENT_TIMESTAMP""",
-                (game["id"], season, game["gameType"], game["_game_date"], game.get("startTimeUTC"),
-                 team_ids[game["awayTeam"]["abbrev"]], team_ids[game["homeTeam"]["abbrev"]],
-                 _default(game.get("venue")), game.get("gameState"), game["awayTeam"].get("score"),
-                 game["homeTeam"].get("score")),
+                (
+                    game["id"],
+                    season,
+                    game["gameType"],
+                    game["_game_date"],
+                    game.get("startTimeUTC"),
+                    team_ids[game["awayTeam"]["abbrev"]],
+                    team_ids[game["homeTeam"]["abbrev"]],
+                    _default(game.get("venue")),
+                    game.get("gameState"),
+                    game["awayTeam"].get("score"),
+                    game["homeTeam"].get("score"),
+                ),
             )
         cursor.close()
     LOGGER.info("NHL schedule loaded: games=%s", len(games))
@@ -1182,12 +1506,16 @@ def run_all() -> dict[str, dict[str, Any]]:
         results["capwages"] = ingest_capwages(session)
     except (requests.RequestException, RuntimeError, IngestionValidationError) as exc:
         results["capwages"] = existing_capwages_summary()
-        LOGGER.warning("CapWages refresh unavailable; retained last-good database snapshot: %s", exc)
+        LOGGER.warning(
+            "CapWages refresh unavailable; retained last-good database snapshot: %s",
+            exc,
+        )
     # Imported lazily to keep the source-native stages independently importable.
     from app.ScriptingFiles.FullDataScript.capspace import (
         existing_historical_contract_summary,
         ingest_historical_contracts,
     )
+
     try:
         results["historical_contracts"] = ingest_historical_contracts(session)
     except (requests.RequestException, RuntimeError, IngestionValidationError) as exc:

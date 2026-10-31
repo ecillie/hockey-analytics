@@ -36,15 +36,26 @@ def prediction_frame(df: pd.DataFrame, predictions: np.ndarray) -> pd.DataFrame:
     values = np.asarray(predictions, dtype=float)
     if len(values) != len(df) or not np.isfinite(values).all():
         raise ValueError("Predictions must be finite and match the input rows")
-    return pd.DataFrame({
-        "player_id": df["player_id"].to_numpy(),
-        "season": df["target_season"].to_numpy(),
-        "prediction": np.maximum(values, 0.0),
-    })[PREDICTION_COLUMNS]
+    return pd.DataFrame(
+        {
+            "player_id": df["player_id"].to_numpy(),
+            "season": df["target_season"].to_numpy(),
+            "prediction": np.maximum(values, 0.0),
+        }
+    )[PREDICTION_COLUMNS]
 
 
 def validate_metadata(metadata: dict) -> None:
-    required = {"model_type", "target", "contract_features_used", "numeric_features", "categorical_features", "validation_target_season", "test_target_season", "metrics"}
+    required = {
+        "model_type",
+        "target",
+        "contract_features_used",
+        "numeric_features",
+        "categorical_features",
+        "validation_target_season",
+        "test_target_season",
+        "metrics",
+    }
     missing = required - metadata.keys()
     if missing:
         raise ValueError(f"Missing model metadata: {sorted(missing)}")
@@ -68,15 +79,25 @@ def validate_metadata(metadata: dict) -> None:
             raise ValueError(f"Non-finite metrics for {split} split")
 
 
-def check_metric_regression(current: dict[str, float], baseline: dict[str, float], tolerance: dict[str, float] | None = None) -> None:
+def check_metric_regression(
+    current: dict[str, float],
+    baseline: dict[str, float],
+    tolerance: dict[str, float] | None = None,
+) -> None:
     """Fail when current metrics move beyond the agreed absolute tolerance."""
     tolerance = tolerance or METRIC_TOLERANCE
     for metric in METRICS:
         if metric not in current or metric not in baseline:
             raise ValueError(f"Missing metric: {metric}")
-        regression = current[metric] - baseline[metric] if metric != "r2" else baseline[metric] - current[metric]
+        regression = (
+            current[metric] - baseline[metric]
+            if metric != "r2"
+            else baseline[metric] - current[metric]
+        )
         if regression > tolerance[metric]:
-            raise AssertionError(f"{metric} regressed by {regression:.4f}; allowed {tolerance[metric]:.4f}")
+            raise AssertionError(
+                f"{metric} regressed by {regression:.4f}; allowed {tolerance[metric]:.4f}"
+            )
 
 
 def validate_committed_model_metadata(path: Path) -> dict:
@@ -93,7 +114,11 @@ def stable_metadata_json(metadata: dict) -> str:
 
 
 def main() -> None:
-    path = Path(__file__).resolve().parents[1] / "models" / "skater_value_model_metadata.json"
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "models"
+        / "skater_value_model_metadata.json"
+    )
     metadata = validate_committed_model_metadata(path)
     # These are the accepted ceilings/floor for the currently published model.
     limits = {

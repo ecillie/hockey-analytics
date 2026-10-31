@@ -24,23 +24,19 @@ SUPPORTED_CLI_MODULES = {
     "app.ScriptingFiles.FullDataScript.run_all",
 }
 QUARANTINED_LOADERS = {
-    "save_basic_player_stats.py",
-    "save_contracts_to_db.py",
-    "save_goalie_advanced_stats.py",
-    "save_individual_contract_years.py",
-    "save_nhl_regular_seasoe_schedule.py",
-    "save_players_to_db.py",
-    "save_previous_games_stats.py",
-    "save_skater_advanced_stats.py",
+    "save_basic_player_stats.py.txt",
+    "save_contracts_to_db.py.txt",
+    "save_goalie_advanced_stats.py.txt",
+    "save_individual_contract_years.py.txt",
+    "save_nhl_regular_seasoe_schedule.py.txt",
+    "save_players_to_db.py.txt",
+    "save_previous_games_stats.py.txt",
+    "save_skater_advanced_stats.py.txt",
 }
 
 
 def supported_python_files() -> list[Path]:
-    return sorted(
-        path
-        for path in APP.rglob("*.py")
-        if "__pycache__" not in path.parts
-    )
+    return sorted(path for path in APP.rglob("*.py") if "__pycache__" not in path.parts)
 
 
 def full_data_modules() -> list[str]:
@@ -94,9 +90,7 @@ def test_supported_tree_does_not_reference_removed_orm_or_legacy_loaders():
     for source in supported_python_files():
         imports = imported_modules(source)
         forbidden = sorted(
-            name
-            for name in imports
-            if name == "app.models" or ".save_" in name
+            name for name in imports if name == "app.models" or ".save_" in name
         )
         if forbidden:
             failures.append(f"{source.relative_to(ROOT)}: {', '.join(forbidden)}")
@@ -106,10 +100,11 @@ def test_supported_tree_does_not_reference_removed_orm_or_legacy_loaders():
 
 
 def test_complete_legacy_loader_set_is_quarantined_outside_application_tree():
-    archived = {path.name for path in LEGACY_LOADERS.glob("save_*.py")}
+    archived = {path.name for path in LEGACY_LOADERS.glob("save_*.py.txt")}
 
     assert archived == QUARANTINED_LOADERS
-    assert not any(path.is_relative_to(APP) for path in LEGACY_LOADERS.glob("*.py"))
+    assert list(LEGACY_LOADERS.rglob("*.py")) == []
+    assert list(LEGACY_LOADERS.rglob("*.pyc")) == []
     assert (LEGACY_LOADERS / "README.md").is_file()
 
 

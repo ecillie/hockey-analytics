@@ -125,7 +125,9 @@ class RosterStatusServiceTests(unittest.TestCase):
         )
         repository, _ = self.sync(player, nhl_result(), ahl_result(ahl_player))
         self.assertEqual(repository.updates[player.id], RosterStatus.MINORS)
-        self.assertEqual(repository.ahl_mappings, [(player.id, "7179", "Kaapo Kähkönen")])
+        self.assertEqual(
+            repository.ahl_mappings, [(player.id, "7179", "Kaapo Kähkönen")]
+        )
 
     def test_existing_ahl_id_is_preferred_over_name(self):
         player = stored_player(ahl_id="7179", name=("Old", "Name"))
