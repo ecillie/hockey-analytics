@@ -21,7 +21,8 @@ import hashlib
 import json
 import re
 import time
-from typing import Any, Iterable
+from typing import Any, Iterable, Protocol, runtime_checkable
+from collections.abc import Mapping
 
 import requests
 from psycopg2.extras import Json, execute_values
@@ -29,6 +30,23 @@ from psycopg2.extras import Json, execute_values
 from app.database import database_transaction, init_db
 from app.ScriptingFiles.FullDataScript.ingestion import _slug_from_name, http_session
 from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingestion
+
+
+@runtime_checkable
+class ProfileResponse(Protocol):
+    @property
+    def status_code(self) -> int: ...
+
+    @property
+    def text(self) -> str: ...
+
+    @property
+    def headers(self) -> Mapping[str, str]: ...
+
+
+@runtime_checkable
+class ProfileSession(Protocol):
+    def get(self, url: str, *, timeout: float) -> ProfileResponse: ...
 
 
 CAPSPACE_BASE_URL = "https://cap-space.com"
@@ -1149,7 +1167,7 @@ def _source_records_bulk(
 
 
 def _fetch_profile(
-    session: requests.Session, candidate: Candidate, *, max_attempts: int = 4
+    session: ProfileSession, candidate: Candidate, *, max_attempts: int = 4
 ) -> ProfileResult:
     if not candidate.nhl_id:
         return ProfileResult(candidate, "", STATUS_NO_NHL_ID)
@@ -1275,7 +1293,7 @@ def _capwages_identity_matches(
 
 
 def _fetch_capwages_profile(
-    session: requests.Session,
+    session: ProfileSession,
     candidate: Candidate,
 ) -> ProfileResult:
     """Try CapWages slugs with strong identity checks and bounded requests."""
@@ -1374,7 +1392,7 @@ def _fetch_capwages_profile(
 
 
 def _fetch_profile_with_fallback(
-    session: requests.Session,
+    session: ProfileSession,
     candidate: Candidate,
 ) -> ProfileResult:
     primary = _fetch_profile(session, candidate)
@@ -1410,7 +1428,7 @@ def _candidate_snapshot(**kwargs: Any) -> tuple[list[Candidate], dict[str, Any]]
 
 
 def _fetch_profiles(
-    session: requests.Session, candidates: list[Candidate], workers: int
+    session: ProfileSession, candidates: list[Candidate], workers: int
 ) -> list[ProfileResult]:
     results: list[ProfileResult] = []
     with ThreadPoolExecutor(
@@ -1584,7 +1602,7 @@ def _unprocessed_count(summary: dict[str, Any]) -> int:
 
 
 def _run(
-    session: requests.Session,
+    session: ProfileSession,
     *,
     dry_run: bool,
     first_season: int = DEFAULT_FIRST_SEASON,
@@ -1746,13 +1764,13 @@ def coverage_report(
 
 @tracked_ingestion(CAPSPACE_SOURCE, "populate_historical_contracts")
 def ingest_historical_contracts(
-    session: requests.Session, **kwargs: Any
+    session: ProfileSession, **kwargs: Any
 ) -> dict[str, Any]:
     return _run(session, dry_run=False, **kwargs)
 
 
 def preview_historical_contracts(
-    session: requests.Session, **kwargs: Any
+    session: ProfileSession, **kwargs: Any
 ) -> dict[str, Any]:
     return _run(session, dry_run=True, **kwargs)
 

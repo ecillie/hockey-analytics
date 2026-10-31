@@ -7,7 +7,10 @@ from math import ceil
 from typing import Any, Iterable
 
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from collections.abc import Iterator, Mapping
+from typing import Protocol, runtime_checkable
+from sqlalchemy.sql.elements import TextClause
+
 
 from app.api.queries import (
     CONTRACT_SEASONS_SQL,
@@ -16,6 +19,29 @@ from app.api.queries import (
     SUMMARY_CTES,
     TEAM_SQL,
 )
+
+
+@runtime_checkable
+class QueryRows(Protocol):
+    def first(self) -> object | None: ...
+
+    def __iter__(self) -> Iterator[object]: ...
+
+
+@runtime_checkable
+class QueryResult(Protocol):
+    def scalar_one(self) -> int: ...
+
+    def scalar_one_or_none(self) -> int | None: ...
+
+    def mappings(self) -> QueryRows: ...
+
+
+@runtime_checkable
+class QuerySession(Protocol):
+    def execute(
+        self, statement: TextClause, params: Mapping[str, object] | None = None
+    ) -> QueryResult: ...
 
 
 def _buried_relief_cents(season: int) -> int:
@@ -128,7 +154,7 @@ class TradeValueService:
         "capHitCents": "cap_hit_cents",
     }
 
-    def __init__(self, session: Session, *, as_of: date | None = None):
+    def __init__(self, session: QuerySession, *, as_of: date | None = None):
         self.session = session
         # Capture the date once so every season decision in one service/request
         # uses the same side of the July 1 boundary. ``as_of`` also keeps the
@@ -615,6 +641,10 @@ class TradeValueService:
                 "buried_relief_cents": _buried_relief_cents(season),
             },
         )
+        if row is None:
+            raise ApiProblem(
+                503, "SEASONS_UNAVAILABLE", "Season cap data is unavailable."
+            )
         ceiling = row["salary_cap_cents"]
         return {
             "teamId": team_id,

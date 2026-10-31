@@ -6,7 +6,7 @@ import pytest
 
 @pytest.fixture
 def player_seasons() -> pd.DataFrame:
-    rows = []
+    rows: list[dict[str, str | float | None]] = []
     for season in range(2021, 2026):
         for player_id, position, multiplier in (
             (1, "C", 1.0),

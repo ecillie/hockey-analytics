@@ -6,13 +6,8 @@ from collections import defaultdict
 from datetime import date
 import logging
 import unicodedata
+from typing import Protocol, runtime_checkable
 
-from app.ScriptingFiles.FullDataScript.roster_status.ahl_roster_service import (
-    AhlRosterService,
-)
-from app.ScriptingFiles.FullDataScript.roster_status.nhl_roster_service import (
-    NhlRosterService,
-)
 from app.ScriptingFiles.FullDataScript.roster_status.roster_models import (
     ExternalRosterPlayer,
     FetchResult,
@@ -38,12 +33,17 @@ def normalize_name(value: str) -> str:
     )
 
 
+@runtime_checkable
+class RosterFeed[T](Protocol):
+    def fetch_current_rosters(self) -> FetchResult[T]: ...
+
+
 class RosterStatusService:
     def __init__(
         self,
         repository: RosterRepository,
-        nhl_service: NhlRosterService,
-        ahl_service: AhlRosterService,
+        nhl_service: RosterFeed[dict[str, ExternalRosterPlayer]],
+        ahl_service: RosterFeed[list[ExternalRosterPlayer]],
     ) -> None:
         self.repository = repository
         self.nhl_service = nhl_service

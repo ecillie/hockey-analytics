@@ -51,6 +51,7 @@ def test_datsyuk_fixture_parses_identity_money_team_and_clause():
     )[0]
 
     assert contract.external_id == "datsyuk-2007"
+    assert contract.signed_on is not None
     assert contract.signed_on.isoformat() == "2007-04-06"
     assert contract.term_years == 7
     assert contract.total_value_cents == 4_690_000_000
@@ -270,6 +271,7 @@ def test_json_date_plural_bonus_keys_and_identity_are_supported():
 
     contract = capspace.parse_capspace_page(html, expected_nhl_id="8470281")[0]
 
+    assert contract.signed_on is not None
     assert contract.signed_on.isoformat() == "2009-12-03"
     assert contract.seasons[0].signing_bonus_cents == 300_000_000
     assert contract.seasons[0].performance_bonus_cents == 2_500_000

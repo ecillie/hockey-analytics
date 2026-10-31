@@ -466,7 +466,7 @@ def test_roster_command_exit_codes():
 @pytest.fixture()
 def migrated_database(monkeypatch):
     if not TEST_DATABASE_URL or "tradevalue_test" not in TEST_DATABASE_URL:
-        pytest.skip("a disposable tradevalue_test database is required")
+        raise pytest.skip.Exception("a disposable tradevalue_test database is required")
     from sqlalchemy import create_engine, text
 
     engine = create_engine(TEST_DATABASE_URL)
@@ -477,7 +477,7 @@ def migrated_database(monkeypatch):
             ).scalar_one()
             is None
         ):
-            pytest.skip("the test database has not been migrated")
+            raise pytest.skip.Exception("the test database has not been migrated")
         connection.execute(
             text("TRUNCATE teams, players, ingestion_runs RESTART IDENTITY CASCADE")
         )
@@ -605,10 +605,10 @@ def test_set_based_team_stint_backfill_is_idempotent(migrated_database):
 
 
 def test_failed_ingestion_rolls_back_players_teams_and_stats(migrated_database):
-    from psycopg2.errors import ForeignKeyViolation
+    from psycopg2.errors import lookup
     from sqlalchemy import text
 
-    with pytest.raises(ForeignKeyViolation):
+    with pytest.raises(lookup("23503")):
         ingestion.ingest_moneypuck(
             MoneyPuckSession(season=2199),
             expected_seasons=(2024, 2199),

@@ -31,6 +31,7 @@ class FixtureSession:
 
 @pytest.fixture()
 def database(monkeypatch):
+    assert TEST_DATABASE_URL is not None
     engine = create_engine(TEST_DATABASE_URL)
     with engine.begin() as connection:
         if (
@@ -39,19 +40,19 @@ def database(monkeypatch):
             ).scalar_one()
             is None
         ):
-            pytest.skip("the disposable database has not been migrated")
+            raise pytest.skip.Exception("the disposable database has not been migrated")
         if (
             connection.execute(
                 text("SELECT to_regclass('public.source_records')")
             ).scalar_one()
             is None
         ):
-            pytest.skip("the disposable database has not been migrated")
+            raise pytest.skip.Exception("the disposable database has not been migrated")
         has_capspace = connection.execute(
             text("SELECT count(*) FROM data_sources WHERE code='capspace'")
         ).scalar_one()
         if not has_capspace:
-            pytest.skip(
+            raise pytest.skip.Exception(
                 "the disposable database has not been upgraded to the CapSpace migration"
             )
         connection.execute(

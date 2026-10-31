@@ -123,6 +123,7 @@ VALUES
 
 @pytest.fixture(scope="module")
 def engine():
+    assert TEST_DATABASE_URL is not None
     database_engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     with database_engine.begin() as connection:
         assert (

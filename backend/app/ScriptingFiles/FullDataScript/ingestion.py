@@ -108,7 +108,12 @@ def validate_stat_invariants(kind: str, row: dict[str, Any], *, source: str) -> 
         goals = _number(row.get("goals"), integer=True)
         assists = _number(row.get("assists"), integer=True)
         points = _number(row.get("points"), integer=True)
-        if None not in (goals, assists, points) and points != goals + assists:
+        if (
+            goals is not None
+            and assists is not None
+            and points is not None
+            and points != goals + assists
+        ):
             raise IngestionValidationError(
                 f"{source}: points must equal goals plus assists for player {row.get('playerId')}"
             )
@@ -116,7 +121,12 @@ def validate_stat_invariants(kind: str, row: dict[str, Any], *, source: str) -> 
         shots = _number(row.get("shotsAgainst"), integer=True)
         saves = _number(row.get("saves"), integer=True)
         goals = _number(row.get("goalsAgainst"), integer=True)
-        if None not in (shots, saves, goals) and shots != saves + goals:
+        if (
+            shots is not None
+            and saves is not None
+            and goals is not None
+            and shots != saves + goals
+        ):
             raise IngestionValidationError(
                 f"{source}: shotsAgainst must equal saves plus goalsAgainst for player {row.get('playerId')}"
             )
@@ -526,7 +536,14 @@ def ingest_moneypuck(
             maximum_duplicate_ratio=maximum_duplicate_ratio,
         )
         for row in frames[kind]:
-            if _strict_integer(row["games_played"]) < 0 or _number(row["icetime"]) < 0:
+            games_played = _strict_integer(row["games_played"])
+            icetime = _number(row["icetime"])
+            if (
+                games_played is None
+                or icetime is None
+                or games_played < 0
+                or icetime < 0
+            ):
                 raise IngestionValidationError(
                     f"MoneyPuck {kind}: games_played and icetime must be nonnegative"
                 )
@@ -550,7 +567,7 @@ def ingest_moneypuck(
                 external_id = str(row.get("playerId") or "").strip()
                 if not external_id:
                     continue
-                season = _number(row.get("season"), integer=True)
+                season = _strict_integer(row.get("season"))
                 if season is None:
                     continue
                 candidate = (
@@ -570,7 +587,7 @@ def ingest_moneypuck(
                 position=_position(position, goalie),
             )
 
-        counts = {}
+        counts: dict[str, int] = {}
         records_created = records_updated = 0
         for kind, rows in frames.items():
             values_by_grain = {}
@@ -887,8 +904,7 @@ def ingest_nhl_stats(
                 malformed = [
                     field
                     for field in required_stats
-                    if _strict_integer(row.get(field)) is None
-                    or _strict_integer(row.get(field)) < 0
+                    if (number := _strict_integer(row.get(field))) is None or number < 0
                 ]
                 if malformed:
                     raise IngestionValidationError(
@@ -915,7 +931,7 @@ def ingest_nhl_stats(
         team_ids = _ensure_teams(cursor, abbreviations)
         player_cache = {}
         final_team_by_player_season: dict[tuple[int, int], int] = {}
-        counts = {}
+        counts: dict[str, int] = {}
         records_created = records_updated = 0
         for kind, records in fetched.items():
             values_by_grain = {}

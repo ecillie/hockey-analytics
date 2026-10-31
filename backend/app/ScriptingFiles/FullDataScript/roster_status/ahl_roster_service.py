@@ -8,6 +8,7 @@ import os
 
 from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import (
     JsonHttpClient,
+    JsonClient,
 )
 from app.ScriptingFiles.FullDataScript.roster_status.roster_models import (
     ExternalRosterPlayer,
@@ -25,11 +26,11 @@ class AhlRosterService:
 
     def __init__(
         self,
-        http_client: JsonHttpClient | None = None,
+        http_client: JsonClient | None = None,
         feed_key: str | None = None,
         season_id: str | None = None,
     ) -> None:
-        self.http_client = http_client or JsonHttpClient()
+        self.http_client = http_client if http_client is not None else JsonHttpClient()
         self.feed_key = feed_key or os.getenv("AHL_FEED_KEY", self.DEFAULT_PUBLIC_KEY)
         self.season_id = season_id or os.getenv("AHL_SEASON_ID")
 

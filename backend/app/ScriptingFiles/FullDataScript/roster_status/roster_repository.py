@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Iterable, Protocol
+from typing import Iterable, Protocol, runtime_checkable
+from psycopg2.extensions import connection as PgConnection
 
 from app.ScriptingFiles.FullDataScript.roster_status.roster_models import (
     RosterStatus,
@@ -11,6 +12,7 @@ from app.ScriptingFiles.FullDataScript.roster_status.roster_models import (
 )
 
 
+@runtime_checkable
 class RosterRepository(Protocol):
     def load_players(self) -> list[StoredPlayer]: ...
 
@@ -27,7 +29,7 @@ class RosterRepository(Protocol):
 class PostgresRosterRepository:
     """Uses a PEP-249 connection, such as a psycopg2 connection."""
 
-    def __init__(self, connection: object) -> None:
+    def __init__(self, connection: PgConnection) -> None:
         self.connection = connection
 
     def load_players(self) -> list[StoredPlayer]:

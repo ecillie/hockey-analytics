@@ -5,6 +5,7 @@ from pathlib import Path
 
 import joblib
 import numpy as np
+from numpy.typing import ArrayLike
 import pandas as pd
 from sklearn.metrics import (
     mean_absolute_error,
@@ -27,8 +28,8 @@ OUTPUT_PATH = OUTPUT_DIR / "skater_model_test_predictions.csv"
 
 
 def metrics(
-    actual: pd.Series,
-    predicted: pd.Series,
+    actual: ArrayLike,
+    predicted: ArrayLike,
 ) -> dict[str, float]:
     return {
         "mae": float(mean_absolute_error(actual, predicted)),

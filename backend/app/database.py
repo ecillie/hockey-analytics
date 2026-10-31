@@ -7,7 +7,8 @@ otherwise mutate the schema.
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Iterator
+from collections.abc import Generator
+from psycopg2.extensions import connection as PgConnection
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -39,7 +40,7 @@ def init_db() -> None:
         raise RuntimeError("Database schema is missing; run Alembic upgrade head first")
 
 
-def connect_database():
+def connect_database() -> PgConnection:
     """Return a psycopg2 connection for bulk loaders using DB-API directly."""
     try:
         import psycopg2
@@ -56,7 +57,7 @@ def connect_database():
 
 
 @contextmanager
-def database_transaction() -> Iterator[object]:
+def database_transaction() -> Generator[PgConnection]:
     """Provide a DB-API connection that commits or rolls back atomically."""
     connection = connect_database()
     try:

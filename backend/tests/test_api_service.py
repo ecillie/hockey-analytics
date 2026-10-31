@@ -325,7 +325,9 @@ def test_goalie_stats_handles_missing_and_calculated_rows():
         )
     )
     assert service._goalie_stats(8, 2025) is None
-    assert service._goalie_stats(8, 2025)["goalsSavedAboveExpected"] == 5.0
+    goalie_stats = service._goalie_stats(8, 2025)
+    assert goalie_stats is not None
+    assert goalie_stats["goalsSavedAboveExpected"] == 5.0
 
 
 def test_value_history_leaders_and_overview(monkeypatch):
@@ -430,6 +432,7 @@ def test_contract_team_contracts_and_cap(monkeypatch):
     monkeypatch.setattr(service, "player_identity", lambda player_id: {"id": player_id})
     monkeypatch.setattr(service, "current_season", lambda: 2025)
     contract = service.contract(7)
+    assert contract is not None
     assert contract["signingTeam"]["id"] == 10
     assert contract["seasons"][0]["capPercentage"] == pytest.approx(0.08376963)
 
@@ -486,6 +489,7 @@ def test_contract_without_signing_team_and_unmatched_team_contracts(monkeypatch)
     monkeypatch.setattr(service, "player_identity", lambda player_id: {"id": player_id})
 
     contract = service.contract(7, 2025)
+    assert contract is not None
     assert contract["signingTeam"] is None
     assert contract["seasons"] == []
 
@@ -578,3 +582,18 @@ def test_search_can_request_each_entity_type_independently(monkeypatch):
     monkeypatch.setattr(service, "player_identity", lambda player_id: {"id": player_id})
     players_only = service.search("test", ["player"], 8)
     assert players_only == {"players": [{"id": 7}], "teams": []}
+
+
+class TestMissingCapAggregate:
+    @pytest.fixture
+    def service(self):
+        team = {**TEAM_ROW, "id": 10}
+        return TradeValueService(
+            ScriptedSession(Result(scalar=True), Result(rows=[team]), Result())
+        )
+
+    def test_missing_cap_row_is_a_service_failure(self, service):
+        with pytest.raises(ApiProblem) as failure:
+            service.team_cap(10, 2025)
+        assert failure.value.status == 503
+        assert failure.value.code == "SEASONS_UNAVAILABLE"

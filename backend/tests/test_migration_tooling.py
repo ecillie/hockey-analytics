@@ -210,6 +210,7 @@ def test_migration_preflight_decisions(tables, versions, expected):
     if expected is None:
         assert error is None
     else:
+        assert error is not None
         assert expected in error
 
 
@@ -361,11 +362,11 @@ def run_command(database_url: str, *arguments: str, success=True):
         timeout=120,
     )
     if success and result.returncode != 0:
-        pytest.fail(
+        raise pytest.fail.Exception(
             f"command failed: {arguments}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     if not success and result.returncode == 0:
-        pytest.fail(f"command unexpectedly passed: {arguments}")
+        raise pytest.fail.Exception(f"command unexpectedly passed: {arguments}")
     return result
 
 
@@ -390,6 +391,7 @@ def test_alembic_environment_rejects_non_postgresql_database(tmp_path):
     reason="TEST_DATABASE_URL is required for migration lifecycle integration tests",
 )
 def test_complete_migration_lifecycle_on_isolated_database(tmp_path):
+    assert TEST_DATABASE_URL is not None
     source_url = make_url(TEST_DATABASE_URL)
     database_name = f"tradevalue_migration_{uuid4().hex[:12]}"
     database_url = source_url.set(database=database_name).render_as_string(

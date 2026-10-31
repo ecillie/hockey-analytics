@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+
+@runtime_checkable
+class JsonClient(Protocol):
+    def get_json(self, url: str, params: dict[str, str] | None = None) -> dict: ...
 
 
 class JsonHttpClient:

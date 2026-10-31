@@ -229,8 +229,10 @@ of the API requirements export. Preserve the compatibility pins in
 `tool.uv.constraint-dependencies` until an intentional dependency upgrade.
 Run `bash scripts/export-requirements.sh --check` to verify generated exports.
 
-Phase 1 records existing lint, format, and type failures; Phase 2 repairs them
-before adding blocking quality jobs. No check suppressions or reduced coverage
-thresholds are used. Framework-state exceptions, archive disposition, and enum
+Python lint, formatting, and type checks run as blocking steps in backend CI.
+Run `uv run ruff check`, `uv run ruff format --check`, and `uv run ty check`
+from the repository root. No check suppressions or reduced coverage
+thresholds are used. The retired loaders are archived as byte-preserved `.py.txt`
+references. Framework-state exceptions and enum
 boundary decisions remain prerequisites for their source-remediation phases;
 this configuration change grants no exception to the Python rules.

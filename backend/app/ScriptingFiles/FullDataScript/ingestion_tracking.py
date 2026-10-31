@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from functools import wraps
 import hashlib
-from typing import Any, TypeVar
+from typing import Any, TypeVar, Protocol, runtime_checkable
 
 from psycopg2.extras import Json
 
@@ -18,6 +18,13 @@ class ConcurrentIngestionError(RuntimeError):
 
 
 Result = TypeVar("Result", bound=Mapping[str, Any])
+
+
+@runtime_checkable
+class NamedFunction[**P, R](Protocol):
+    __name__: str
+
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R: ...
 
 
 def advisory_lock_key(job_name: str) -> int:
@@ -37,7 +44,7 @@ def _record_count(summary: Mapping[str, Any]) -> int:
 def tracked_ingestion(source_code: str, job_name: str | None = None):
     """Decorate a stage with a durable run row and a session advisory lock."""
 
-    def decorate(function: Callable[..., Result]) -> Callable[..., Result]:
+    def decorate(function: NamedFunction[..., Result]) -> Callable[..., Result]:
         resolved_job_name = job_name or function.__name__
 
         @wraps(function)
