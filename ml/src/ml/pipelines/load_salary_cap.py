@@ -1,6 +1,11 @@
+import argparse
+import logging
+from collections.abc import Sequence
+
 import pandas as pd
 from app.config import get_database_settings
 from app.database import database_resources
+from app.shared.cli import ExitCode
 from sqlalchemy import Connection, text
 
 SALARY_CAP_QUERY = """
@@ -30,9 +35,7 @@ def load_salary_cap(*, connection: Connection | None = None) -> pd.DataFrame:
     return pd.read_sql(text(SALARY_CAP_QUERY), connection)
 
 
-if __name__ == "__main__":
-    df = load_salary_cap()
-
+def print_cap_diagnostics(df: pd.DataFrame) -> None:
     print("\n=== SALARY CAP DATA ===")
     print(f"Rows: {len(df):,}")
 
@@ -49,3 +52,27 @@ if __name__ == "__main__":
                 ]
             ].to_string(index=False)
         )
+
+
+logger = logging.getLogger(__name__)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(description="load salary cap")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.INFO)
+    try:
+        df = load_salary_cap()
+
+        print_cap_diagnostics(df)
+    except Exception:
+        logger.exception("Command failed")
+        return ExitCode.FAILURE
+    return ExitCode.SUCCESS
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

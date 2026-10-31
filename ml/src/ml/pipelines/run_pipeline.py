@@ -1,8 +1,12 @@
 import argparse
+import logging
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 import pandas as pd
 from app.config import get_database_settings
 from app.database import database_resources
+from app.shared.cli import CommandOptionError, ExitCode
 
 from ml.pipelines.build_model_dataset import (
     build_model_dataset,
@@ -34,7 +38,21 @@ def run_pipeline(
     )
 
 
-def main() -> None:
+@dataclass(slots=True, kw_only=True, frozen=True)
+class PipelineOptions:
+    min_games: int = 1
+
+
+logger = logging.getLogger(__name__)
+
+
+def find_option_violation(options: PipelineOptions) -> CommandOptionError | None:
+    if options.min_games < 1:
+        return CommandOptionError(option="min-games", requirement="must be positive")
+    return None
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=("Build the Hockey Analytics skater ML dataset.")
     )
@@ -46,10 +64,22 @@ def main() -> None:
         help=("Minimum games played required for a player-season."),
     )
 
-    args = parser.parse_args()
+    return parser
 
-    print_model_dataset_diagnostics(run_pipeline(min_games=args.min_games))
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
+    options = PipelineOptions(**vars(parser.parse_args(argv)))
+    if violation := find_option_violation(options):
+        parser.error(str(violation))
+    logging.basicConfig(level=logging.INFO)
+    try:
+        print_model_dataset_diagnostics(run_pipeline(min_games=options.min_games))
+    except Exception:
+        logger.exception("ML dataset pipeline failed")
+        return ExitCode.FAILURE
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -1,9 +1,11 @@
 """Reject unsafe migration attempts against an unversioned populated schema."""
 
-from __future__ import annotations
-
+import argparse
+import logging
 import os
+from collections.abc import Sequence
 
+from app.shared.cli import ExitCode
 from sqlalchemy import create_engine, text
 
 
@@ -49,7 +51,24 @@ def validate_preconditions(tables: list[str], versions: list[str]) -> str | None
     return None
 
 
-def main() -> int:
+logger = logging.getLogger(__name__)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(description=__doc__)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.INFO)
+    try:
+        return execute_command()
+    except Exception:
+        logger.exception("Database check failed")
+        return ExitCode.FAILURE
+
+
+def execute_command() -> int:
     engine = create_engine(database_url(), pool_pre_ping=True)
     try:
         with engine.connect() as connection:
@@ -59,14 +78,16 @@ def main() -> int:
 
     error = validate_preconditions(tables, versions)
     if error:
-        print(f"ERROR: {error}.")
-        print("Verify its schema and follow the one-time baseline stamping procedure.")
-        return 1
+        logger.error(
+            "%s. Verify its schema and follow the one-time baseline stamping procedure.",
+            error,
+        )
+        return ExitCode.FAILURE
     print(
         "Migration preflight passed: "
         f"{len(tables)} application tables, revisions={versions or ['base']}."
     )
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":

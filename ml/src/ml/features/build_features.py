@@ -1,5 +1,10 @@
+import argparse
+import logging
+from collections.abc import Sequence
+
 import numpy as np
 import pandas as pd
+from app.shared.cli import ExitCode
 
 from ml.configuration import MODEL_FEATURE_COLUMNS, FeatureOptions
 from ml.pipelines.build_model_dataset import build_model_dataset
@@ -243,6 +248,24 @@ def print_feature_diagnostics(
     print(df[sample_columns].head(15).to_string(index=False))
 
 
+logger = logging.getLogger(__name__)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(description="build features")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.INFO)
+    try:
+        feature_data = build_features()
+        print_feature_diagnostics(feature_data)
+    except Exception:
+        logger.exception("Command failed")
+        return ExitCode.FAILURE
+    return ExitCode.SUCCESS
+
+
 if __name__ == "__main__":
-    feature_data = build_features()
-    print_feature_diagnostics(feature_data)
+    raise SystemExit(main())
