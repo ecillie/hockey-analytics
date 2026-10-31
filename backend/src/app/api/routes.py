@@ -1,31 +1,43 @@
 """FastAPI route definitions matching docs/api-contract.md."""
 
-from __future__ import annotations
-
 from collections.abc import Generator
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Request
-from sqlalchemy import text
 
 from app.api import schemas
-from app.api.service import ApiProblem, TradeValueService
+from app.api.domain import PlayerSort, SortOrder
+from app.api.errors import (
+    DatabaseUnavailable,
+    InvalidComparisonIds,
+    InvalidComparisonSelection,
+    InvalidSearchQuery,
+    InvalidSearchTypes,
+)
+from app.api.repository import SqlApiRepository
+from app.api.service import TradeValueService
 
 
 def get_service(request: Request) -> Generator[TradeValueService, None, None]:
     resources = getattr(request.app.state, "database", None)
     if resources is None:
-        raise ApiProblem(
-            503, "DATABASE_UNAVAILABLE", "The data service is temporarily unavailable."
-        )
+        raise DatabaseUnavailable()
     with resources.sessions() as session:
-        yield TradeValueService(session)
+        yield TradeValueService(repository=SqlApiRepository(session=session))
 
 
-Service = Annotated[TradeValueService, Depends(get_service)]
-PlayerId = Annotated[int, Path(gt=0)]
-TeamId = Annotated[int, Path(gt=0)]
-Season = Annotated[int, Query(ge=1900, le=2200)]
+type Service = Annotated[TradeValueService, Depends(get_service)]
+type PlayerId = Annotated[int, Path(gt=0)]
+type TeamId = Annotated[int, Path(gt=0)]
+type Season = Annotated[int, Query(ge=1900, le=2200)]
+type OptionalSeason = Annotated[int | None, Query(ge=1900, le=2200)]
+
+type TeamFilter = Annotated[str | None, Query(min_length=2, max_length=4)]
+type PlayerSearch = Annotated[str | None, Query(max_length=120)]
+type PageNumber = Annotated[int, Query(ge=1)]
+type PageSize = Annotated[int, Query(ge=1, le=100)]
+type SearchQuery = Annotated[str, Query(min_length=2, max_length=120)]
+type SearchLimit = Annotated[int, Query(ge=1, le=20)]
 
 
 def create_router() -> APIRouter:
@@ -44,7 +56,7 @@ def create_router() -> APIRouter:
 
     @router.get("/health", response_model=schemas.HealthResponse)
     def health(service: Service):
-        service.session.execute(text("SELECT 1"))
+        service.check_health()
         return {"status": "ok"}
 
     @router.get("/seasons", response_model=schemas.SeasonInfo)
@@ -54,26 +66,15 @@ def create_router() -> APIRouter:
     @router.get("/players", response_model=schemas.PaginatedPlayers)
     def players(
         service: Service,
-        season: Season | None = None,
-        team: Annotated[str | None, Query(min_length=2, max_length=4)] = None,
+        season: OptionalSeason = None,
+        team: TeamFilter = None,
         position: schemas.Position | None = None,
         rosterStatus: schemas.RosterStatus | None = None,
-        search: Annotated[str | None, Query(max_length=120)] = None,
-        sort: Literal[
-            "name",
-            "team",
-            "gamesPlayed",
-            "goals",
-            "assists",
-            "points",
-            "gameScore",
-            "gameScorePer60",
-            "hockeyValue",
-            "capHitCents",
-        ] = "hockeyValue",
-        order: Literal["asc", "desc"] = "desc",
-        page: Annotated[int, Query(ge=1)] = 1,
-        pageSize: Annotated[int, Query(ge=1, le=100)] = 25,
+        search: PlayerSearch = None,
+        sort: PlayerSort = "hockeyValue",
+        order: SortOrder = "desc",
+        page: PageNumber = 1,
+        pageSize: PageSize = 25,
     ):
         selected = season if season is not None else service.current_season()
         return service.players(
@@ -95,24 +96,14 @@ def create_router() -> APIRouter:
                 int(value.strip()) for value in ids.split(",") if value.strip()
             ]
         except ValueError as exc:
-            raise ApiProblem(
-                400,
-                "INVALID_COMPARISON",
-                "Player IDs must be integers.",
-                {"ids": ["Use comma-separated integer IDs."]},
-            ) from exc
+            raise InvalidComparisonIds() from exc
         if (
             len(player_ids) < 2
             or len(player_ids) > 4
             or any(value <= 0 for value in player_ids)
             or len(set(player_ids)) != len(player_ids)
         ):
-            raise ApiProblem(
-                400,
-                "INVALID_COMPARISON",
-                "Select between 2 and 4 distinct players.",
-                {"ids": ["Use 2 to 4 distinct positive IDs."]},
-            )
+            raise InvalidComparisonSelection()
         return service.compare(player_ids, season)
 
     @router.get("/players/{player_id}", response_model=schemas.PlayerIdentity)
@@ -138,7 +129,7 @@ def create_router() -> APIRouter:
 
     @router.get("/players/{player_id}/value", response_model=schemas.HockeyValue)
     def hockey_value(
-        service: Service, player_id: PlayerId, season: Season | None = None
+        service: Service, player_id: PlayerId, season: OptionalSeason = None
     ):
         return service.hockey_value(player_id, season)
 
@@ -151,8 +142,8 @@ def create_router() -> APIRouter:
         service: Service,
         season: Season,
         position: schemas.Position | None = None,
-        team: Annotated[str | None, Query(min_length=2, max_length=4)] = None,
-        limit: Annotated[int, Query(ge=1, le=100)] = 10,
+        team: TeamFilter = None,
+        limit: PageSize = 10,
     ):
         return service.leaders(
             season, position.value if position else None, team, limit
@@ -188,31 +179,17 @@ def create_router() -> APIRouter:
     @router.get("/search", response_model=schemas.SearchResponse)
     def search(
         service: Service,
-        q: Annotated[str, Query(min_length=2, max_length=120)],
+        q: SearchQuery,
         types: str = "player,team",
-        limit: Annotated[int, Query(ge=1, le=20)] = 8,
+        limit: SearchLimit = 8,
     ):
         q = q.strip()
         if len(q) < 2:
-            raise ApiProblem(
-                400,
-                "INVALID_REQUEST",
-                "The request parameters are invalid.",
-                {
-                    "q": [
-                        "Search queries must contain at least two non-whitespace characters."
-                    ]
-                },
-            )
+            raise InvalidSearchQuery()
         requested = [value.strip() for value in types.split(",") if value.strip()]
         invalid = sorted(set(requested) - {"player", "team"})
         if not requested or invalid:
-            raise ApiProblem(
-                400,
-                "INVALID_SEARCH_TYPES",
-                "Search types must be player or team.",
-                {"types": ["Use player, team, or both."]},
-            )
+            raise InvalidSearchTypes()
         return service.search(q, requested, limit)
 
     @router.get("/overview", response_model=schemas.OverviewResponse)

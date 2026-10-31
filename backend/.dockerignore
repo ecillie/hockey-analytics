@@ -6,3 +6,5 @@ __pycache__
 data
 legacy_loaders
 src/app/ScriptingFiles
+
+src/app/api/tests

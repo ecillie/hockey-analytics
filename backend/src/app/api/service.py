@@ -1,264 +1,107 @@
-"""Database-backed application service for the public API."""
+"""Application orchestration over an injected read repository."""
 
-from __future__ import annotations
-
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 from datetime import date
 from math import ceil
-from typing import Any, Iterable
 
-from sqlalchemy import text
-from collections.abc import Iterator, Mapping
-from typing import Protocol, runtime_checkable
-from sqlalchemy.sql.elements import TextClause
-
-
-from app.api.queries import (
-    CONTRACT_SEASONS_SQL,
-    CONTRACT_SQL,
-    PLAYER_IDENTITY_SQL,
-    SUMMARY_CTES,
-    TEAM_SQL,
+from app.api.domain import (
+    ContractData,
+    CompareResponseData,
+    GoalieStatsData,
+    HockeyValueData,
+    HockeyValueHistoryPointData,
+    OverviewResponseData,
+    PaginatedPlayersData,
+    PlayerStatsData,
+    SearchResponseData,
+    SeasonInfoData,
+    TeamCapData,
+    TeamContractsResponseData,
+    TeamData,
+    TeamRosterResponseData,
+    TraditionalSkaterStatsData,
+    AdvancedSkaterStatsData,
+    TeamContractRowData,
+    PlayerIdentityData,
+    PlayerSummaryData,
+    PlayerQuery,
+    PlayerSort,
+    SortOrder,
+    SeasonHistoryRowData,
+    SummaryRow,
+    TeamSummaryData,
+)
+from app.api.errors import (
+    CapUnavailable,
+    InvalidSeason,
+    PlayerNotFound,
+    SeasonsUnavailable,
+    TeamNotFound,
+)
+from app.api.policy import buried_relief_cents, latest_started_season
+from app.api.repository import ApiRepository
+from app.api.util import (
+    contract_season_data,
+    identity_data,
+    player_team_data,
+    summary_data,
+    team_data,
+    top_summaries,
 )
 
 
-@runtime_checkable
-class QueryRows(Protocol):
-    def first(self) -> object | None: ...
-
-    def __iter__(self) -> Iterator[object]: ...
-
-
-@runtime_checkable
-class QueryResult(Protocol):
-    def scalar_one(self) -> int: ...
-
-    def scalar_one_or_none(self) -> int | None: ...
-
-    def mappings(self) -> QueryRows: ...
-
-
-@runtime_checkable
-class QuerySession(Protocol):
-    def execute(
-        self, statement: TextClause, params: Mapping[str, object] | None = None
-    ) -> QueryResult: ...
-
-
-def _buried_relief_cents(season: int) -> int:
-    """Return the CBA buryable amount for a one-way minor-league contract."""
-    if season < 2013:
-        return 0
-    if season < 2015:
-        minimum_salary_cents = 55_000_000
-    elif season < 2017:
-        minimum_salary_cents = 57_500_000
-    elif season < 2019:
-        minimum_salary_cents = 65_000_000
-    elif season < 2021:
-        minimum_salary_cents = 70_000_000
-    elif season < 2023:
-        minimum_salary_cents = 75_000_000
-    elif season < 2026:
-        minimum_salary_cents = 77_500_000
-    else:
-        minimum_salary_cents = 85_000_000
-    return minimum_salary_cents + 37_500_000
-
-
-def _latest_started_season(as_of: date) -> int:
-    """Return the newest season start year visible on ``as_of``.
-
-    NHL seasons become viewable on July 1 of their start year. Keeping this
-    rule in one function ensures season discovery, defaults, and validation
-    cannot disagree about whether a future season is available.
-    """
-    return as_of.year if as_of.month >= 7 else as_of.year - 1
-
-
-class ApiProblem(Exception):
-    def __init__(
-        self,
-        status: int,
-        code: str,
-        message: str,
-        details: dict[str, list[str]] | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.status = status
-        self.code = code
-        self.message = message
-        self.details = details
-
-
-def _team(row: Any, prefix: str = "") -> dict[str, Any] | None:
-    team_id = row.get(f"{prefix}team_id")
-    if team_id is None:
-        return None
-    return {
-        "id": team_id,
-        "nhlTeamId": row.get(f"{prefix}nhl_team_id"),
-        "abbreviation": row.get(f"{prefix}abbreviation"),
-        "name": row.get(f"{prefix}team_name"),
-        "city": row.get(f"{prefix}team_city"),
-        "active": row.get(f"{prefix}team_active"),
-    }
-
-
-def _identity(row: Any) -> dict[str, Any]:
-    return {
-        "id": row["id"],
-        "firstName": row["first_name"],
-        "lastName": row["last_name"],
-        "fullName": row["full_name"],
-        "birthDate": row["birth_date"],
-        "age": row["age"],
-        "primaryPosition": row["primary_position"],
-        "shootsCatches": row["shoots_catches"],
-        "nationality": row["nationality"],
-        "active": row["active"],
-        "rosterStatus": row["roster_status"],
-        "team": _team(row),
-    }
-
-
-def _summary(row: Any) -> dict[str, Any]:
-    return {
-        **_identity(row),
-        "season": row["season"],
-        "gamesPlayed": row["games_played"],
-        "goals": row["goals"],
-        "assists": row["assists"],
-        "points": row["points"],
-        "toiSeconds": round(row["ice_time_seconds"])
-        if row["ice_time_seconds"] is not None
-        else None,
-        "gameScore": row["game_score"],
-        "gameScorePer60": row["game_score_per_60"],
-        "hockeyValue": row["hockey_value"],
-        "projectedNextSeasonHockeyValue": row["projected_hockey_value"],
-        "capHitCents": row["cap_hit_cents"],
-    }
-
-
+@dataclass(slots=True, kw_only=True, frozen=True)
 class TradeValueService:
-    SORT_COLUMNS = {
-        "name": "full_name",
-        "team": "abbreviation",
-        "gamesPlayed": "games_played",
-        "goals": "goals",
-        "assists": "assists",
-        "points": "points",
-        "gameScore": "game_score",
-        "gameScorePer60": "game_score_per_60",
-        "hockeyValue": "hockey_value",
-        "capHitCents": "cap_hit_cents",
-    }
+    repository: ApiRepository
+    as_of: date = field(default_factory=date.today)
 
-    def __init__(self, session: QuerySession, *, as_of: date | None = None):
-        self.session = session
-        # Capture the date once so every season decision in one service/request
-        # uses the same side of the July 1 boundary. ``as_of`` also keeps the
-        # calendar rule deterministic in tests.
-        self._latest_started_season = _latest_started_season(as_of or date.today())
+    @property
+    def latest_started_season(self) -> int:
+        return latest_started_season(self.as_of)
 
-    def _one(self, sql: str, params: dict[str, Any]) -> Any | None:
-        return self.session.execute(text(sql), params).mappings().first()
-
-    def _all(self, sql: str, params: dict[str, Any] | None = None) -> list[Any]:
-        return list(self.session.execute(text(sql), params or {}).mappings())
+    def check_health(self) -> None:
+        self.repository.check_health()
 
     def current_season(self) -> int:
-        value = self.session.execute(
-            text("""SELECT MAX(start_year) FROM seasons
-                    WHERE start_year <= :latest_started_season"""),
-            {"latest_started_season": self._latest_started_season},
-        ).scalar_one_or_none()
+        value = self.repository.current_season(self.latest_started_season)
         if value is None:
-            raise ApiProblem(503, "SEASONS_UNAVAILABLE", "No seasons are configured.")
-        return int(value)
+            raise SeasonsUnavailable()
+        return value
 
     def require_season(self, season: int) -> None:
-        exists = self.session.execute(
-            text("""SELECT EXISTS(
-                    SELECT 1 FROM seasons
-                    WHERE start_year = :season
-                        AND start_year <= :latest_started_season
-                    )"""),
-            {
-                "season": season,
-                "latest_started_season": self._latest_started_season,
-            },
-        ).scalar_one()
-        if not exists:
-            raise ApiProblem(
-                400,
-                "INVALID_SEASON",
-                "The requested season is not available.",
-                {"season": ["Unknown season."]},
-            )
+        if not self.repository.has_season(season, self.latest_started_season):
+            raise InvalidSeason(season=season)
 
-    def seasons(self) -> dict[str, Any]:
-        rows = self._all(
-            """SELECT start_year, end_year, label, salary_cap_cents
-               FROM seasons
-               WHERE start_year <= :latest_started_season
-               ORDER BY start_year""",
-            {"latest_started_season": self._latest_started_season},
-        )
+    def seasons(self) -> SeasonInfoData:
+        rows = self.repository.seasons(self.latest_started_season)
         return {
             "currentSeason": self.current_season(),
             "availableSeasons": [
                 {
-                    "startYear": r["start_year"],
-                    "endYear": r["end_year"],
-                    "label": r["label"],
-                    "salaryCapCents": r["salary_cap_cents"],
+                    "startYear": r.start_year,
+                    "endYear": r.end_year,
+                    "label": r.label,
+                    "salaryCapCents": r.salary_cap_cents,
                 }
                 for r in rows
             ],
         }
 
-    def player_identity(self, player_id: int) -> dict[str, Any]:
-        row = self._one(PLAYER_IDENTITY_SQL, {"player_id": player_id})
+    def player_identity(self, player_id: int) -> PlayerIdentityData:
+        row = self.repository.player(player_id)
         if row is None:
-            raise ApiProblem(404, "PLAYER_NOT_FOUND", "Player not found.")
-        return _identity(row)
+            raise PlayerNotFound(player_id=player_id)
+        return identity_data(row)
 
-    def team_summary(self, team_id: int) -> dict[str, Any]:
-        row = self._one(TEAM_SQL, {"team_id": team_id})
+    def team_summary(self, team_id: int) -> TeamSummaryData:
+        row = self.repository.team(team_id)
         if row is None:
-            raise ApiProblem(404, "TEAM_NOT_FOUND", "Team not found.")
-        return {
-            "id": row["id"],
-            "nhlTeamId": row["nhl_team_id"],
-            "abbreviation": row["abbreviation"],
-            "name": row["team_name"],
-            "city": row["team_city"],
-            "active": row["team_active"],
-        }
+            raise TeamNotFound(team_id=team_id)
+        return team_data(row)
 
-    def _summary_rows(
-        self,
-        season: int,
-        where: str = "TRUE",
-        params: dict[str, Any] | None = None,
-        order: str = "id ASC",
-        limit: int | None = None,
-        offset: int | None = None,
-    ) -> list[Any]:
-        query = SUMMARY_CTES + f" SELECT * FROM summary WHERE {where} ORDER BY {order}"
-        bind = {"season": season, **(params or {})}
-        if limit is not None:
-            query += " LIMIT :_limit"
-            bind["_limit"] = limit
-        if offset is not None:
-            query += " OFFSET :_offset"
-            bind["_offset"] = offset
-        return self._all(query, bind)
-
-    def summary_for_player(self, player_id: int, season: int) -> Any | None:
-        rows = self._summary_rows(season, "id = :player_id", {"player_id": player_id})
-        return rows[0] if rows else None
+    def summary_for_player(self, player_id: int, season: int) -> SummaryRow | None:
+        return self.repository.summary_for_player(player_id, season)
 
     def players(
         self,
@@ -267,192 +110,130 @@ class TradeValueService:
         position: str | None,
         roster_status: str | None,
         search: str | None,
-        sort: str,
-        order: str,
+        sort: PlayerSort,
+        order: SortOrder,
         page: int,
         page_size: int,
-    ) -> dict[str, Any]:
+    ) -> PaginatedPlayersData:
         self.require_season(season)
-        clauses = [
-            "(games_played IS NOT NULL OR team_id IS NOT NULL OR cap_hit_cents IS NOT NULL)"
-        ]
-        params: dict[str, Any] = {}
-        if team:
-            clauses.append("UPPER(abbreviation) = UPPER(:team)")
-            params["team"] = team
-        if position:
-            clauses.append("primary_position = :position")
-            params["position"] = position
-        if roster_status:
-            clauses.append("roster_status = :roster_status")
-            params["roster_status"] = roster_status
-        if search:
-            clauses.append("full_name ILIKE :search")
-            params["search"] = f"%{search.strip()}%"
-        where = " AND ".join(clauses)
-        count_sql = SUMMARY_CTES + f" SELECT COUNT(*) FROM summary WHERE {where}"
-        total = int(
-            self.session.execute(
-                text(count_sql), {"season": season, **params}
-            ).scalar_one()
-        )
-        column = self.SORT_COLUMNS[sort]
-        direction = "ASC" if order == "asc" else "DESC"
-        rows = self._summary_rows(
-            season,
-            where,
-            params,
-            f"{column} {direction} NULLS LAST, id ASC",
-            page_size,
-            (page - 1) * page_size,
+        result = self.repository.players(
+            PlayerQuery(
+                season=season,
+                team=team,
+                position=position,
+                roster_status=roster_status,
+                search=search,
+                sort=sort,
+                order=order,
+                page=page,
+                page_size=page_size,
+            )
         )
         return {
-            "data": [_summary(r) for r in rows],
+            "data": list(map(summary_data, result.rows)),
             "pagination": {
                 "page": page,
                 "pageSize": page_size,
-                "totalItems": total,
-                "totalPages": ceil(total / page_size),
+                "totalItems": result.total,
+                "totalPages": ceil(result.total / page_size),
             },
         }
 
-    def teams(self) -> list[dict[str, Any]]:
-        rows = self._all(
-            "SELECT id, nhl_team_id, abbreviation, name team_name, city team_city, active team_active FROM teams WHERE active ORDER BY name, id"
-        )
-        return [
-            {
-                "id": r["id"],
-                "nhlTeamId": r["nhl_team_id"],
-                "abbreviation": r["abbreviation"],
-                "name": r["team_name"],
-                "city": r["team_city"],
-                "active": r["team_active"],
-            }
-            for r in rows
-        ]
+    def teams(self) -> list[TeamSummaryData]:
+        return list(map(team_data, self.repository.teams()))
 
-    def team(self, team_id: int) -> dict[str, Any]:
+    def team(self, team_id: int) -> TeamData:
         team = self.team_summary(team_id)
-        rows = self._all(
-            """SELECT p.roster_status::text roster_status, COUNT(*) count
-               FROM players p JOIN LATERAL (
-                 SELECT team_id FROM player_team_stints pts WHERE pts.player_id = p.id
-                 ORDER BY season_start_year DESC, (departed_on IS NULL) DESC,
-                          departed_on DESC NULLS LAST, pts.id DESC LIMIT 1
-               ) stint ON true WHERE stint.team_id = :team_id GROUP BY p.roster_status""",
-            {"team_id": team_id},
-        )
         counts = {status: 0 for status in ("ACTIVE", "MINORS", "LTIR", "UNKNOWN")}
-        counts.update({r["roster_status"]: r["count"] for r in rows})
+        counts.update(self.repository.roster_counts(team_id))
         return {**team, "rosterCounts": counts}
 
-    def roster(self, team_id: int, season: int, status: str | None) -> dict[str, Any]:
+    def roster(
+        self, team_id: int, season: int, status: str | None
+    ) -> TeamRosterResponseData:
         self.require_season(season)
         team = self.team_summary(team_id)
-        where = "team_id = :team_id"
-        params: dict[str, Any] = {"team_id": team_id}
-        if status:
-            where += " AND roster_status = :status"
-            params["status"] = status
-        rows = self._summary_rows(season, where, params, "full_name ASC, id ASC", 100)
+        rows = self.repository.roster(team_id, season, status)
         return {
             "team": team,
             "season": season,
             "status": status,
-            "players": [_summary(r) for r in rows],
+            "players": list(map(summary_data, rows)),
         }
 
-    def player_stats(self, player_id: int, season: int) -> dict[str, Any]:
+    def player_stats(self, player_id: int, season: int) -> PlayerStatsData:
         self.require_season(season)
         self.player_identity(player_id)
         row = self.summary_for_player(player_id, season)
         if row is None:
-            raise ApiProblem(404, "PLAYER_NOT_FOUND", "Player not found.")
-        traditional = None
-        advanced = None
-        if row["primary_position"] != "G":
-            if row["games_played"] is not None:
+            raise PlayerNotFound(player_id=player_id)
+        traditional: TraditionalSkaterStatsData | None = None
+        advanced: AdvancedSkaterStatsData | None = None
+        if row.primary_position != "G":
+            if row.games_played is not None:
                 traditional = {
-                    "gamesPlayed": row["games_played"],
-                    "goals": row["goals"],
-                    "assists": row["assists"],
-                    "points": row["points"],
-                    "plusMinus": row["plus_minus"],
-                    "penaltyMinutes": row["penalty_minutes"],
-                    "powerPlayGoals": row["power_play_goals"],
-                    "powerPlayPoints": row["power_play_points"],
-                    "shortHandedGoals": row["short_handed_goals"],
-                    "shots": row["shots"],
-                    "shootingPercentage": row["shooting_percentage"],
+                    "gamesPlayed": row.games_played,
+                    "goals": row.goals,
+                    "assists": row.assists,
+                    "points": row.points,
+                    "plusMinus": row.plus_minus,
+                    "penaltyMinutes": row.penalty_minutes,
+                    "powerPlayGoals": row.power_play_goals,
+                    "powerPlayPoints": row.power_play_points,
+                    "shortHandedGoals": row.short_handed_goals,
+                    "shots": row.shots,
+                    "shootingPercentage": row.shooting_percentage,
                 }
-            if row["ice_time_seconds"] is not None:
+            if row.ice_time_seconds is not None:
                 advanced = {
                     "situation": "all",
-                    "iceTimeSeconds": round(row["ice_time_seconds"]),
-                    "shifts": row["shifts"],
-                    "gameScore": row["game_score"],
-                    "gameScorePer60": row["game_score_per_60"],
-                    "individualExpectedGoals": row["individual_expected_goals"],
-                    "expectedGoalsPer60": row["expected_goals_per_60"],
-                    "onIceExpectedGoalsPercentage": row["on_ice_expected_goals_pct"],
-                    "takeaways": row["takeaways"],
-                    "giveaways": row["giveaways"],
-                    "shotsBlocked": row["shots_blocked"],
-                    "penalties": row["penalties"],
-                    "penaltiesDrawn": row["penalties_drawn"],
+                    "iceTimeSeconds": round(row.ice_time_seconds),
+                    "shifts": row.shifts,
+                    "gameScore": row.game_score,
+                    "gameScorePer60": row.game_score_per_60,
+                    "individualExpectedGoals": row.individual_expected_goals,
+                    "expectedGoalsPer60": row.expected_goals_per_60,
+                    "onIceExpectedGoalsPercentage": row.on_ice_expected_goals_pct,
+                    "takeaways": row.takeaways,
+                    "giveaways": row.giveaways,
+                    "shotsBlocked": row.shots_blocked,
+                    "penalties": row.penalties,
+                    "penaltiesDrawn": row.penalties_drawn,
                 }
         goalie = (
             self._goalie_stats(player_id, season)
-            if row["primary_position"] == "G"
+            if row.primary_position == "G"
             else None
         )
         return {
             "playerId": player_id,
             "season": season,
-            "team": _team(row),
+            "team": player_team_data(row),
             "traditional": traditional,
             "advanced": advanced,
             "goalie": goalie,
         }
 
-    def _goalie_stats(self, player_id: int, season: int) -> dict[str, Any] | None:
-        sql = r"""
-        WITH basic AS (
-          SELECT SUM(g.games_played)::int games_played, SUM(g.wins)::int wins,
-            SUM(g.losses)::int losses, SUM(g.overtime_losses)::int overtime_losses,
-            SUM(g.shots_against)::int shots_against, SUM(g.saves)::int saves,
-            CASE WHEN SUM(g.shots_against) > 0 THEN SUM(g.saves)::float / SUM(g.shots_against) END save_percentage,
-            SUM(g.goals_against)::int goals_against, SUM(g.time_on_ice_seconds)::int time_on_ice_seconds,
-            CASE WHEN SUM(g.time_on_ice_seconds) > 0 THEN SUM(g.goals_against) * 3600.0 / SUM(g.time_on_ice_seconds) END gaa,
-            SUM(g.shutouts)::int shutouts
-          FROM goalie_season_stats g WHERE g.player_id=:player_id AND g.season_start_year=:season AND g.game_type=2
-            AND (g.stat_scope='TOTAL' OR NOT EXISTS (SELECT 1 FROM goalie_season_stats x WHERE x.player_id=g.player_id AND x.season_start_year=g.season_start_year AND x.game_type=2 AND x.stat_scope='TOTAL'))
-        ), advanced AS (
-          SELECT SUM(a.expected_goals_against)::float xga, SUM(a.goals_against)::float ga
-          FROM goalie_advanced_season_stats a WHERE a.player_id=:player_id AND a.season_start_year=:season AND a.game_type=2 AND a.situation='all'
-            AND (a.stat_scope='TOTAL' OR NOT EXISTS (SELECT 1 FROM goalie_advanced_season_stats x WHERE x.player_id=a.player_id AND x.season_start_year=a.season_start_year AND x.game_type=2 AND x.situation=a.situation AND x.stat_scope='TOTAL'))
-        ) SELECT *, CASE WHEN xga IS NOT NULL AND ga IS NOT NULL THEN xga-ga END gsae FROM basic CROSS JOIN advanced
-        """
-        row = self._one(sql, {"player_id": player_id, "season": season})
-        if row is None or row["games_played"] is None:
+    def _goalie_stats(self, player_id: int, season: int) -> GoalieStatsData | None:
+        row = self.repository.goalie(player_id, season)
+        if row is None or row.games_played is None:
             return None
         return {
-            "gamesPlayed": row["games_played"],
-            "wins": row["wins"],
-            "losses": row["losses"],
-            "overtimeLosses": row["overtime_losses"],
-            "shotsAgainst": row["shots_against"],
-            "saves": row["saves"],
-            "savePercentage": row["save_percentage"],
-            "goalsAgainstAverage": row["gaa"],
-            "shutouts": row["shutouts"],
-            "timeOnIceSeconds": row["time_on_ice_seconds"],
-            "expectedGoalsAgainst": row["xga"],
-            "goalsSavedAboveExpected": row["gsae"],
+            "gamesPlayed": row.games_played,
+            "wins": row.wins,
+            "losses": row.losses,
+            "overtimeLosses": row.overtime_losses,
+            "shotsAgainst": row.shots_against,
+            "saves": row.saves,
+            "savePercentage": row.save_percentage,
+            "goalsAgainstAverage": row.gaa,
+            "shutouts": row.shutouts,
+            "timeOnIceSeconds": row.time_on_ice_seconds,
+            "expectedGoalsAgainst": row.xga,
+            "goalsSavedAboveExpected": row.gsae,
         }
 
-    def hockey_value(self, player_id: int, season: int | None) -> dict[str, Any]:
+    def hockey_value(self, player_id: int, season: int | None) -> HockeyValueData:
         season = season if season is not None else self.current_season()
         self.require_season(season)
         self.player_identity(player_id)
@@ -460,50 +241,41 @@ class TradeValueService:
         return {
             "playerId": player_id,
             "season": season,
-            "hockeyValue": row["hockey_value"] if row else None,
-            "projectedNextSeasonHockeyValue": row["projected_hockey_value"]
-            if row
+            "hockeyValue": row.hockey_value if row is not None else None,
+            "projectedNextSeasonHockeyValue": row.projected_hockey_value
+            if row is not None
             else None,
-            "gameScorePer60AboveReplacement": row["gs60_above_replacement"]
-            if row
+            "gameScorePer60AboveReplacement": row.gs60_above_replacement
+            if row is not None
             else None,
-            "toiHours": row["ice_time_seconds"] / 3600.0
-            if row and row["ice_time_seconds"] is not None
+            "toiHours": row.ice_time_seconds / 3600.0
+            if row is not None and row.ice_time_seconds is not None
             else None,
-            "modelVersion": row["model_version"] if row else None,
+            "modelVersion": row.model_version if row is not None else None,
         }
 
-    def player_seasons(self, player_id: int) -> list[dict[str, Any]]:
+    def player_seasons(self, player_id: int) -> list[SeasonHistoryRowData]:
         self.player_identity(player_id)
-        seasons = [
-            int(r["season"])
-            for r in self._all(
-                """SELECT DISTINCT season_start_year season FROM (
-                 SELECT season_start_year FROM skater_season_stats WHERE player_id=:player_id AND game_type=2
-                 UNION SELECT season_start_year FROM goalie_season_stats WHERE player_id=:player_id AND game_type=2
-               ) history ORDER BY season DESC LIMIT 40""",
-                {"player_id": player_id},
-            )
-        ]
-        result = []
+        seasons = self.repository.player_seasons(player_id)
+        result: list[SeasonHistoryRowData] = []
         for season in seasons:
             row = self.summary_for_player(player_id, season)
-            if row:
+            if row is not None:
                 result.append(
                     {
                         "season": season,
-                        "team": _team(row),
-                        "gamesPlayed": row["games_played"],
-                        "goals": row["goals"],
-                        "assists": row["assists"],
-                        "points": row["points"],
-                        "gameScorePer60": row["game_score_per_60"],
-                        "hockeyValue": row["hockey_value"],
+                        "team": player_team_data(row),
+                        "gamesPlayed": row.games_played,
+                        "goals": row.goals,
+                        "assists": row.assists,
+                        "points": row.points,
+                        "gameScorePer60": row.game_score_per_60,
+                        "hockeyValue": row.hockey_value,
                     }
                 )
         return result
 
-    def value_history(self, player_id: int) -> list[dict[str, Any]]:
+    def value_history(self, player_id: int) -> list[HockeyValueHistoryPointData]:
         return [
             {"season": row["season"], "hockeyValue": row["hockeyValue"]}
             for row in self.player_seasons(player_id)
@@ -511,215 +283,148 @@ class TradeValueService:
 
     def leaders(
         self, season: int, position: str | None, team: str | None, limit: int
-    ) -> list[dict[str, Any]]:
+    ) -> list[PlayerSummaryData]:
         self.require_season(season)
-        clauses = ["hockey_value IS NOT NULL"]
-        params: dict[str, Any] = {}
-        if position:
-            clauses.append("primary_position=:position")
-            params["position"] = position
-        if team:
-            clauses.append("UPPER(abbreviation)=UPPER(:team)")
-            params["team"] = team
-        rows = self._summary_rows(
-            season,
-            " AND ".join(clauses),
-            params,
-            "hockey_value DESC NULLS LAST, id ASC",
-            limit,
+        return list(
+            map(summary_data, self.repository.leaders(season, position, team, limit))
         )
-        return [_summary(r) for r in rows]
 
     def contract(
         self, player_id: int, current_season: int | None = None
-    ) -> dict[str, Any] | None:
+    ) -> ContractData | None:
         self.player_identity(player_id)
         current_season = (
             current_season if current_season is not None else self.current_season()
         )
-        row = self._one(
-            CONTRACT_SQL, {"player_id": player_id, "current_season": current_season}
-        )
+        row = self.repository.contract(player_id, current_season)
         if row is None:
             return None
-        signing_team = None
-        if row["signing_team_id"] is not None:
+        signing_team: TeamSummaryData | None = None
+        if row.signing_team_id is not None:
             signing_team = {
-                "id": row["signing_team_id"],
-                "nhlTeamId": row["signing_nhl_team_id"],
-                "abbreviation": row["signing_abbreviation"],
-                "name": row["signing_team_name"],
-                "city": row["signing_team_city"],
-                "active": row["signing_team_active"],
+                "id": row.signing_team_id,
+                "nhlTeamId": row.signing_nhl_team_id,
+                "abbreviation": row.signing_abbreviation,
+                "name": row.signing_team_name,
+                "city": row.signing_team_city,
+                "active": row.signing_team_active,
             }
         seasons = [
-            self._contract_season(r)
-            for r in self._all(CONTRACT_SEASONS_SQL, {"contract_id": row["id"]})
+            contract_season_data(r) for r in self.repository.contract_seasons(row.id)
         ]
         return {
-            "id": row["id"],
-            "playerId": row["player_id"],
+            "id": row.id,
+            "playerId": row.player_id,
             "signingTeam": signing_team,
-            "signedOn": row["signed_on"],
-            "startSeason": row["start_season"],
-            "endSeason": row["end_season"],
-            "termYears": row["term_years"],
-            "contractType": row["contract_type"],
-            "expiryStatus": row["expiry_status"],
-            "totalValueCents": row["total_value_cents"],
-            "averageValueCents": row["average_value_cents"],
-            "isEntryLevel": row["is_entry_level"],
+            "signedOn": row.signed_on,
+            "startSeason": row.start_season,
+            "endSeason": row.end_season,
+            "termYears": row.term_years,
+            "contractType": row.contract_type,
+            "expiryStatus": row.expiry_status,
+            "totalValueCents": row.total_value_cents,
+            "averageValueCents": row.average_value_cents,
+            "isEntryLevel": row.is_entry_level,
             "seasons": seasons,
         }
 
-    @staticmethod
-    def _contract_season(row: Any) -> dict[str, Any]:
-        return {
-            "season": row["season_start_year"],
-            "owningTeam": _team(row),
-            "baseSalaryCents": row["base_salary_cents"],
-            "signingBonusCents": row["signing_bonus_cents"],
-            "performanceBonusCents": row["performance_bonus_cents"],
-            "totalCashCents": row["total_cash_cents"],
-            "capHitCents": row["cap_hit_cents"],
-            "capPercentage": float(row["cap_percentage"])
-            if row["cap_percentage"] is not None
-            else None,
-            "isSlide": row["is_slide"],
-        }
-
-    def team_contracts(self, team_id: int, season: int) -> dict[str, Any]:
+    def team_contracts(self, team_id: int, season: int) -> TeamContractsResponseData:
         self.require_season(season)
         team = self.team_summary(team_id)
-        ids = self._all(
-            """SELECT c.player_id FROM contracts c JOIN contract_seasons cs ON cs.contract_id=c.id
-                           WHERE cs.owning_team_id=:team_id AND cs.season_start_year=:season ORDER BY c.player_id""",
-            {"team_id": team_id, "season": season},
-        )
-        rows = []
-        for item in ids:
-            contract = self.contract(item["player_id"], season)
-            if contract:
+        ids = self.repository.contract_players(team_id, season)
+        rows: list[TeamContractRowData] = []
+        for player_id in ids:
+            contract = self.contract(player_id, season)
+            if contract is not None:
                 contract_season = next(
                     (
                         s
                         for s in contract["seasons"]
                         if s["season"] == season
-                        and s["owningTeam"]
-                        and s["owningTeam"]["id"] == team_id
+                        and s["owningTeam"] is not None
+                        and (s["owningTeam"]["id"] == team_id)
                     ),
                     None,
                 )
-                if contract_season:
+                if contract_season is not None:
                     rows.append(
                         {
-                            "player": self.player_identity(item["player_id"]),
+                            "player": self.player_identity(player_id),
                             "contract": contract,
                             "season": contract_season,
                         }
                     )
         return {"team": team, "season": season, "contracts": rows}
 
-    def team_cap(self, team_id: int, season: int) -> dict[str, Any]:
+    def team_cap(self, team_id: int, season: int) -> TeamCapData:
         self.require_season(season)
         self.team_summary(team_id)
-        row = self._one(
-            """SELECT s.salary_cap_cents,
-             COALESCE(SUM(cs.cap_hit_cents) FILTER (WHERE p.roster_status='ACTIVE'),0)::bigint active_cap,
-             COALESCE(SUM(cs.cap_hit_cents) FILTER (WHERE p.roster_status='LTIR'),0)::bigint ltir_cap,
-             COALESCE(SUM(GREATEST(cs.cap_hit_cents - :buried_relief_cents, 0))
-                 FILTER (WHERE p.roster_status='MINORS'),0)::bigint minors_cap,
-             COALESCE(SUM(CASE WHEN p.roster_status='MINORS'
-                 THEN GREATEST(cs.cap_hit_cents - :buried_relief_cents, 0)
-                 ELSE cs.cap_hit_cents END),0)::bigint total_cap
-           FROM seasons s LEFT JOIN contract_seasons cs ON cs.season_start_year=s.start_year AND cs.owning_team_id=:team_id
-           LEFT JOIN contracts c ON c.id=cs.contract_id LEFT JOIN players p ON p.id=c.player_id
-           WHERE s.start_year=:season GROUP BY s.salary_cap_cents""",
-            {
-                "team_id": team_id,
-                "season": season,
-                "buried_relief_cents": _buried_relief_cents(season),
-            },
-        )
+        row = self.repository.cap(team_id, season, buried_relief_cents(season))
         if row is None:
-            raise ApiProblem(
-                503, "SEASONS_UNAVAILABLE", "Season cap data is unavailable."
-            )
-        ceiling = row["salary_cap_cents"]
+            raise CapUnavailable(season=season)
+        ceiling = row.salary_cap_cents
         return {
             "teamId": team_id,
             "season": season,
             "salaryCapCents": ceiling,
-            "activeRosterCapCents": row["active_cap"],
-            "ltirCapCents": row["ltir_cap"],
-            "minorsCapCents": row["minors_cap"],
-            "totalCommitmentsCents": row["total_cap"],
-            "capSpaceCents": ceiling - row["active_cap"]
-            if ceiling is not None
-            else None,
+            "activeRosterCapCents": row.active_cap,
+            "ltirCapCents": row.ltir_cap,
+            "minorsCapCents": row.minors_cap,
+            "totalCommitmentsCents": row.total_cap,
+            "capSpaceCents": ceiling - row.active_cap if ceiling is not None else None,
             "calculationStatus": "ESTIMATE",
         }
 
-    def search(self, query: str, types: Iterable[str], limit: int) -> dict[str, Any]:
-        q = f"%{query.strip()}%"
+    def search(
+        self, query: str, types: Iterable[str], limit: int
+    ) -> SearchResponseData:
         requested = set(types)
-        players: list[dict[str, Any]] = []
-        teams: list[dict[str, Any]] = []
-        if "player" in requested:
-            ids = self._all(
-                "SELECT id FROM players WHERE CONCAT_WS(' ', first_name, last_name) ILIKE :q ORDER BY active DESC, last_name, first_name, id LIMIT :limit",
-                {"q": q, "limit": limit},
-            )
-            players = [self.player_identity(r["id"]) for r in ids]
-        if "team" in requested:
-            rows = self._all(
-                """SELECT id, nhl_team_id, abbreviation, name team_name, city team_city, active team_active FROM teams
-                              WHERE CONCAT_WS(' ', city, name, abbreviation) ILIKE :q ORDER BY active DESC, name, id LIMIT :limit""",
-                {"q": q, "limit": limit},
-            )
-            teams = [
-                {
-                    "id": r["id"],
-                    "nhlTeamId": r["nhl_team_id"],
-                    "abbreviation": r["abbreviation"],
-                    "name": r["team_name"],
-                    "city": r["team_city"],
-                    "active": r["team_active"],
-                }
-                for r in rows
+        players = (
+            [
+                self.player_identity(player_id)
+                for player_id in self.repository.search_players(query, limit)
             ]
+            if "player" in requested
+            else []
+        )
+        teams = (
+            list(map(team_data, self.repository.search_teams(query, limit)))
+            if "team" in requested
+            else []
+        )
         return {"players": players, "teams": teams}
 
-    def overview(self, season: int) -> dict[str, Any]:
+    def overview(self, season: int) -> OverviewResponseData:
         self.require_season(season)
-        rows = self._summary_rows(season, "games_played IS NOT NULL", order="id ASC")
-        summaries = [_summary(r) for r in rows]
+        rows = self.repository.overview(season)
+        summaries = [summary_data(r) for r in rows]
         skaters = [s for s in summaries if s["primaryPosition"] != "G"]
         values = [s["hockeyValue"] for s in skaters if s["hockeyValue"] is not None]
-
-        def top(field: str) -> list[dict[str, Any]]:
-            return sorted(
-                (s for s in skaters if s[field] is not None),
-                key=lambda s: (-s[field], s["id"]),
-            )[:5]
-
         return {
             "season": season,
             "league": {
                 "players": len(summaries),
-                "goals": sum(s["goals"] or 0 for s in skaters),
-                "gamesPlayed": sum(s["gamesPlayed"] or 0 for s in summaries),
-                "averageHockeyValue": sum(values) / len(values) if values else None,
+                "goals": sum((s["goals"] for s in skaters if s["goals"] is not None)),
+                "gamesPlayed": sum(
+                    (
+                        s["gamesPlayed"]
+                        for s in summaries
+                        if s["gamesPlayed"] is not None
+                    )
+                ),
+                "averageHockeyValue": sum(values) / len(values)
+                if len(values) > 0
+                else None,
             },
             "leaders": {
-                "hockeyValue": top("hockeyValue"),
-                "points": top("points"),
-                "goals": top("goals"),
-                "gameScorePer60": top("gameScorePer60"),
+                "hockeyValue": top_summaries(skaters, "hockeyValue"),
+                "points": top_summaries(skaters, "points"),
+                "goals": top_summaries(skaters, "goals"),
+                "gameScorePer60": top_summaries(skaters, "gameScorePer60"),
             },
         }
 
-    def compare(self, ids: list[int], season: int) -> dict[str, Any]:
+    def compare(self, ids: list[int], season: int) -> CompareResponseData:
         self.require_season(season)
         return {
             "season": season,

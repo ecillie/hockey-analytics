@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.routes import create_router
-from app.api.service import ApiProblem
+from app.api.errors import ApiProblem
 from app.config import (
     ApiSettings,
     DatabaseSettings,

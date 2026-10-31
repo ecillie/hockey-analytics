@@ -163,7 +163,8 @@ Python tests enforce branch coverage and write HTML/XML/LCOV reports under
 `cd frontend && npm run test:coverage`, which writes HTML, Cobertura XML, and
 LCOV reports under `frontend/coverage/`. CI uploads both report directories.
 The Python 3.12 regression floor is 58.80% branch-aware aggregate coverage.
-`TradeValueService` has a separate 100% line-and-branch coverage gate, while
+`TradeValueService` and its extracted repository, policy, conversion, and error
+modules have a separate 100% line-and-branch coverage gate, while
 PostgreSQL-backed CI exercises the real query paths. The frontend baseline is 74.04% statements,
 61.95% branches, 65.55% functions, and 77.35% lines. These exact floors prevent
 coverage regressions and should be raised as each subsystem gains tests.

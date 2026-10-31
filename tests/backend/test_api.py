@@ -1,4 +1,6 @@
 import unittest
+
+import pytest
 from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
@@ -49,6 +51,9 @@ SUMMARY = {
 class StubService:
     def __init__(self):
         self.session = Mock()
+
+    def check_health(self):
+        self.session.execute()
 
     def current_season(self):
         return 2025
@@ -179,3 +184,49 @@ class ApiContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTypedRequestFailures:
+    @pytest.fixture
+    def client(self):
+        application = create_app()
+        application.dependency_overrides[get_service] = provide_stub_service
+        with TestClient(application) as client:
+            yield client
+
+    @pytest.mark.parametrize(
+        ("url", "code", "message", "details"),
+        [
+            pytest.param(
+                "/api/players/compare?ids=no,7&season=2025",
+                "INVALID_COMPARISON",
+                "Player IDs must be integers.",
+                {"ids": ["Use comma-separated integer IDs."]},
+                id="noninteger-comparison",
+            ),
+            pytest.param(
+                "/api/search?q=test&types=other",
+                "INVALID_SEARCH_TYPES",
+                "Search types must be player or team.",
+                {"types": ["Use player, team, or both."]},
+                id="unknown-search-type",
+            ),
+            pytest.param(
+                "/api/search?q=test&types=",
+                "INVALID_SEARCH_TYPES",
+                "Search types must be player or team.",
+                {"types": ["Use player, team, or both."]},
+                id="empty-search-types",
+            ),
+        ],
+    )
+    def test_public_envelopes(self, client, url, code, message, details):
+        response = client.get(url)
+        assert response.status_code == 400
+        assert response.json() == {
+            "error": {"code": code, "message": message, "details": details}
+        }
+
+
+def provide_stub_service():
+    return StubService()

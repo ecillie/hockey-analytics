@@ -74,6 +74,7 @@ addopts = "--cov=app --cov=ml --cov-branch --cov-report=term-missing --cov-repor
 testpaths = ["tests/backend", "tests/ml"]
 
 [tool.coverage.run]
+omit = ["*/api/tests/*"]
 branch = true
 relative_files = true
 source = ["app", "ml"]
