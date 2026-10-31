@@ -10,9 +10,9 @@ search, overview aggregates, and comparison.
 From the repository root:
 
 ```bash
-python -m pip install -r backend/requirements-dev.txt
+uv sync --locked --all-groups
 cp backend/.env.example backend/.env
-python -m alembic -c backend/alembic.ini upgrade head
+uv run python -m alembic -c backend/alembic.ini upgrade head
 cd backend
 uvicorn app.main:app --reload
 ```
@@ -58,7 +58,7 @@ origins. Do not use `*` when credentials are introduced later.
 ## Tests
 
 ```bash
-PYTHONPATH=backend pytest -q backend/tests ml/tests
+PYTHONPATH=backend uv run pytest -q backend/tests ml/tests
 ```
 
 HTTP and service tests verify response contracts, validation errors, route
@@ -93,9 +93,9 @@ To run the integration tests against a dedicated local test database:
 ```bash
 createdb tradevalue_test
 DATABASE_URL=postgresql://localhost/tradevalue_test \
-  python -m alembic -c backend/alembic.ini upgrade head
+  uv run python -m alembic -c backend/alembic.ini upgrade head
 TEST_DATABASE_URL=postgresql://localhost/tradevalue_test \
-  PYTHONPATH=backend pytest -q backend/tests/test_postgres_integration.py
+  PYTHONPATH=backend uv run pytest -q backend/tests/test_postgres_integration.py
 ```
 
 ## Container
@@ -149,7 +149,7 @@ Apply migrations using the direct connection before the API deployment:
 
 ```bash
 DATABASE_URL="$NEON_DIRECT_DATABASE_URL" \
-  python -m alembic -c backend/alembic.ini upgrade head
+  uv run python -m alembic -c backend/alembic.ini upgrade head
 ```
 
 The repository's manually dispatched `Database migration` workflow performs
@@ -180,9 +180,9 @@ the first source has no contract covering a requested season.
 
 ```bash
 PYTHONPATH=backend ENV=dev DATABASE_URL=postgresql://... \
-  python -m app.ScriptingFiles.FullDataScript.capspace --dry-run
+  uv run python -m app.ScriptingFiles.FullDataScript.capspace --dry-run
 PYTHONPATH=backend ENV=dev DATABASE_URL=postgresql://... \
-  python -m app.ScriptingFiles.FullDataScript.capspace --apply --first-season 2008
+  uv run python -m app.ScriptingFiles.FullDataScript.capspace --apply --first-season 2008
 ```
 
 CapSpace pages are addressed directly with the NHL ID stored in
