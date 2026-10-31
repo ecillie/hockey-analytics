@@ -14,6 +14,5 @@ grep -E '^ml/resources/skater_value_model_metadata.json$' "$package_scratch/ml-f
 uv venv --python 3.12 "$package_scratch/environment"
 uv pip install --python "$package_scratch/environment/bin/python" -r backend/requirements-dev.txt "$package_scratch"/wheels/*.whl
 cd "$package_scratch"
-ENV=dev DATABASE_URL=postgresql://fixture:fixture@127.0.0.1:9/fixture \
-  env -u PYTHONPATH -u TRADEVALUE_MODEL_DIR uv run --no-project --python "$package_scratch/environment/bin/python" python -c 'import app.main, ml.features.build_features; from pathlib import Path; from ml.paths import artifact_directory; assert artifact_directory("TRADEVALUE_MODEL_DIR", Path("models")) == Path.cwd().joinpath("ml", "models"); print(app.main.__file__); print(ml.features.build_features.__file__)'
+env -u PYTHONPATH -u TRADEVALUE_MODEL_DIR uv run --no-project --python "$package_scratch/environment/bin/python" python -c 'import app.main, ml.features.build_features; from pathlib import Path; from ml.paths import artifact_directory; assert artifact_directory("TRADEVALUE_MODEL_DIR", Path("models")) == Path.cwd().joinpath("ml", "models"); print(app.main.__file__); print(ml.features.build_features.__file__)'
 uv run --no-project --python "$package_scratch/environment/bin/python" python -m ml.evaluation.gate

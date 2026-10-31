@@ -1,8 +1,9 @@
 """ASGI entry point for the TradeValue backend."""
 
-from __future__ import annotations
-
 import logging
+import asyncio
+from collections.abc import AsyncGenerator, Callable
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -11,9 +12,16 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.routes import router
+from app.api.routes import create_router
 from app.api.service import ApiProblem
-from app.config import get_api_settings
+from app.config import (
+    ApiSettings,
+    DatabaseSettings,
+    get_api_settings,
+    get_database_settings,
+    load_environment,
+)
+from app.database import DatabaseResources, create_database_resources
 
 
 logger = logging.getLogger(__name__)
@@ -42,9 +50,34 @@ class ContractFastAPI(FastAPI):
         return self.openapi_schema
 
 
-def create_app() -> FastAPI:
-    settings = get_api_settings()
-    application = ContractFastAPI(title="TradeValue API", version="1.0.0")
+def create_app(
+    settings: ApiSettings | None = None,
+    *,
+    database_settings: DatabaseSettings | None = None,
+    resource_factory: Callable[
+        [DatabaseSettings], DatabaseResources
+    ] = create_database_resources,
+) -> FastAPI:
+    settings = ApiSettings() if settings is None else settings
+
+    @asynccontextmanager
+    async def lifespan(application: FastAPI) -> AsyncGenerator[None]:
+        if database_settings is None:
+            yield
+            return
+        resources = resource_factory(database_settings)
+        application.state.database = resources
+        try:
+            yield
+        finally:
+            application.state.database = None
+            async with asyncio.timeout(database_settings.cleanup_timeout_seconds):
+                await asyncio.to_thread(resources.engine.dispose)
+
+    application = ContractFastAPI(
+        title="TradeValue API", version="1.0.0", lifespan=lifespan
+    )
+
     application.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),
@@ -80,9 +113,13 @@ def create_app() -> FastAPI:
         logger.exception("Unhandled API error", exc_info=exc)
         return _error(500, "INTERNAL_ERROR", "The API could not complete this request.")
 
-    application.include_router(router)
+    application.include_router(create_router())
 
     return application
 
 
-app = create_app()
+def create_runtime_app() -> FastAPI:
+    values = load_environment()
+    return create_app(
+        get_api_settings(values), database_settings=get_database_settings(values)
+    )

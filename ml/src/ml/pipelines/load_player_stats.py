@@ -4,6 +4,9 @@ from __future__ import annotations
 import pandas as pd
 from sqlalchemy import text
 
+from app.config import get_database_settings
+from app.database import database_resources
+
 
 PLAYER_SEASON_QUERY = text("""
 WITH basic_total AS (
@@ -284,11 +287,10 @@ def load_player_stats(
     Contract data is intentionally excluded.
     """
 
-    # Keep database configuration out of module import so feature-building code
-    # can be imported and tested without deployment credentials.
-    from app.database import engine
-
-    with engine.connect() as connection:
+    with (
+        database_resources(get_database_settings()) as resources,
+        resources.engine.connect() as connection,
+    ):
         df = pd.read_sql(
             PLAYER_SEASON_QUERY,
             connection,

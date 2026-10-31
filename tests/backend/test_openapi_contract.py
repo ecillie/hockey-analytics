@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.main import app
+from app.main import create_app
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -13,11 +13,11 @@ OPENAPI = ROOT / "docs" / "openapi.json"
 
 
 def test_committed_openapi_schema_matches_backend():
-    assert json.loads(OPENAPI.read_text(encoding="utf-8")) == app.openapi()
+    assert json.loads(OPENAPI.read_text(encoding="utf-8")) == create_app().openapi()
 
 
 def test_every_public_route_has_success_and_shared_error_schemas():
-    schema = app.openapi()
+    schema = create_app().openapi()
     operations = [path["get"] for path in schema["paths"].values()]
 
     assert len(operations) == 18
