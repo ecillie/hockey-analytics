@@ -3,7 +3,6 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
-
 from ml.features.build_features import (
     MODEL_FEATURE_COLUMNS,
     build_features,
@@ -135,8 +134,7 @@ def test_replacement_levels_are_isolated_by_season(player_seasons):
     )
 
 
-def test_model_dataset_rejects_duplicate_player_seasons(monkeypatch, player_seasons):
-    from ml.pipelines import build_model_dataset as module
+def test_model_dataset_rejects_duplicate_player_seasons(player_seasons):
 
     caps = pd.DataFrame(
         {
@@ -149,16 +147,11 @@ def test_model_dataset_rejects_duplicate_player_seasons(monkeypatch, player_seas
     duplicate = pd.concat(
         [player_seasons.head(1), player_seasons.head(1)], ignore_index=True
     )
-    monkeypatch.setattr(module, "load_player_stats", lambda min_games=1: duplicate)
-    monkeypatch.setattr(module, "load_salary_cap", lambda: caps)
     with pytest.raises(RuntimeError, match="duplicate"):
-        build_model_dataset()
+        build_model_dataset(players=duplicate, salary_cap=caps)
 
 
-def test_model_dataset_joins_cap_by_season_without_contract_columns(
-    monkeypatch, player_seasons
-):
-    from ml.pipelines import build_model_dataset as module
+def test_model_dataset_joins_cap_by_season_without_contract_columns(player_seasons):
 
     caps = pd.DataFrame(
         {
@@ -168,11 +161,7 @@ def test_model_dataset_joins_cap_by_season_without_contract_columns(
             "salary_cap_dollars": [10, 11, 12, 13, 14],
         }
     )
-    monkeypatch.setattr(
-        module, "load_player_stats", lambda min_games=1: player_seasons.copy()
-    )
-    monkeypatch.setattr(module, "load_salary_cap", lambda: caps)
-    result = build_model_dataset()
+    result = build_model_dataset(players=player_seasons, salary_cap=caps)
     assert result.groupby("season")["salary_cap_dollars"].first().to_dict() == {
         2021: 10,
         2022: 11,
@@ -191,10 +180,7 @@ def test_model_dataset_joins_cap_by_season_without_contract_columns(
     assert result["salary_cap_fraction"].iloc[0] == pytest.approx(10 / 100_000_000)
 
 
-def test_salary_cap_normalization_uses_fixed_scale_not_dataset_max(
-    monkeypatch, player_seasons
-):
-    from ml.pipelines import build_model_dataset as module
+def test_salary_cap_normalization_uses_fixed_scale_not_dataset_max(player_seasons):
 
     caps = pd.DataFrame(
         {
@@ -205,17 +191,14 @@ def test_salary_cap_normalization_uses_fixed_scale_not_dataset_max(
         }
     )
     rows = player_seasons[player_seasons["season"].isin([2021, 2022])]
-    monkeypatch.setattr(module, "load_player_stats", lambda min_games=1: rows.copy())
-    monkeypatch.setattr(module, "load_salary_cap", lambda: caps)
 
-    result = build_model_dataset()
+    result = build_model_dataset(players=rows, salary_cap=caps)
 
     expected = {2021: 100 / 100_000_000, 2022: 200 / 100_000_000}
     assert result.groupby("season")["salary_cap_fraction"].first().to_dict() == expected
 
 
-def test_model_dataset_rejects_contract_leakage(monkeypatch, player_seasons):
-    from ml.pipelines import build_model_dataset as module
+def test_model_dataset_rejects_contract_leakage(player_seasons):
 
     caps = pd.DataFrame(
         {
@@ -226,16 +209,11 @@ def test_model_dataset_rejects_contract_leakage(monkeypatch, player_seasons):
         }
     )
     leaked = player_seasons.head(1).assign(cap_hit_cents=123)
-    monkeypatch.setattr(module, "load_player_stats", lambda min_games=1: leaked)
-    monkeypatch.setattr(module, "load_salary_cap", lambda: caps)
     with pytest.raises(RuntimeError, match="Contract data leaked"):
-        build_model_dataset()
+        build_model_dataset(players=leaked, salary_cap=caps)
 
 
-def test_missing_cap_history_remains_null_and_does_not_create_infinity(
-    monkeypatch, player_seasons
-):
-    from ml.pipelines import build_model_dataset as module
+def test_missing_cap_history_remains_null_and_does_not_create_infinity(player_seasons):
 
     caps = pd.DataFrame(
         {
@@ -251,10 +229,6 @@ def test_missing_cap_history_remains_null_and_does_not_create_infinity(
             player_seasons[player_seasons["season"] == 2022].head(1),
         ]
     )
-    monkeypatch.setattr(
-        module, "load_player_stats", lambda min_games=1: missing_cap_rows
-    )
-    monkeypatch.setattr(module, "load_salary_cap", lambda: caps)
-    result = build_model_dataset()
+    result = build_model_dataset(players=missing_cap_rows, salary_cap=caps)
     assert result.loc[result["season"] == 2022, "salary_cap_fraction"].isna().all()
     assert not np.isinf(result["salary_cap_fraction"].dropna()).any()

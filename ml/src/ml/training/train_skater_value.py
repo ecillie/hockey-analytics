@@ -1,14 +1,9 @@
-from __future__ import annotations
-
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
-from ml.paths import artifact_directory
-
-import joblib
 import numpy as np
 import pandas as pd
-
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.impute import SimpleImputer
@@ -20,82 +15,33 @@ from sklearn.metrics import (
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
+from ml.artifacts import ArtifactPaths, save_model
+from ml.configuration import (
+    CATEGORICAL_FEATURES,
+    NUMERIC_FEATURES,
+    FeatureOptions,
+    ModelOptions,
+)
+from ml.evaluation.gate import stable_metadata_json, temporal_splits
 from ml.features.replacement_level import (
     calculate_replacement_level,
 )
+from ml.paths import artifact_directory
+from ml.schemas import validate_frame
 
 
-MODEL_DIR = artifact_directory("TRADEVALUE_MODEL_DIR", Path("models"))
+def build_training_data(
+    df: pd.DataFrame | None = None, *, options: FeatureOptions | None = None
+) -> pd.DataFrame:
 
-MODEL_PATH = MODEL_DIR / "skater_value_model.joblib"
-METADATA_PATH = MODEL_DIR / "skater_value_model_metadata.json"
+    all_rows = calculate_replacement_level(df, options=options)
+    if all_rows.empty:
+        raise ValueError("Training requires player-season rows")
 
-
-NUMERIC_FEATURES = [
-    "games_played",
-    "toi_hours",
-    "toi_per_game",
-    "goals_per_60",
-    "primary_assists_per_60",
-    "secondary_assists_per_60",
-    "points_per_60",
-    "xg_per_60",
-    "shots_on_goal_per_60",
-    "unblocked_attempts_per_60",
-    "game_score_per_60",
-    "takeaways_per_60",
-    "giveaways_per_60",
-    "net_takeaways_per_60",
-    "blocks_per_60",
-    "penalties_per_60",
-    "penalties_drawn_per_60",
-    "penalty_differential_per_60",
-    "goals_above_expected_per_60",
-    "on_ice_expected_goals_pct",
-    "offensive_zone_start_pct",
-    "defensive_zone_start_pct",
-    "neutral_zone_start_pct",
-    "goals_per_60_above_replacement",
-    "primary_assists_per_60_above_replacement",
-    "secondary_assists_per_60_above_replacement",
-    "points_per_60_above_replacement",
-    "xg_per_60_above_replacement",
-    "game_score_per_60_above_replacement",
-    "takeaways_per_60_above_replacement",
-    "giveaways_per_60_above_replacement",
-    "blocks_per_60_above_replacement",
-    "penalties_per_60_above_replacement",
-    "penalties_drawn_per_60_above_replacement",
-    "penalty_differential_per_60_above_replacement",
-    "goals_above_expected_per_60_above_replacement",
-    "on_ice_expected_goals_pct_above_replacement",
-]
-
-CATEGORICAL_FEATURES = [
-    "position_group",
-]
-
-
-def build_training_data() -> pd.DataFrame:
-    """
-    Create season-t -> season-(t+1) training observations.
-
-    Current-season observations require an established sample.
-    Next-season targets use all available NHL performance,
-    even if the player played fewer than 20 games.
-
-    No contract information is used.
-    """
-
-    all_rows = calculate_replacement_level()
-
-    # Calculate hockey value for EVERY player-season.
-    # Do not apply the 20-game filter to target seasons.
     all_rows["hockey_value"] = (
         all_rows["game_score_per_60_above_replacement"] * all_rows["toi_hours"]
     )
 
-    # Build next-season targets from all available NHL rows.
     targets = all_rows[
         [
             "player_id",
@@ -111,7 +57,6 @@ def build_training_data() -> pd.DataFrame:
         }
     )
 
-    # Only current-season feature rows need >=20 games.
     df = all_rows[
         all_rows["eligible_for_training"] & all_rows["position_group"].notna()
     ].copy()
@@ -134,12 +79,8 @@ def build_training_data() -> pd.DataFrame:
 
     latest_season = int(all_rows["season"].max())
 
-    # Only keep observations where the target season exists
-    # somewhere in our database.
     df = df[df["target_season"] <= latest_season].copy()
 
-    # If the player has no NHL player-season row next year,
-    # next-season NHL contribution is zero.
     df["next_season_hockey_value"] = df["next_season_hockey_value"].fillna(0.0)
 
     df.replace(
@@ -151,7 +92,8 @@ def build_training_data() -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
-def build_model() -> Pipeline:
+def build_model(options: ModelOptions | None = None) -> Pipeline:
+    selected = options or ModelOptions()
     numeric_pipeline = Pipeline(
         steps=[
             (
@@ -182,22 +124,22 @@ def build_model() -> Pipeline:
             (
                 "numeric",
                 numeric_pipeline,
-                NUMERIC_FEATURES,
+                list(NUMERIC_FEATURES),
             ),
             (
                 "categorical",
                 categorical_pipeline,
-                CATEGORICAL_FEATURES,
+                list(CATEGORICAL_FEATURES),
             ),
         ]
     )
 
     regressor = HistGradientBoostingRegressor(
-        learning_rate=0.05,
-        max_iter=300,
-        max_leaf_nodes=31,
-        l2_regularization=1.0,
-        random_state=42,
+        learning_rate=selected.learning_rate,
+        max_iter=selected.max_iter,
+        max_leaf_nodes=selected.max_leaf_nodes,
+        l2_regularization=selected.l2_regularization,
+        random_state=selected.random_state,
     )
 
     return Pipeline(
@@ -209,12 +151,11 @@ def build_model() -> Pipeline:
 
 
 def evaluate(
-    name: str,
     model: Pipeline,
     df: pd.DataFrame,
 ) -> dict[str, float]:
 
-    X = df[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
+    X = df[list(NUMERIC_FEATURES + CATEGORICAL_FEATURES)]
 
     y = df["next_season_hockey_value"]
 
@@ -237,17 +178,6 @@ def evaluate(
         predictions,
     )
 
-    print(f"\n{name}")
-    print("-" * len(name))
-
-    print(f"Rows: {len(df):,}")
-
-    print(f"MAE:  {mae:.4f}")
-
-    print(f"RMSE: {rmse:.4f}")
-
-    print(f"R²:   {r2:.4f}")
-
     return {
         "rows": int(len(df)),
         "mae": float(mae),
@@ -256,118 +186,45 @@ def evaluate(
     }
 
 
-def train() -> Pipeline:
-    print("\n========================================")
-    print(" SKATER VALUE MODEL")
-    print("========================================")
+@dataclass(slots=True, kw_only=True, frozen=True)
+class TrainingResult:
+    model: Pipeline
+    metadata_json: str
 
-    print("\nBuilding training dataset...")
+    @property
+    def metadata(self) -> dict:
+        return json.loads(self.metadata_json)
 
-    df = build_training_data()
 
-    print(f"Observations: {len(df):,}")
-
-    print(f"Players: {df['player_id'].nunique():,}")
-
-    print(f"Source seasons: {df['season'].min()} - {df['season'].max()}")
-
-    print(f"Target seasons: {df['target_season'].min()} - {df['target_season'].max()}")
-
-    # ---------------------------------------------------------
-    # Chronological split
-    # ---------------------------------------------------------
-
-    unique_target_seasons = sorted(df["target_season"].dropna().unique())
-
-    if len(unique_target_seasons) < 3:
-        raise RuntimeError(
-            "Not enough seasons for chronological train/validation/test splits."
-        )
-
-    test_season = int(unique_target_seasons[-1])
-
-    validation_season = int(unique_target_seasons[-2])
-
-    train_df = df[df["target_season"] < validation_season].copy()
-
-    validation_df = df[df["target_season"] == validation_season].copy()
-
-    test_df = df[df["target_season"] == test_season].copy()
-
-    print("\nChronological split:")
-
-    print(f"Train:      target seasons < {validation_season}")
-
-    print(f"Validation: target season {validation_season}")
-
-    print(f"Test:       target season {test_season}")
-
-    # ---------------------------------------------------------
-    # Fit initial model
-    # ---------------------------------------------------------
-
-    model = build_model()
-
-    X_train = train_df[NUMERIC_FEATURES + CATEGORICAL_FEATURES]
-
-    y_train = train_df["next_season_hockey_value"]
-
-    print("\nTraining model...")
-
-    model.fit(
-        X_train,
-        y_train,
+def train_model(
+    data: pd.DataFrame,
+    *,
+    options: ModelOptions | None = None,
+) -> TrainingResult:
+    validate_frame(
+        data,
+        required=(
+            "player_id",
+            "season",
+            "target_season",
+            "next_season_hockey_value",
+            *NUMERIC_FEATURES,
+            *CATEGORICAL_FEATURES,
+        ),
+        grain=("player_id", "season"),
     )
-
-    # ---------------------------------------------------------
-    # Evaluation
-    # ---------------------------------------------------------
-
-    train_metrics = evaluate(
-        "TRAIN",
-        model,
-        train_df,
-    )
-
-    validation_metrics = evaluate(
-        "VALIDATION",
-        model,
-        validation_df,
-    )
-
-    test_metrics = evaluate(
-        "TEST",
-        model,
-        test_df,
-    )
-
-    # ---------------------------------------------------------
-    # Refit on everything except final test season
-    # ---------------------------------------------------------
-
-    final_training_df = df[df["target_season"] < test_season].copy()
-
-    final_model = build_model()
-
-    final_model.fit(
-        final_training_df[NUMERIC_FEATURES + CATEGORICAL_FEATURES],
-        final_training_df["next_season_hockey_value"],
-    )
-
-    # ---------------------------------------------------------
-    # Save model
-    # ---------------------------------------------------------
-
-    MODEL_DIR.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    joblib.dump(
-        final_model,
-        MODEL_PATH,
-    )
-
+    if data["next_season_hockey_value"].isna().any():
+        raise ValueError("Training targets must be finite")
+    splits = temporal_splits(data)
+    validation_season = int(splits["validation"]["target_season"].iloc[0])
+    test_season = int(splits["test"]["target_season"].iloc[0])
+    columns = list(NUMERIC_FEATURES + CATEGORICAL_FEATURES)
+    model = build_model(options)
+    model.fit(splits["train"][columns], splits["train"]["next_season_hockey_value"])
+    split_metrics = {name: evaluate(model, frame) for name, frame in splits.items()}
+    final_training = data[data["target_season"] < test_season]
+    final_model = build_model(options)
+    final_model.fit(final_training[columns], final_training["next_season_hockey_value"])
     metadata = {
         "model_type": "HistGradientBoostingRegressor",
         "target": "next_season_hockey_value",
@@ -376,39 +233,34 @@ def train() -> Pipeline:
             "multiplied by next-season TOI hours"
         ),
         "contract_features_used": False,
-        "numeric_features": NUMERIC_FEATURES,
-        "categorical_features": CATEGORICAL_FEATURES,
+        "numeric_features": list(NUMERIC_FEATURES),
+        "categorical_features": list(CATEGORICAL_FEATURES),
         "validation_target_season": validation_season,
         "test_target_season": test_season,
-        "metrics": {
-            "train": train_metrics,
-            "validation": validation_metrics,
-            "test": test_metrics,
-        },
+        "metrics": split_metrics,
     }
+    return TrainingResult(
+        model=final_model, metadata_json=stable_metadata_json(metadata)
+    )
 
-    with open(
-        METADATA_PATH,
-        "w",
-        encoding="utf-8",
-    ) as f:
-        json.dump(
-            metadata,
-            f,
-            indent=2,
-            sort_keys=True,
-        )
 
-    print("\n========================================")
-    print(" MODEL SAVED")
-    print("========================================")
-
-    print(f"\nModel:    {MODEL_PATH}")
-
-    print(f"Metadata: {METADATA_PATH}")
-
-    return final_model
+def train(
+    df: pd.DataFrame | None = None,
+    *,
+    paths: ArtifactPaths | None = None,
+    options: ModelOptions | None = None,
+) -> Pipeline:
+    result = train_model(build_training_data(df), options=options)
+    if paths is not None:
+        save_model(result.model, result.metadata, paths)
+    return result.model
 
 
 if __name__ == "__main__":
-    train()
+    directory = artifact_directory("TRADEVALUE_MODEL_DIR", Path("models"))
+    train(
+        paths=ArtifactPaths(
+            model=directory.joinpath("skater_value_model.joblib"),
+            metadata=directory.joinpath("skater_value_model_metadata.json"),
+        )
+    )

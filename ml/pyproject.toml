@@ -2,7 +2,14 @@
 name = "tradevalue-ml"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
-dependencies = ["tradevalue-backend==0.1.0", "numpy==2.4.4", "pandas==2.3.3", "scikit-learn==1.8.0", "joblib==1.5.1"]
+dependencies = [
+    "tradevalue-backend==0.1.0",
+    "numpy==2.4.4",
+    "pandas==2.3.3",
+    "scikit-learn==1.8.0",
+    "joblib==1.5.1",
+    "pydantic==2.13.4",
+]
 
 [build-system]
 requires = ["hatchling==1.27.0"]

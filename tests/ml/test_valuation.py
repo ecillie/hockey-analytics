@@ -1,11 +1,10 @@
-from importlib.resources import files
-
 import json
+from importlib.resources import files
 
 import joblib
 import numpy as np
+import pandas as pd
 import pytest
-
 from ml.evaluation.evaluate_skater_model import metrics
 from ml.evaluation.gate import (
     check_metric_regression,
@@ -22,50 +21,33 @@ from ml.training.train_skater_value import (
 )
 
 
-def _patch_training_data(monkeypatch, player_seasons):
-    from ml.training import train_skater_value as module
-    from ml.features.replacement_level import calculate_replacement_level
-
-    monkeypatch.setattr(
-        module,
-        "calculate_replacement_level",
-        lambda: calculate_replacement_level(player_seasons),
-    )
-
-
-def test_season_join_has_no_future_leakage(monkeypatch, player_seasons):
-    _patch_training_data(monkeypatch, player_seasons)
-    result = build_training_data()
+def test_season_join_has_no_future_leakage(player_seasons):
+    result = build_training_data(player_seasons)
     assert (result["target_season"] == result["season"] + 1).all()
     assert result["target_season"].max() <= player_seasons["season"].max()
     assert not (result["season"] >= result["target_season"]).any()
 
 
-def test_missing_next_season_is_zero_target(monkeypatch, player_seasons):
+def test_missing_next_season_is_zero_target(player_seasons):
     reduced = player_seasons[
         ~((player_seasons["player_id"] == 4) & (player_seasons["season"] == 2022))
     ]
-    _patch_training_data(monkeypatch, reduced)
-    result = build_training_data()
+    result = build_training_data(reduced)
     row = result[(result["player_id"] == 4) & (result["season"] == 2021)].iloc[0]
     assert row["target_season"] == 2022
     assert row["next_season_hockey_value"] == 0.0
 
 
-def test_training_rows_are_eligible_and_model_columns_exclude_contracts(
-    monkeypatch, player_seasons
-):
-    _patch_training_data(monkeypatch, player_seasons)
-    result = build_training_data()
+def test_training_rows_are_eligible_and_model_columns_exclude_contracts(player_seasons):
+    result = build_training_data(player_seasons)
     assert result["eligible_for_training"].all()
     assert not {"cap_hit_cents", "aav", "contract_id"}.intersection(
         NUMERIC_FEATURES + CATEGORICAL_FEATURES
     )
 
 
-def test_temporal_train_validation_test_splits(monkeypatch, player_seasons):
-    _patch_training_data(monkeypatch, player_seasons)
-    splits = temporal_splits(build_training_data())
+def test_temporal_train_validation_test_splits(player_seasons):
+    splits = temporal_splits(build_training_data(player_seasons))
     assert (
         splits["train"]["target_season"].max()
         < splits["validation"]["target_season"].min()
@@ -75,16 +57,15 @@ def test_temporal_train_validation_test_splits(monkeypatch, player_seasons):
         < splits["test"]["target_season"].min()
     )
     assert set(splits) == {"train", "validation", "test"}
-    assert sum(len(part) for part in splits.values()) == len(build_training_data())
+    assert sum(len(part) for part in splits.values()) == len(
+        build_training_data(player_seasons)
+    )
 
 
-def test_training_is_deterministic_and_predictions_are_safe(
-    monkeypatch, player_seasons
-):
-    _patch_training_data(monkeypatch, player_seasons)
-    data = build_training_data()
+def test_training_is_deterministic_and_predictions_are_safe(player_seasons):
+    data = build_training_data(player_seasons)
     split = temporal_splits(data)
-    columns = NUMERIC_FEATURES + ["position_group"]
+    columns = list(NUMERIC_FEATURES) + ["position_group"]
     first = build_model().fit(
         split["train"][columns], split["train"]["next_season_hockey_value"]
     )
@@ -99,13 +80,10 @@ def test_training_is_deterministic_and_predictions_are_safe(
     assert (frame["prediction"] >= 0).all()
 
 
-def test_model_seed_is_explicit_and_serialization_round_trips(
-    monkeypatch, player_seasons, tmp_path
-):
-    _patch_training_data(monkeypatch, player_seasons)
-    data = build_training_data()
+def test_model_seed_is_explicit_and_serialization_round_trips(player_seasons, tmp_path):
+    data = build_training_data(player_seasons)
     split = temporal_splits(data)
-    columns = NUMERIC_FEATURES + CATEGORICAL_FEATURES
+    columns = list(NUMERIC_FEATURES + CATEGORICAL_FEATURES)
     model = build_model()
     model.fit(split["train"][columns], split["train"]["next_season_hockey_value"])
 
@@ -199,17 +177,16 @@ def test_metadata_validation_rejects_incomplete_or_nonfinite_metrics():
 
     incomplete = json.loads(json.dumps(valid))
     del incomplete["metrics"]["test"]["rmse"]
-    with pytest.raises(ValueError, match="Incomplete metrics"):
+    with pytest.raises(ValueError, match="rmse"):
         validate_metadata(incomplete)
 
     nonfinite = json.loads(json.dumps(valid))
     nonfinite["metrics"]["validation"]["r2"] = float("nan")
-    with pytest.raises(ValueError, match="Non-finite"):
+    with pytest.raises(ValueError, match="finite"):
         validate_metadata(nonfinite)
 
 
 def test_temporal_split_requires_three_seasons():
-    import pandas as pd
 
     with pytest.raises(ValueError, match="three"):
         temporal_splits(pd.DataFrame({"target_season": [2024, 2025]}))

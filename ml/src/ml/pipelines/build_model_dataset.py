@@ -1,45 +1,51 @@
-from __future__ import annotations
-
 import pandas as pd
 
+from ml.configuration import FeatureOptions
 from ml.pipelines.load_player_stats import load_player_stats
 from ml.pipelines.load_salary_cap import load_salary_cap
+from ml.schemas import validate_feature_options, validate_frame
 
-
-FORBIDDEN_CONTRACT_COLUMNS = {
-    "contract_id",
-    "contract_type",
-    "average_value_cents",
-    "cap_hit_cents",
-    "cap_percentage",
-    "actual_cap_hit",
-    "aav",
-}
-
-# Fixed unit keeps cap context comparable across seasons without learning a
-# scale from contracts or from the evaluation/test rows.
-SALARY_CAP_NORMALIZATION_DOLLARS = 100_000_000.0
+FORBIDDEN_CONTRACT_COLUMNS = frozenset(
+    {
+        "contract_id",
+        "contract_type",
+        "average_value_cents",
+        "cap_hit_cents",
+        "cap_percentage",
+        "actual_cap_hit",
+        "aav",
+    }
+)
 
 
 def build_model_dataset(
     min_games: int = 1,
+    *,
+    players: pd.DataFrame | None = None,
+    salary_cap: pd.DataFrame | None = None,
+    options: FeatureOptions | None = None,
 ) -> pd.DataFrame:
-    """
-    Build the base skater player-season dataset used by the ML pipeline.
 
-    Includes:
-      - player performance
-      - position
-      - season
-      - NHL salary-cap environment
+    selected = options or FeatureOptions()
+    validate_feature_options(selected)
+    if min_games < 1:
+        raise ValueError("min_games must be positive")
+    if players is None:
+        players = load_player_stats(min_games=min_games)
+    if salary_cap is None:
+        salary_cap = load_salary_cap()
+    validate_frame(
+        players,
+        required=("player_id", "season", "position", "games_played"),
+        grain=("player_id", "season"),
+    )
+    validate_frame(
+        salary_cap,
+        required=("season", "season_label", "salary_cap_cents", "salary_cap_dollars"),
+        grain=("season",),
+    )
+    players = players.loc[players["games_played"].fillna(0) >= min_games].copy()
 
-    Contract information is intentionally excluded.
-    """
-
-    players = load_player_stats(min_games=min_games)
-    salary_cap = load_salary_cap()
-
-    # Add salary-cap environment by season.
     df = players.merge(
         salary_cap[
             [
@@ -54,7 +60,6 @@ def build_model_dataset(
         validate="many_to_one",
     )
 
-    # Simplified position grouping.
     df["position_group"] = df["position"].map(
         {
             "C": "forward",
@@ -65,10 +70,9 @@ def build_model_dataset(
         }
     )
     df["salary_cap_fraction"] = (
-        df["salary_cap_dollars"] / SALARY_CAP_NORMALIZATION_DOLLARS
+        df["salary_cap_dollars"] / selected.salary_cap_normalization_dollars
     )
 
-    # Ensure one observation per player-season.
     duplicate_count = df.duplicated(subset=["player_id", "season"]).sum()
 
     if duplicate_count:
@@ -76,7 +80,6 @@ def build_model_dataset(
             f"Model dataset contains {duplicate_count} duplicate player-season rows."
         )
 
-    # Prevent accidental contract leakage.
     leaked_columns = FORBIDDEN_CONTRACT_COLUMNS.intersection(df.columns)
 
     if leaked_columns:
