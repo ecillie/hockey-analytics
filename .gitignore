@@ -15,6 +15,9 @@ coverage/
 ml/models/*.joblib
 ml/evaluation/outputs/
 
+/backend/data/line data/
+/backend/data/team data/
+
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
@@ -26,3 +29,6 @@ frontend/*.tsbuildinfo
 **/.env.*.local
 /release intiavitive.md
 .venv/
+
+/dist/
+**/*.egg-info/

@@ -19,11 +19,11 @@ Keep two connection strings:
 Initialize an empty database from a trusted local environment:
 
 ```bash
-python -m pip install -r backend/requirements.txt
+uv sync --locked --no-default-groups
 DATABASE_URL="$NEON_DIRECT_DATABASE_URL" \
-  python -m alembic -c backend/alembic.ini upgrade head
+  uv run python -m alembic -c backend/alembic.ini upgrade head
 DATABASE_URL="$NEON_DIRECT_DATABASE_URL" \
-  python backend/database/schema_snapshot.py
+  uv run python backend/database/schema_snapshot.py
 ```
 
 For databases previously created from `schema.sql`, follow the verified
@@ -33,10 +33,10 @@ initial migration over existing tables.
 Then load the source data if the database has not already been populated:
 
 ```bash
-python -m pip install -r backend/requirements-dev.txt
+uv sync --locked --all-groups
 cd backend
 DATABASE_URL="$NEON_DIRECT_DATABASE_URL" ENV=prod \
-  python -m app.ScriptingFiles.FullDataScript.run_all
+  uv run python -m app.ScriptingFiles.FullDataScript.run_all
 ```
 
 Do not run the ingestion pipeline inside the request-serving Vercel Function.
@@ -95,8 +95,10 @@ frontend project.
 ## 4. Validate the release
 
 Before deploying schema-dependent code, run the GitHub Actions
-`Database migration` workflow for `nonprod`. The selected GitHub Environment
-must contain a direct, non-pooled `DATABASE_URL`. After validation, run it for
+`Database migration` workflow for `nonprod` from the current `Release-x.y.z` or
+`Hotfix-x.y.z`
+branch. The selected GitHub Environment must contain a direct, non-pooled
+`DATABASE_URL`. After validation, run it for
 `prod`; configure required reviewers on the GitHub `prod` Environment so this is
 a gated operation. The workflow serializes migrations per environment, applies
 the current Alembic head with lock and statement timeouts, verifies the catalog,
@@ -113,7 +115,25 @@ After both deployments succeed:
 
 Git-based deployments handle builds automatically. The repository CI workflows
 still run unit tests, lint, and the frontend production build before promotion.
-The `Dev`, `NonProd`, and `Prod` workflows each publish an environment-specific
+The `Dev`, `Release`, and `Prod` workflows each publish an environment-specific
 `required` check. Configure those checks as branch requirements and enable the
-automatic promotion cascade by following
+release PR routing and manually merged Prod promotions by following
 [CI and automatic promotion setup](./ci-promotion.md).
+
+## Installed API distribution
+
+The Vercel project root remains `backend/`, and `index.py` imports the installed
+`app.main` package. Generated `backend/requirements.txt` pins runtime dependencies
+and ends with `.` to build and install the backend distribution from that root.
+It works without a workspace lockfile or editable installation in the deployment
+context. Keep this fallback until the hosted builder's workspace discovery has
+been verified. `pyproject.toml` excludes `src/app/ScriptingFiles` from both the
+runtime wheel and source distribution; ignore rules exclude jobs, datasets,
+and archived loaders from upload, and `excludeFiles` removes source trees from
+the final function. Docker installs the same distribution and removes its build
+sources. No ML or development dependencies enter these API artifacts.
+
+The migration workflow uses the locked `migration` group for its HTTP smoke
+client. For an equivalent local operational environment, use
+`uv sync --locked --no-default-groups --group migration` and prefix commands with
+`uv run --no-default-groups --group migration python`.

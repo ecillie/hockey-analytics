@@ -74,7 +74,7 @@ The FastAPI backend implements the complete contract in
 `docs/api-contract.md`. After configuring PostgreSQL and applying the schema:
 
 ```bash
-python -m pip install -r backend/requirements-dev.txt
+uv sync --locked --all-groups
 cd backend
 uvicorn app.main:app --reload
 ```
@@ -98,11 +98,11 @@ Install the development dependencies, copy the environment template, and enter y
 PostgreSQL credentials:
 
 ```bash
-python -m pip install -r backend/requirements-dev.txt
+uv sync --locked --all-groups
 cp backend/.env.example backend/.env
 ```
 
-Run `python -m alembic -c backend/alembic.ini upgrade head` before a loader. The
+Run `uv run python -m alembic -c backend/alembic.ini upgrade head` before a loader. The
 application uses `ENV=dev`, `ENV=nonprod`, or `ENV=prod` to select its database
 configuration. Development can use the individual `DB_*` values. Nonprod and
 prod use `DATABASE_URL` or their scoped `NONPROD_DATABASE_URL` /
@@ -116,7 +116,7 @@ database adoption, and the production release gate.
 From `backend/`:
 
 ```bash
-python -m app.ScriptingFiles.FullDataScript.run_all
+uv run python -m app.ScriptingFiles.FullDataScript.run_all
 ```
 
 This loads checked-in player/goalie and current-season MoneyPuck data, NHL rosters,
@@ -131,32 +131,31 @@ tables.
 To run only the roster-status refresh:
 
 ```bash
-python -m app.ScriptingFiles.FullDataScript.populate_roster_status
+uv run python -m app.ScriptingFiles.FullDataScript.populate_roster_status
 ```
 
 Run tests with:
 
 ```bash
-PYTHONPATH=backend pytest
+uv run pytest
 ```
 
 The backend OpenAPI document and frontend TypeScript contract are committed so
 contract drift fails CI. After an intentional API change, regenerate both:
 
 ```bash
-python backend/export_openapi.py
+uv run python backend/export_openapi.py
 cd frontend && npm run api:generate
 ```
 
-The repository targets Python 3.12 and Node.js 24. Python installs use the
-checked-in constraints files, and `npm ci` uses the frontend lockfile. To
-regenerate the Python locks after changing a direct dependency, install
-[`uv`](https://docs.astral.sh/uv/) and run:
+The repository targets Python 3.12 and Node.js 24. Install uv 0.13.1.
+Python dependencies are declared only in `pyproject.toml` and resolved in
+`uv.lock`; deployment requirements are generated exports. After editing dependencies:
 
 ```bash
-uv pip compile backend/requirements.in --python-version 3.12 --universal --no-annotate --output-file backend/requirements.txt
-uv pip compile backend/requirements.txt --python-version 3.12 --universal --no-annotate --output-file backend/constraints.txt
-uv pip compile backend/requirements-dev.txt --python-version 3.12 --universal --no-annotate --output-file constraints.txt
+uv lock
+bash scripts/export-requirements.sh
+uv sync --locked --all-groups
 ```
 
 Python tests enforce branch coverage and write HTML/XML/LCOV reports under
@@ -174,12 +173,12 @@ coverage regressions and should be raised as each subsystem gains tests.
 Development follows:
 
 ```text
-Dev → NonProd → Prod
+PR title → current Release-x.y.z (or Hotfix-x.y.z) → manual Prod merge
 ```
 
-GitHub Actions handles promotion between environments.
+GitHub Actions routes PRs and creates Prod promotion PRs.
 See [CI and automatic promotion setup](docs/ci-promotion.md) for the required
-GitHub repository settings and rollout sequence.
+GitHub repository settings, hotfix branch policy, and rollout sequence.
 
 ## Roadmap
 
@@ -218,3 +217,37 @@ GitHub repository settings and rollout sequence.
 ## Disclaimer
 
 This is an independent project and is not affiliated with the NHL, AHL, MoneyPuck, CapWages, or their respective organizations.
+
+The uv workspace installs `app` from `backend/src` and `ml` from `ml/src`.
+Run commands from the repository root after `uv sync --locked --all-groups`.
+The `ingestion`, `ml`, and `dev` groups keep job, training, and test tools out
+of the API requirements export. Preserve the compatibility pins in
+`tool.uv.constraint-dependencies` until an intentional dependency upgrade.
+Run `bash scripts/export-requirements.sh --check` to verify generated exports.
+
+Python lint, formatting, and type checks run as blocking steps in backend CI.
+Run `uv run ruff check`, `uv run ruff format --check`, and `uv run ty check`
+from the repository root. No check suppressions or reduced coverage
+thresholds are used. The retired loaders are archived as byte-preserved `.py.txt`
+references. Framework-state exceptions and enum
+boundary decisions remain prerequisites for their source-remediation phases;
+this configuration change grants no exception to the Python rules.
+
+Build and verify both distributions with `bash scripts/verify-packages.sh`.
+It checks wheel contents and imports non-editable installations from outside
+this checkout. Backend CI runs the same check. The API wheel includes `app`
+without `app.ScriptingFiles`; run ingestion from the trusted workspace with
+`uv sync --locked --all-groups`, which installs the source package in editable
+mode. The ML wheel includes its published metadata resource, but excludes
+training outputs, model binaries, datasets, and tests.
+
+Historical CSVs now live in `backend/data/`. Source ingestion resolves that
+location independently of the current directory; `TRADEVALUE_DATA_DIR` can
+select another dataset directory. Editable ML installations resolve their project directory independently of the
+current working directory; wheel installations use the current working directory.
+When run from the repository root,
+outputs retain their `ml/models/` and `ml/evaluation/outputs/` destinations.
+Override these with `TRADEVALUE_MODEL_DIR` and `TRADEVALUE_EVALUATION_DIR`.
+`TRADEVALUE_ENV_FILE` selects an explicit dotenv file; source installations
+continue to default to `backend/.env`. Deployed applications use exported
+settings and do not bundle dotenv files.

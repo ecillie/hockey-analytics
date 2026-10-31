@@ -19,10 +19,7 @@ def _schema_text() -> str:
     # not connect. These inert defaults keep contract generation independent of
     # developer secrets and hosted infrastructure.
     os.environ["ENV"] = "dev"
-    os.environ["DEV_DATABASE_URL"] = (
-        "postgresql://openapi:openapi@127.0.0.1:9/openapi"
-    )
-    sys.path.insert(0, str(BACKEND))
+    os.environ["DEV_DATABASE_URL"] = "postgresql://openapi:openapi@127.0.0.1:9/openapi"
 
     from app.main import app
 
@@ -37,7 +34,10 @@ def main() -> int:
     rendered = _schema_text()
 
     if args.check:
-        if not args.output.is_file() or args.output.read_text(encoding="utf-8") != rendered:
+        if (
+            not args.output.is_file()
+            or args.output.read_text(encoding="utf-8") != rendered
+        ):
             print(
                 f"{args.output} is stale; run `python backend/export_openapi.py`.",
                 file=sys.stderr,

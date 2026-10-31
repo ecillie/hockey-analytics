@@ -30,7 +30,9 @@ def _schema_body() -> str:
             "create a new Alembic revision instead of editing it"
         )
     lines = schema.splitlines()
-    return "\n".join(line for line in lines if line.strip() not in {"BEGIN;", "COMMIT;"})
+    return "\n".join(
+        line for line in lines if line.strip() not in {"BEGIN;", "COMMIT;"}
+    )
 
 
 def _execute_script(sql: str) -> None:

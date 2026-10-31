@@ -27,7 +27,7 @@ From the repository root, install the backend dependencies and create your local
 environment file:
 
 ```bash
-python -m pip install -r backend/requirements-dev.txt
+uv sync --locked --all-groups
 cp backend/.env.example backend/.env
 ```
 
@@ -45,8 +45,8 @@ URLs from selecting the wrong database.
 Apply all migrations from the repository root:
 
 ```bash
-python -m alembic -c backend/alembic.ini upgrade head
-python backend/database/schema_snapshot.py
+uv run python -m alembic -c backend/alembic.ini upgrade head
+uv run python backend/database/schema_snapshot.py
 ```
 
 The application does not create or migrate tables during startup.
@@ -58,13 +58,13 @@ root, implement both directions, and validate it on a disposable PostgreSQL
 database:
 
 ```bash
-python -m alembic -c backend/alembic.ini revision -m "describe the change"
-python backend/database/verify_migrations.py
-python -m alembic -c backend/alembic.ini upgrade head
-python backend/database/schema_snapshot.py --update
-python -m alembic -c backend/alembic.ini downgrade -1
-python -m alembic -c backend/alembic.ini upgrade head
-python backend/database/schema_snapshot.py
+uv run python -m alembic -c backend/alembic.ini revision -m "describe the change"
+uv run python backend/database/verify_migrations.py
+uv run python -m alembic -c backend/alembic.ini upgrade head
+uv run python backend/database/schema_snapshot.py --update
+uv run python -m alembic -c backend/alembic.ini downgrade -1
+uv run python -m alembic -c backend/alembic.ini upgrade head
+uv run python backend/database/schema_snapshot.py
 ```
 
 Review the `schema.snapshot.json` diff before committing it. The snapshot is
@@ -89,11 +89,11 @@ its catalog exactly matches the baseline before stamping it:
 
 ```bash
 DATABASE_URL="$NEON_DIRECT_DATABASE_URL" \
-  python backend/database/schema_snapshot.py
+  uv run python backend/database/schema_snapshot.py
 DATABASE_URL="$NEON_DIRECT_DATABASE_URL" \
-  python -m alembic -c backend/alembic.ini stamp 20260910_0001
+  uv run python -m alembic -c backend/alembic.ini stamp 20260910_0001
 DATABASE_URL="$NEON_DIRECT_DATABASE_URL" \
-  python -m alembic -c backend/alembic.ini current --check-heads
+  uv run python -m alembic -c backend/alembic.ini current --check-heads
 ```
 
 Do not stamp a database when the snapshot comparison fails. Investigate and
@@ -123,7 +123,7 @@ plus exact-DOB match. Successful fallback matches are saved in
 From `backend/`, run:
 
 ```bash
-python -m app.ScriptingFiles.FullDataScript.populate_roster_status
+uv run python -m app.ScriptingFiles.FullDataScript.populate_roster_status
 ```
 
 `AHL_SEASON_ID` can override the AHL feed's current season when its automatic
