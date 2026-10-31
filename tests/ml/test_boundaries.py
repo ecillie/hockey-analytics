@@ -203,6 +203,7 @@ class TestArtifacts:
     ):
         save_model(trained.model, trained.metadata, paths)
         model, metadata = load_model(paths)
+        assert metadata == trained.metadata_value
         assert paths.metadata.read_text() == trained.metadata_json
         before = training_data.copy(deep=True)
         expected = evaluate_predictions(trained.model, trained.metadata, training_data)
@@ -221,7 +222,9 @@ class TestArtifacts:
     def test_metadata_property_returns_snapshot(self, trained):
         metadata = trained.metadata
         metadata["numeric_features"].clear()
+        metadata["metrics"].clear()
         assert trained.metadata["numeric_features"] == list(NUMERIC_FEATURES)
+        assert set(trained.metadata["metrics"]) == {"train", "validation", "test"}
 
     def test_invalid_metadata_does_not_write_artifacts(self, trained, paths):
         with pytest.raises(ValueError):

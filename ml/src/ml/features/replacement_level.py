@@ -5,6 +5,7 @@ from collections.abc import Sequence
 import pandas as pd
 from app.shared.cli import ExitCode
 
+from ml.errors import ReplacementPercentileError
 from ml.configuration import HIGHER_IS_BETTER, LOWER_IS_BETTER, FeatureOptions
 from ml.features.build_features import build_features
 
@@ -28,7 +29,7 @@ def calculate_replacement_level(
         else replacement_percentile
     )
     if not 0 <= percentile <= 1:
-        raise ValueError("replacement_percentile must be between zero and one")
+        raise ReplacementPercentileError(value=percentile)
     result = build_features(df, options=selected)
 
     valid_games = result["games_played"].where(result["games_played"] > 0)
