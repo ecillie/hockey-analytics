@@ -20,9 +20,9 @@ For databases populated before season-ending team assignments were persisted,
 preview and apply the idempotent set-based repair from the repository root:
 
 ```bash
-PYTHONPATH=backend DATABASE_URL=postgresql://localhost/hockey_analytics_dev \
+DATABASE_URL=postgresql://localhost/hockey_analytics_dev \
   python backend/database/backfill_team_stints.py
-PYTHONPATH=backend DATABASE_URL=postgresql://localhost/hockey_analytics_dev \
+DATABASE_URL=postgresql://localhost/hockey_analytics_dev \
   python backend/database/backfill_team_stints.py --apply
 ```
 
@@ -44,9 +44,9 @@ sections are excluded from the signed contract's season rows.
 Run locally after applying migrations:
 
 ```bash
-PYTHONPATH=backend ENV=dev DATABASE_URL=postgresql://... \
+ENV=dev DATABASE_URL=postgresql://... \
   python -m app.ScriptingFiles.FullDataScript.capspace --dry-run
-PYTHONPATH=backend ENV=dev DATABASE_URL=postgresql://... \
+ENV=dev DATABASE_URL=postgresql://... \
   python -m app.ScriptingFiles.FullDataScript.capspace --apply --nhl-id 8467514 --force
 ```
 

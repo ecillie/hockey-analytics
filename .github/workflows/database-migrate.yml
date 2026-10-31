@@ -51,19 +51,19 @@ jobs:
           version: "0.13.1"
           enable-cache: true
       - name: Install migration dependencies
-        run: uv sync --locked --no-default-groups
+        run: uv sync --locked --no-default-groups --group migration
       - name: Validate linear migration history
-        run: uv run --no-default-groups python backend/database/verify_migrations.py
+        run: uv run --no-default-groups --group migration python backend/database/verify_migrations.py
       - name: Check database migration preconditions
-        run: uv run --no-default-groups python backend/database/migration_preflight.py
+        run: uv run --no-default-groups --group migration python backend/database/migration_preflight.py
       - name: Record current revision
-        run: uv run --no-default-groups python -m alembic -c backend/alembic.ini current
+        run: uv run --no-default-groups --group migration python -m alembic -c backend/alembic.ini current
       - name: Apply migrations
-        run: uv run --no-default-groups python -m alembic -c backend/alembic.ini upgrade head
+        run: uv run --no-default-groups --group migration python -m alembic -c backend/alembic.ini upgrade head
       - name: Verify migrated schema
-        run: uv run --no-default-groups python backend/database/schema_snapshot.py
+        run: uv run --no-default-groups --group migration python backend/database/schema_snapshot.py
       - name: Smoke-test migrated API
-        run: PYTHONPATH=backend uv run --no-default-groups python backend/database/migration_smoke.py
+        run: uv run --no-default-groups --group migration python backend/database/migration_smoke.py
       - name: Write migration summary
         if: ${{ always() }}
         run: |
@@ -71,5 +71,5 @@ jobs:
             echo "## Database migration"
             echo "- Environment: ${{ inputs.environment }}"
             echo "- Commit: ${{ github.sha }}"
-            echo "- Revision after run: $(uv run --no-default-groups python -m alembic -c backend/alembic.ini current 2>&1)"
+            echo "- Revision after run: $(uv run --no-default-groups --group migration python -m alembic -c backend/alembic.ini current 2>&1)"
           } >> "$GITHUB_STEP_SUMMARY"

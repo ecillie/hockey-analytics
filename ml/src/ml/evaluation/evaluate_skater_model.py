@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ml.paths import artifact_directory
+
 import joblib
 import numpy as np
 from numpy.typing import ArrayLike
@@ -22,8 +24,7 @@ from ml.training.train_skater_value import (
 )
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-OUTPUT_DIR = REPO_ROOT / "ml" / "evaluation" / "outputs"
+OUTPUT_DIR = artifact_directory("TRADEVALUE_EVALUATION_DIR", Path("evaluation/outputs"))
 OUTPUT_PATH = OUTPUT_DIR / "skater_model_test_predictions.csv"
 
 
