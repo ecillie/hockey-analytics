@@ -3,6 +3,7 @@ name: Dev
 on:
   pull_request:
     branches: [Dev]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [Dev]
   workflow_dispatch:
@@ -34,7 +35,7 @@ jobs:
 
   merge-to-dev:
     name: Enable automatic merge to Dev
-    if: ${{ github.event_name == 'pull_request' && needs.required.result == 'success' }}
+    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && needs.required.result == 'success' }}
     needs: [required]
     runs-on: ubuntu-latest
     timeout-minutes: 5
