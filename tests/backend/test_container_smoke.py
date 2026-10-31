@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from unittest.mock import patch
 
 import pytest
@@ -98,7 +96,7 @@ def test_validate_rejects_invalid_deployed_contract(path, invalid_response):
         "/api/teams": (200, [], "teams"),
     }
     calls = [valid["/api/health"]]
-    for check_path in container_smoke.CHECKS:
+    for check_path, _ in container_smoke.response_checks():
         calls.append(invalid_response if check_path == path else valid[check_path])
 
     with (

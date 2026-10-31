@@ -1,4 +1,9 @@
+import argparse
+import logging
+from collections.abc import Sequence
+
 import pandas as pd
+from app.shared.cli import ExitCode
 
 from ml.configuration import HIGHER_IS_BETTER, LOWER_IS_BETTER, FeatureOptions
 from ml.features.build_features import build_features
@@ -179,6 +184,24 @@ def print_replacement_diagnostics(
     print(sample.to_string(index=False))
 
 
+logger = logging.getLogger(__name__)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    return argparse.ArgumentParser(description="replacement level")
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.INFO)
+    try:
+        replacement_data = calculate_replacement_level()
+        print_replacement_diagnostics(replacement_data)
+    except Exception:
+        logger.exception("Command failed")
+        return ExitCode.FAILURE
+    return ExitCode.SUCCESS
+
+
 if __name__ == "__main__":
-    replacement_data = calculate_replacement_level()
-    print_replacement_diagnostics(replacement_data)
+    raise SystemExit(main())

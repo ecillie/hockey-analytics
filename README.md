@@ -227,6 +227,9 @@ of the API requirements export. Preserve the compatibility pins in
 Run `bash scripts/export-requirements.sh --check` to verify generated exports.
 
 Python lint, formatting, and type checks run as blocking steps in backend CI.
+The [Python command inventory](docs/python-commands.md) documents supported
+commands, arguments, output streams, and exit statuses.
+
 Run `uv run ruff check`, `uv run ruff format --check`, and `uv run ty check`
 from the repository root. No check suppressions or reduced coverage
 thresholds are used. The retired loaders are archived as byte-preserved `.py.txt`

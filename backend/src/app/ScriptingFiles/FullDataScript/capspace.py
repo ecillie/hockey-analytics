@@ -10,6 +10,10 @@ can be regression-tested without network access.
 
 import argparse
 import json
+import logging
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from enum import StrEnum, auto
 
 from app.database import init_db
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
@@ -77,6 +81,7 @@ from app.ScriptingFiles.FullDataScript.contracts.util import (
     season_start_year as season_start_year,
 )
 from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingestion
+from app.shared.cli import ExitCode
 
 CAPSPACE_BASE_URL = "https://cap-space.com"
 CAPWAGES_BASE_URL = "https://capwages.com"
@@ -222,20 +227,46 @@ def existing_historical_contract_summary() -> dict[str, object]:
     return report
 
 
-def main() -> int:
+class HistoricalCommandMode(StrEnum):
+    PREVIEW = auto()
+    APPLY = auto()
+    COVERAGE = auto()
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class HistoricalCommandOptions:
+    ingestion: HistoricalContractOptions
+    mode: HistoricalCommandMode = HistoricalCommandMode.PREVIEW
+
+
+logger = logging.getLogger(__name__)
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Gap-fill historical NHL contracts from CapSpace and CapWages"
     )
     mode = parser.add_mutually_exclusive_group()
+    parser.set_defaults(mode=HistoricalCommandMode.PREVIEW)
     mode.add_argument(
         "--dry-run",
-        action="store_true",
+        action="store_const",
+        dest="mode",
+        const=HistoricalCommandMode.PREVIEW,
         help="preview without contract/source-record mutations",
     )
-    mode.add_argument("--apply", action="store_true", help="persist the backfill")
+    mode.add_argument(
+        "--apply",
+        action="store_const",
+        dest="mode",
+        const=HistoricalCommandMode.APPLY,
+        help="persist the backfill",
+    )
     mode.add_argument(
         "--coverage",
-        action="store_true",
+        action="store_const",
+        dest="mode",
+        const=HistoricalCommandMode.COVERAGE,
         help="print current historical contract coverage and exit",
     )
     parser.add_argument("--nhl-id")
@@ -251,39 +282,49 @@ def main() -> int:
         help=f"players fetched and committed per batch (1-{MAX_BATCH_SIZE})",
     )
     parser.add_argument("--force", action="store_true")
-    args = parser.parse_args()
-    selected_options = HistoricalContractOptions(
-        first_season=args.first_season,
-        last_season=args.last_season,
-        limit=args.limit,
-        workers=args.workers,
-        batch_size=args.batch_size,
-        player_id=args.player_id,
-        nhl_id=args.nhl_id,
-        force=args.force,
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    options = HistoricalCommandOptions(
+        ingestion=HistoricalContractOptions(
+            first_season=args.first_season,
+            last_season=args.last_season,
+            limit=args.limit,
+            workers=args.workers,
+            batch_size=args.batch_size,
+            player_id=args.player_id,
+            nhl_id=args.nhl_id,
+            force=args.force,
+        ),
+        mode=args.mode,
     )
-    if violation := find_option_violation(selected_options):
+    if violation := find_option_violation(options.ingestion):
         parser.error(str(violation))
-    init_db()
-    if args.coverage:
-        print(
-            json.dumps(
-                coverage_report(
-                    first_season=args.first_season, last_season=args.last_season
-                ),
-                indent=2,
-                sort_keys=True,
-                default=str,
-            )
-        )
-        return 0
-    summary = (
-        track_historical_contracts(None, selected_options)
-        if args.apply
-        else run_historical_contracts(None, options=selected_options, dry_run=True)
-    )
+    logging.basicConfig(level=logging.INFO)
+    try:
+        summary = execute_historical_command(options)
+    except Exception:
+        logger.exception("Historical contract command failed")
+        return ExitCode.FAILURE
     print(json.dumps(summary, indent=2, sort_keys=True, default=str))
-    return 0
+    return ExitCode.SUCCESS
+
+
+def execute_historical_command(
+    options: HistoricalCommandOptions,
+) -> Mapping[str, object]:
+    init_db()
+    if options.mode is HistoricalCommandMode.COVERAGE:
+        return coverage_report(
+            first_season=options.ingestion.first_season,
+            last_season=options.ingestion.last_season,
+        )
+    if options.mode is HistoricalCommandMode.APPLY:
+        return track_historical_contracts(None, options.ingestion)
+    return run_historical_contracts(None, options=options.ingestion, dry_run=True)
 
 
 if __name__ == "__main__":

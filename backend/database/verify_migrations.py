@@ -1,12 +1,14 @@
 """Validate migration history invariants without changing a database."""
 
-from __future__ import annotations
-
 import argparse
+import logging
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from app.shared.cli import ExitCode
 
 
 def validate(config_path: Path) -> list[str]:
@@ -32,21 +34,43 @@ def validate(config_path: Path) -> list[str]:
     return errors
 
 
-def main() -> int:
+@dataclass(slots=True, kw_only=True, frozen=True)
+class CommandOptions:
+    config: Path
+
+
+logger = logging.getLogger(__name__)
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "alembic.ini",
+        default=Path(__file__).resolve().parents[1].joinpath("alembic.ini"),
     )
-    args = parser.parse_args()
-    errors = validate(args.config.resolve())
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
+    options = CommandOptions(**vars(parser.parse_args(argv)))
+    logging.basicConfig(level=logging.INFO)
+    try:
+        return execute_command(options)
+    except Exception:
+        logger.exception("Command failed")
+        return ExitCode.FAILURE
+
+
+def execute_command(options: CommandOptions) -> int:
+    errors = validate(options.config.resolve())
     if errors:
         for error in errors:
-            print(f"ERROR: {error}")
-        return 1
+            logger.error("%s", error)
+        return ExitCode.FAILURE
     print("Migration history has one linear head and valid revision metadata.")
-    return 0
+    return ExitCode.SUCCESS
 
 
 if __name__ == "__main__":
