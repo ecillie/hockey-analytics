@@ -7,10 +7,10 @@ uv build --package tradevalue-backend --wheel --out-dir "$package_scratch/wheels
 uv build --package tradevalue-ml --wheel --out-dir "$package_scratch/wheels"
 unzip -Z1 "$package_scratch"/wheels/tradevalue_backend-*.whl > "$package_scratch/api-files"
 unzip -Z1 "$package_scratch"/wheels/tradevalue_ml-*.whl > "$package_scratch/ml-files"
-if rg 'ScriptingFiles|(^|/)(tests|data|ml)/|\.csv$|\.joblib$|\.pyc$' "$package_scratch/api-files"; then exit 1; fi
-if rg '(^|/)(tests|outputs)/|\.csv$|\.joblib$|\.pyc$' "$package_scratch/ml-files"; then exit 1; fi
-rg '^app/main.py$' "$package_scratch/api-files"
-rg '^ml/resources/skater_value_model_metadata.json$' "$package_scratch/ml-files"
+if grep -E 'ScriptingFiles|(^|/)(tests|data|ml)/|\.csv$|\.joblib$|\.pyc$' "$package_scratch/api-files"; then exit 1; fi
+if grep -E '(^|/)(tests|outputs)/|\.csv$|\.joblib$|\.pyc$' "$package_scratch/ml-files"; then exit 1; fi
+grep -E '^app/main.py$' "$package_scratch/api-files"
+grep -E '^ml/resources/skater_value_model_metadata.json$' "$package_scratch/ml-files"
 uv venv --python 3.12 "$package_scratch/environment"
 uv pip install --python "$package_scratch/environment/bin/python" -r backend/requirements-dev.txt "$package_scratch"/wheels/*.whl
 cd "$package_scratch"
