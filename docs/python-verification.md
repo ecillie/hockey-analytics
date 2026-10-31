@@ -122,3 +122,41 @@ runtime user. Frontend CI verifies generated API types, lint, all tests at its
 100% coverage thresholds, and the production build. Root test, workspace,
 lockfile, and workflow changes select all affected CI jobs. Review the draft
 phase PR's checks before merging; production promotion remains manual.
+
+## ML metadata follow-up, phase 1
+
+The follow-up starts from `Release-1.0.1` at
+`762751f590c750ae956783f5a2537c4e563b663b`, which includes the merged original
+phase 12. Its scope is F01 in ML, F03, and the ML portion of F11 in `plan.md`.
+Other follow-up findings remain separate work.
+
+`validate_metadata`, `validate_committed_model_metadata`, and `load_model` now
+return validated `ModelMetadata` values. Read fields as attributes, including
+`metadata.metrics.test.mae`. Both split containers and their metric values are
+frozen, and feature collections are tuples. Parsing detaches caller-owned JSON
+containers. `TrainingResult.metadata_value` retains this typed representation;
+its existing `metadata` property returns a detached JSON-compatible snapshot,
+and `metadata_json` retains the canonical sorted JSON format. Training split
+evaluation returns `SplitMetrics`. `Split` and `Metric` retain the published
+`train`/`validation`/`test` and `mae`/`rmse`/`r2` strings.
+
+Metadata policies return structured violations for feature order, temporal
+order, and supported model identity. ML-owned failures have dedicated exception
+types with keyword context fields; existing ValueError, TypeError,
+RuntimeError, and AssertionError categories remain compatible. Pydantic retains
+its own schema-validation errors. This change adds no dependency and changes
+neither committed metadata values, model calculations, nor OpenAPI.
+
+Regression coverage checks nested immutability and source aliasing, the exact
+canonical serialization of committed metadata, strict rows and seasons, split
+membership, feature order, model identity, finite metrics, regression directions
+and tolerances, failure context, and train/save/load/evaluate round trips.
+The local acceptance record is maintained in `plan.md`; verification uses the
+commands and unchanged coverage gates above, a dedicated disposable PostgreSQL
+15 database, isolated units, installed wheels, and an API container smoke.
+
+Local phase-1 acceptance on Python 3.12/PostgreSQL 15: 675 tests passed with
+zero skips, 91.44% aggregate coverage, and 100% API/shared-calendar coverage.
+Isolated units passed 628 tests with 47 integration tests deselected. Ruff,
+formatting, ty, model/OpenAPI/export gates, isolated wheel checks, Docker build,
+and health/seasons/teams HTTP smoke passed. No frontend boundary changed.

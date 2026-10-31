@@ -17,6 +17,7 @@ from ml.configuration import CATEGORICAL_FEATURES, NUMERIC_FEATURES
 from ml.evaluation.gate import prediction_frame, validate_metadata
 from ml.paths import artifact_directory
 from ml.schemas import validate_frame
+from ml.errors import EvaluationRowsError
 from ml.training.train_skater_value import build_training_data
 
 
@@ -29,9 +30,9 @@ def metrics(actual: ArrayLike, predicted: ArrayLike) -> dict[str, float]:
 
 
 def evaluate_predictions(
-    model: Pipeline, metadata: dict, data: pd.DataFrame
+    model: Pipeline, metadata: object, data: pd.DataFrame
 ) -> pd.DataFrame:
-    validate_metadata(metadata)
+    parsed = validate_metadata(metadata)
     validate_frame(
         data,
         required=(
@@ -45,10 +46,10 @@ def evaluate_predictions(
         ),
         grain=("player_id", "season"),
     )
-    test_season = metadata["test_target_season"]
+    test_season = parsed.test_target_season
     result = data[data["target_season"] == test_season].copy()
     if result.empty:
-        raise ValueError(f"No rows found for test season {test_season}")
+        raise EvaluationRowsError(season=test_season)
     predictions = np.asarray(
         model.predict(result[list(NUMERIC_FEATURES + CATEGORICAL_FEATURES)])
     )
