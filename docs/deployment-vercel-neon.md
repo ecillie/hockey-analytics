@@ -19,11 +19,11 @@ Keep two connection strings:
 Initialize an empty database from a trusted local environment:
 
 ```bash
-python -m pip install -r backend/requirements.txt
+uv sync --locked --no-default-groups
 DATABASE_URL="$NEON_DIRECT_DATABASE_URL" \
-  python -m alembic -c backend/alembic.ini upgrade head
+  uv run python -m alembic -c backend/alembic.ini upgrade head
 DATABASE_URL="$NEON_DIRECT_DATABASE_URL" \
-  python backend/database/schema_snapshot.py
+  uv run python backend/database/schema_snapshot.py
 ```
 
 For databases previously created from `schema.sql`, follow the verified
@@ -33,10 +33,10 @@ initial migration over existing tables.
 Then load the source data if the database has not already been populated:
 
 ```bash
-python -m pip install -r backend/requirements-dev.txt
+uv sync --locked --all-groups
 cd backend
 DATABASE_URL="$NEON_DIRECT_DATABASE_URL" ENV=prod \
-  python -m app.ScriptingFiles.FullDataScript.run_all
+  uv run python -m app.ScriptingFiles.FullDataScript.run_all
 ```
 
 Do not run the ingestion pipeline inside the request-serving Vercel Function.
