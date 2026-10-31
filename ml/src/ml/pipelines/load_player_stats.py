@@ -1,14 +1,9 @@
-from __future__ import annotations
-
-
 import pandas as pd
-from sqlalchemy import text
-
 from app.config import get_database_settings
 from app.database import database_resources
+from sqlalchemy import Connection, text
 
-
-PLAYER_SEASON_QUERY = text("""
+PLAYER_SEASON_QUERY = """
 WITH basic_total AS (
     SELECT
         player_id,
@@ -272,29 +267,24 @@ ORDER BY
     b.season_start_year,
     p.last_name,
     p.first_name;
-""")
+"""
 
 
 def load_player_stats(
     min_games: int = 1,
+    *,
+    connection: Connection | None = None,
 ) -> pd.DataFrame:
-    """
-    Load one regular-season row per skater-season.
 
-    TOTAL rows are preferred when available.
-    Otherwise TEAM rows are combined into full-season totals.
-
-    Contract data is intentionally excluded.
-    """
-
-    with (
-        database_resources(get_database_settings()) as resources,
-        resources.engine.connect() as connection,
-    ):
-        df = pd.read_sql(
-            PLAYER_SEASON_QUERY,
-            connection,
-        )
+    if min_games < 1:
+        raise ValueError("min_games must be positive")
+    if connection is None:
+        with (
+            database_resources(get_database_settings()) as resources,
+            resources.engine.connect() as owned,
+        ):
+            return load_player_stats(min_games, connection=owned)
+    df = pd.read_sql(text(PLAYER_SEASON_QUERY), connection)
 
     if min_games > 1:
         df = df[df["games_played"].fillna(0) >= min_games].copy()
