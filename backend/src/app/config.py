@@ -50,7 +50,8 @@ def load_environment(*, env_file: Path | None = None) -> dict[str, str]:
         if env_file is not None
         else Path(
             exported.get(
-                "TRADEVALUE_ENV_FILE", Path(__file__).resolve().parents[2] / ".env"
+                "TRADEVALUE_ENV_FILE",
+                Path(__file__).resolve().parents[2].joinpath(".env"),
             )
         )
     )

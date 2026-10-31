@@ -38,36 +38,23 @@ from app.ScriptingFiles.FullDataScript.contracts.util import (
     season_start_year,
 )
 from hypothesis import given
-from hypothesis import strategies as st
+from app.ScriptingFiles.FullDataScript.contracts.tests.strategies import (
+    currency_amounts,
+    season_years,
+)
 
 
 class TestAmountAndSeasonProperties:
-    @given(
-        amount=st.decimals(
-            min_value=0,
-            max_value=100_000_000,
-            places=2,
-            allow_nan=False,
-            allow_infinity=False,
-        )
-    )
+    @given(amount=currency_amounts())
     def test_currency_format_preserves_exact_cents(self, amount: Decimal) -> None:
         assert money_to_cents(f"${amount:,.2f}") == int(amount * 100)
 
-    @given(
-        amount=st.decimals(
-            min_value=-100_000_000,
-            max_value=Decimal("-0.01"),
-            places=2,
-            allow_nan=False,
-            allow_infinity=False,
-        )
-    )
+    @given(amount=currency_amounts(negative=True))
     def test_negative_amounts_never_become_zero(self, amount: Decimal) -> None:
         with pytest.raises(MoneyParseError):
             money_to_cents(amount)
 
-    @given(year=st.integers(min_value=1900, max_value=2200))
+    @given(year=season_years())
     def test_short_and_full_seasons_agree_across_centuries(self, year: int) -> None:
         assert season_start_year(f"{year}-{(year + 1) % 100:02d}") == year
         assert season_start_year(f"{year}–{year + 1}") == year

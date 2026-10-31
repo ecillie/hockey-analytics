@@ -1,7 +1,6 @@
 """DB-API transaction ownership against an explicitly disposable database."""
 
 from dataclasses import dataclass
-import os
 from uuid import uuid4
 
 import psycopg2
@@ -39,14 +38,11 @@ class TransactionScenario:
             connection.close()
 
 
+@pytest.mark.integration
 class TestDatabaseTransactions:
     @pytest.fixture
-    def scenario(self):
-        database_url = os.environ.get("TEST_DATABASE_URL", "")
-        if "tradevalue_test" not in database_url:
-            raise pytest.skip.Exception(
-                "requires an explicitly disposable test database"
-            )
+    def scenario(self, disposable_database_url):
+        database_url = disposable_database_url
         table = f"transaction_probe_{uuid4().hex}"
         settings = DatabaseSettings(
             environment=AppEnvironment.DEV, database_url=database_url

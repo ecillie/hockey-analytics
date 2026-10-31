@@ -1,7 +1,5 @@
 """Smoke tests for every supported backend and ingestion entrypoint."""
 
-from __future__ import annotations
-
 import ast
 import os
 from pathlib import Path
@@ -13,26 +11,30 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-BACKEND = ROOT / "backend"
-APP = BACKEND / "src" / "app"
-FULL_DATA_SCRIPT = APP / "ScriptingFiles" / "FullDataScript"
-LEGACY_LOADERS = BACKEND / "legacy_loaders"
+BACKEND = ROOT.joinpath("backend")
+APP = BACKEND.joinpath("src", "app")
+FULL_DATA_SCRIPT = APP.joinpath("ScriptingFiles", "FullDataScript")
+LEGACY_LOADERS = BACKEND.joinpath("legacy_loaders")
 
-SUPPORTED_CLI_MODULES = {
-    "app.ScriptingFiles.FullDataScript.capspace",
-    "app.ScriptingFiles.FullDataScript.populate_roster_status",
-    "app.ScriptingFiles.FullDataScript.run_all",
-}
-QUARANTINED_LOADERS = {
-    "save_basic_player_stats.py.txt",
-    "save_contracts_to_db.py.txt",
-    "save_goalie_advanced_stats.py.txt",
-    "save_individual_contract_years.py.txt",
-    "save_nhl_regular_seasoe_schedule.py.txt",
-    "save_players_to_db.py.txt",
-    "save_previous_games_stats.py.txt",
-    "save_skater_advanced_stats.py.txt",
-}
+SUPPORTED_CLI_MODULES = frozenset(
+    {
+        "app.ScriptingFiles.FullDataScript.capspace",
+        "app.ScriptingFiles.FullDataScript.populate_roster_status",
+        "app.ScriptingFiles.FullDataScript.run_all",
+    }
+)
+QUARANTINED_LOADERS = frozenset(
+    {
+        "save_basic_player_stats.py.txt",
+        "save_contracts_to_db.py.txt",
+        "save_goalie_advanced_stats.py.txt",
+        "save_individual_contract_years.py.txt",
+        "save_nhl_regular_seasoe_schedule.py.txt",
+        "save_players_to_db.py.txt",
+        "save_previous_games_stats.py.txt",
+        "save_skater_advanced_stats.py.txt",
+    }
+)
 
 
 def supported_python_files() -> list[Path]:
@@ -41,7 +43,7 @@ def supported_python_files() -> list[Path]:
 
 def full_data_modules() -> list[str]:
     return [
-        ".".join(path.relative_to(BACKEND / "src").with_suffix("").parts)
+        ".".join(path.relative_to(BACKEND.joinpath("src")).with_suffix("").parts)
         for path in sorted(FULL_DATA_SCRIPT.rglob("*.py"))
         if path.name != "__init__.py" and "__pycache__" not in path.parts
     ]
@@ -60,27 +62,28 @@ def imported_modules(path: Path) -> set[str]:
 
 def has_main_guard(path: Path) -> bool:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.If):
-            continue
-        test = node.test
-        if (
-            isinstance(test, ast.Compare)
-            and isinstance(test.left, ast.Name)
-            and test.left.id == "__name__"
-            and len(test.ops) == 1
-            and isinstance(test.ops[0], ast.Eq)
-            and len(test.comparators) == 1
-            and isinstance(test.comparators[0], ast.Constant)
-            and test.comparators[0].value == "__main__"
-        ):
-            return True
-    return False
+    return any(is_main_guard(node) for node in ast.walk(tree))
+
+
+def is_main_guard(node: ast.AST) -> bool:
+    if not isinstance(node, ast.If):
+        return False
+    test = node.test
+    return (
+        isinstance(test, ast.Compare)
+        and isinstance(test.left, ast.Name)
+        and test.left.id == "__name__"
+        and len(test.ops) == 1
+        and isinstance(test.ops[0], ast.Eq)
+        and len(test.comparators) == 1
+        and isinstance(test.comparators[0], ast.Constant)
+        and test.comparators[0].value == "__main__"
+    )
 
 
 def test_complete_backend_application_compiles(tmp_path):
     for source in supported_python_files():
-        target = tmp_path / source.relative_to(APP).with_suffix(".pyc")
+        target = tmp_path.joinpath(source.relative_to(APP).with_suffix(".pyc"))
         target.parent.mkdir(parents=True, exist_ok=True)
         py_compile.compile(str(source), cfile=str(target), doraise=True)
 
@@ -105,12 +108,12 @@ def test_complete_legacy_loader_set_is_quarantined_outside_application_tree():
     assert archived == QUARANTINED_LOADERS
     assert list(LEGACY_LOADERS.rglob("*.py")) == []
     assert list(LEGACY_LOADERS.rglob("*.pyc")) == []
-    assert (LEGACY_LOADERS / "README.md").is_file()
+    assert (LEGACY_LOADERS.joinpath("README.md")).is_file()
 
 
 def test_supported_cli_manifest_matches_executable_modules():
     executable_modules = {
-        ".".join(path.relative_to(BACKEND / "src").with_suffix("").parts)
+        ".".join(path.relative_to(BACKEND.joinpath("src")).with_suffix("").parts)
         for path in FULL_DATA_SCRIPT.rglob("*.py")
         if has_main_guard(path)
     }

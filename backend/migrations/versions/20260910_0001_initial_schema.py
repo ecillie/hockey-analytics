@@ -4,8 +4,6 @@ Revision ID: 20260910_0001
 Revises: None
 """
 
-from __future__ import annotations
-
 import hashlib
 from pathlib import Path
 
@@ -18,7 +16,7 @@ branch_labels = None
 depends_on = None
 
 SCHEMA_SHA256 = "b29d0567ee3a17cb95abe37b00de0cf3589e809fb65019f67bd1e6b74509d2b5"
-SCHEMA_PATH = Path(__file__).resolve().parents[2] / "database" / "schema.sql"
+SCHEMA_PATH = Path(__file__).resolve().parents[2].joinpath("database", "schema.sql")
 
 
 def _schema_body() -> str:
@@ -40,9 +38,6 @@ def _execute_script(sql: str) -> None:
     if context.as_sql:
         context.impl.static_output(sql.rstrip() + "\n")
     else:
-        # The baseline contains literal percent signs in comments and SQL.
-        # Execute it through the DBAPI cursor so psycopg2 does not interpret
-        # those literals as pyformat parameters.
         cursor = op.get_bind().connection.cursor()
         try:
             cursor.execute(sql)

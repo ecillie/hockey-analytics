@@ -75,14 +75,18 @@ select = ["E4", "E7", "E9", "F"]
 python-version = "3.12"
 
 [tool.pytest.ini_options]
-addopts = "--cov=app --cov=ml --cov-branch --cov-report=term-missing --cov-report=html:coverage/python/html --cov-report=xml:coverage/python/coverage.xml --cov-report=lcov:coverage/python/lcov.info --cov-fail-under=58.80"
+addopts = "--strict-markers --cov=app --cov=ml --cov=backend --cov=backend/database --cov=backend/migrations --cov=backend/migrations/versions --cov-branch --cov-report=term-missing --cov-report=html:coverage/python/html --cov-report=xml:coverage/python/coverage.xml --cov-report=lcov:coverage/python/lcov.info --cov-fail-under=58.80"
 testpaths = ["tests/backend", "tests/ml"]
+markers = [
+    "unit: deterministic tests with external resources replaced by fakes",
+    "integration: tests requiring a disposable PostgreSQL database",
+]
 
 [tool.coverage.run]
-omit = ["*/api/tests/*", "*/roster_status/tests/*", "*/source_ingestion/tests/*", "*/contracts/tests/*"]
+omit = ["*/tests/*"]
 branch = true
 relative_files = true
-source = ["app", "ml"]
+source = ["app", "ml", "backend", "backend/database", "backend/migrations", "backend/migrations/versions"]
 
 [tool.coverage.report]
 precision = 2

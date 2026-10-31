@@ -233,9 +233,9 @@ commands, arguments, output streams, and exit statuses.
 Run `uv run ruff check`, `uv run ruff format --check`, and `uv run ty check`
 from the repository root. No check suppressions or reduced coverage
 thresholds are used. The retired loaders are archived as byte-preserved `.py.txt`
-references. Framework-state exceptions and enum
-boundary decisions remain prerequisites for their source-remediation phases;
-this configuration change grants no exception to the Python rules.
+references. The [Python verification guide](docs/python-verification.md) documents
+unit/integration selection, disposable database safety, coverage scope, and
+framework boundaries retained from the remediation phases.
 
 Build and verify both distributions with `bash scripts/verify-packages.sh`.
 It checks wheel contents and imports non-editable installations from outside

@@ -12,6 +12,7 @@ from app.ScriptingFiles.FullDataScript.tracking.repository import (
 )
 from app.ScriptingFiles.FullDataScript.tracking.repository import (
     open_ingestion_run,
+    PostgresIngestionRun,
 )
 
 
@@ -37,15 +38,17 @@ def tracked_ingestion[**P, R: Mapping[str, object]](
                     summary = function(*args, **kwargs)
                     run.succeed(summary)
                 except BaseException as primary:
-                    try:
-                        run.fail(primary)
-                    except BaseException as reporting:
-                        primary.add_note(
-                            f"Ingestion failure reporting also failed: {reporting!r}"
-                        )
+                    report_ingestion_failure(run, primary)
                     raise
                 return summary
 
         return wrapped
 
     return decorate
+
+
+def report_ingestion_failure(run: PostgresIngestionRun, primary: BaseException) -> None:
+    try:
+        run.fail(primary)
+    except BaseException as reporting:
+        primary.add_note(f"Ingestion failure reporting also failed: {reporting!r}")

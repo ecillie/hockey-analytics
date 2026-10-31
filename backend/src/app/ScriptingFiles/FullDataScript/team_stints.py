@@ -1,8 +1,6 @@
 """Set-based reconstruction of canonical season-ending team assignments."""
 
-from __future__ import annotations
-
-from typing import Any
+from psycopg2.extensions import connection as PgConnection
 
 
 _CANDIDATES_SQL = r"""
@@ -121,12 +119,11 @@ def _params(first_season: int | None, last_season: int | None) -> dict[str, int 
 
 
 def plan_team_stint_backfill(
-    connection: Any,
+    connection: PgConnection,
     *,
     first_season: int | None = None,
     last_season: int | None = None,
 ) -> dict[str, int]:
-    """Count canonical and missing assignments without changing the database."""
     cursor = connection.cursor()
     try:
         cursor.execute(_PLAN_SQL, _params(first_season, last_season))
@@ -140,12 +137,11 @@ def plan_team_stint_backfill(
 
 
 def apply_team_stint_backfill(
-    connection: Any,
+    connection: PgConnection,
     *,
     first_season: int | None = None,
     last_season: int | None = None,
 ) -> dict[str, int]:
-    """Insert only absent player/season assignments in one set-based statement."""
     cursor = connection.cursor()
     try:
         cursor.execute(_APPLY_SQL, _params(first_season, last_season))

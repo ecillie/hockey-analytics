@@ -130,6 +130,8 @@ jobs:
         run: uv run python backend/database/migration_smoke.py
       - name: Run deterministic ingestion and data-quality gate
         run: uv run pytest --no-cov -q tests/backend/test_ingestion.py
+      - name: Run isolated Python unit tests
+        run: env -u DATABASE_URL -u DEV_DATABASE_URL -u TEST_DATABASE_URL ENV='' TRADEVALUE_ENV_FILE=/dev/null uv run pytest --no-cov -m unit -q
       - name: Run backend and ML tests with coverage
         run: uv run pytest -q
       - name: Enforce complete service-layer coverage

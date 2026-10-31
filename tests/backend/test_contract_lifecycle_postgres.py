@@ -1,6 +1,5 @@
 """Committed batches, failed run accounting, and lock ownership in PostgreSQL."""
 
-import os
 from collections.abc import Generator
 from pathlib import Path
 
@@ -23,11 +22,10 @@ from app.ScriptingFiles.FullDataScript.tracking.repository import (
 )
 
 
+@pytest.mark.integration
 class TestCommittedContractBatches:
     @pytest.fixture
-    def scenario(self) -> Generator[ContractDatabaseScenario]:
-        if os.environ.get("TEST_DATABASE_URL") is None:
-            raise pytest.skip.Exception("requires a disposable test database")
+    def scenario(self, disposable_database_url) -> Generator[ContractDatabaseScenario]:
         connection = connect_database()
         seed_contract_batch(connection)
         body = (
@@ -128,11 +126,10 @@ class TestCommittedContractBatches:
             assert cursor.fetchall() == [("succeeded",), ("cancelled",), ("succeeded",)]
 
 
+@pytest.mark.integration
 class TestContractSourceOwnership:
     @pytest.fixture
-    def scenario(self) -> Generator[ContractDatabaseScenario]:
-        if os.environ.get("TEST_DATABASE_URL") is None:
-            raise pytest.skip.Exception("requires a disposable test database")
+    def scenario(self, disposable_database_url) -> Generator[ContractDatabaseScenario]:
         connection = connect_database()
         seed_contract_batch(connection)
         with connection.cursor() as cursor:

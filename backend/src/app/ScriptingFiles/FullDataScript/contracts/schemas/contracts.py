@@ -292,13 +292,14 @@ def contract_from_table(block: Tag) -> ParsedContract | None:
 def document_contracts(document: SourceDocument) -> list[ParsedContract]:
     parsed_json: list[ParsedContract] | None = None
     failure: CapSpaceParseError | None = None
-    for payload in document.next_data:
+    payloads = iter(document.next_data)
+    while (parsed_json is None or len(parsed_json) == 0) and (
+        payload := next(payloads, None)
+    ) is not None:
         try:
             parsed_json = contracts_from_json(payload)
         except CapSpaceParseError as error:
             failure = error
-        if parsed_json is not None and len(parsed_json) > 0:
-            break
     if parsed_json is not None and len(parsed_json) > 0:
         return parsed_json
     candidates = document.root.select("article, .contract, .contract-block")

@@ -1,4 +1,6 @@
-import unittest
+"""Configuration precedence, escaping, and validation at explicit boundaries."""
+
+import pytest
 
 from app.config import (
     AppEnvironment,
@@ -8,12 +10,10 @@ from app.config import (
 )
 
 
-class DatabaseSettingsTests(unittest.TestCase):
-    def load_with(self, environment):
-        return get_database_settings(environment)
-
-    def test_database_url_takes_precedence(self):
-        settings = self.load_with(
+class TestDatabaseSettings:
+    @pytest.fixture
+    def url_settings(self):
+        return get_database_settings(
             {
                 "DATABASE_URL": "postgresql://example.test/tradevalue",
                 "ENV": "nonprod",
@@ -23,15 +23,17 @@ class DatabaseSettingsTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(settings.database_url, "postgresql://example.test/tradevalue")
-        self.assertEqual(settings.environment, AppEnvironment.NONPROD)
-        self.assertEqual(settings.connect_timeout_seconds, 7)
-        self.assertEqual(settings.pool_size, 2)
-        self.assertEqual(settings.max_overflow, 3)
-        self.assertEqual(settings.pool_recycle_seconds, 300)
+    def test_database_url_takes_precedence(self, url_settings):
+        assert url_settings.database_url == "postgresql://example.test/tradevalue"
+        assert url_settings.environment == AppEnvironment.NONPROD
+        assert url_settings.connect_timeout_seconds == 7
+        assert url_settings.pool_size == 2
+        assert url_settings.max_overflow == 3
+        assert url_settings.pool_recycle_seconds == 300
 
-    def test_component_settings_are_url_encoded(self):
-        settings = self.load_with(
+    @pytest.fixture
+    def component_settings(self):
+        return get_database_settings(
             {
                 "ENV": "dev",
                 "DB_USER": "trade value",
@@ -42,17 +44,14 @@ class DatabaseSettingsTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(
-            settings.database_url,
-            "postgresql://trade%20value:secret%2F%40word@localhost:5433/hockey%20data",
+    def test_component_settings_are_url_encoded(self, component_settings):
+        assert component_settings.database_url == (
+            "postgresql://trade%20value:secret%2F%40word@localhost:5433/hockey%20data"
         )
 
-    def test_missing_database_settings_are_rejected(self):
-        with self.assertRaisesRegex(ConfigurationError, "DATABASE_URL"):
-            self.load_with({"ENV": "prod"})
-
-    def test_scoped_url_matches_selected_environment(self):
-        settings = self.load_with(
+    @pytest.fixture
+    def scoped_settings(self):
+        return get_database_settings(
             {
                 "ENV": "prod",
                 "PROD_DATABASE_URL": "postgresql://prod.test/tradevalue",
@@ -61,38 +60,62 @@ class DatabaseSettingsTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(settings.database_url, "postgresql://prod.test/tradevalue")
+    def test_scoped_url_matches_selected_environment(self, scoped_settings):
+        assert scoped_settings.database_url == "postgresql://prod.test/tradevalue"
 
-    def test_environment_is_required_and_validated(self):
-        with self.assertRaisesRegex(ConfigurationError, "ENV must be one of"):
-            self.load_with({"DATABASE_URL": "postgresql://example.test/db"})
+    @pytest.fixture(
+        params=[
+            pytest.param(({"ENV": "prod"}, "DATABASE_URL"), id="missing-database-url"),
+            pytest.param(
+                (
+                    {"DATABASE_URL": "postgresql://example.test/db"},
+                    "ENV must be one of",
+                ),
+                id="missing-environment",
+            ),
+            pytest.param(
+                (
+                    {
+                        "ENV": "prod",
+                        "DATABASE_URL": "postgresql://example.test/db",
+                        "DB_POOL_SIZE": "0",
+                    },
+                    "DB_POOL_SIZE",
+                ),
+                id="empty-pool",
+            ),
+        ]
+    )
+    def invalid_settings(self, request):
+        return request.param
 
-    def test_database_pool_settings_are_validated(self):
-        with self.assertRaisesRegex(ConfigurationError, "DB_POOL_SIZE"):
-            self.load_with(
-                {
-                    "ENV": "prod",
-                    "DATABASE_URL": "postgresql://example.test/db",
-                    "DB_POOL_SIZE": "0",
-                }
-            )
+    def test_invalid_database_settings_are_rejected(self, invalid_settings):
+        environment, message = invalid_settings
+        with pytest.raises(ConfigurationError, match=message):
+            get_database_settings(environment)
 
-    def test_api_cors_origins_are_trimmed(self):
-        settings = get_api_settings(
+
+class TestApiSettings:
+    pattern = r"^https://trade-[a-z0-9-]+\.vercel\.app$"
+
+    @pytest.fixture
+    def cors_settings(self):
+        return get_api_settings(
             {"CORS_ORIGINS": "https://trade.example, https://preview.example"}
         )
-        self.assertEqual(
-            settings.cors_origins, ("https://trade.example", "https://preview.example")
+
+    def test_api_cors_origins_are_trimmed(self, cors_settings):
+        assert cors_settings.cors_origins == (
+            "https://trade.example",
+            "https://preview.example",
         )
-        self.assertIsNone(settings.cors_origin_regex)
+        assert cors_settings.cors_origin_regex is None
 
-    def test_api_cors_preview_regex_is_optional(self):
-        pattern = r"^https://trade-[a-z0-9-]+\.vercel\.app$"
-        settings = get_api_settings(
-            {"CORS_ORIGINS": "https://trade.example", "CORS_ORIGIN_REGEX": pattern}
+    @pytest.fixture
+    def preview_settings(self):
+        return get_api_settings(
+            {"CORS_ORIGINS": "https://trade.example", "CORS_ORIGIN_REGEX": self.pattern}
         )
-        self.assertEqual(settings.cors_origin_regex, pattern)
 
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_api_cors_preview_regex_is_optional(self, preview_settings):
+        assert preview_settings.cors_origin_regex == self.pattern

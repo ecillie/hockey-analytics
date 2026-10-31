@@ -1,9 +1,7 @@
 """Response schemas shared by every TradeValue endpoint."""
 
-from __future__ import annotations
-
 from datetime import date
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -13,14 +11,14 @@ class ApiModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class RosterStatus(str, Enum):
+class RosterStatus(StrEnum):
     ACTIVE = "ACTIVE"
     MINORS = "MINORS"
     LTIR = "LTIR"
     UNKNOWN = "UNKNOWN"
 
 
-class Position(str, Enum):
+class Position(StrEnum):
     C = "C"
     LW = "LW"
     RW = "RW"

@@ -3,22 +3,40 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from dataclasses import dataclass
+from collections.abc import Generator
+from types import ModuleType
+
+import httpx
+from app.shared.tests.fakes import (
+    CatalogDatabase,
+    MigrationRevision,
+    MigrationHistory,
+    SavedApiClient,
+    MigrationContext,
+    MigrationBind,
+    MigrationConnection,
+    MigrationCursor,
+    StageOutcome,
+)
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 
-from backend.database import migration_preflight, schema_snapshot, verify_migrations
+from backend.database import (
+    migration_preflight,
+    migration_smoke,
+    schema_snapshot,
+    verify_migrations,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
-ALEMBIC_CONFIG = ROOT / "backend" / "alembic.ini"
-INITIAL_REVISION = (
-    ROOT / "backend" / "migrations" / "versions" / "20260910_0001_initial_schema.py"
+ALEMBIC_CONFIG = ROOT.joinpath("backend", "alembic.ini")
+INITIAL_REVISION = ROOT.joinpath(
+    "backend", "migrations", "versions", "20260910_0001_initial_schema.py"
 )
-TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
 
 def load_initial_revision():
@@ -31,120 +49,158 @@ def load_initial_revision():
     return module
 
 
-def test_frozen_initial_schema_checksum_and_transaction_stripping():
-    revision = load_initial_revision()
-
-    body = revision._schema_body()
-
-    assert "CREATE TYPE roster_status" in body
-    assert "CREATE TABLE predictions" in body
-    assert "\nBEGIN;" not in body
-    assert "\nCOMMIT;" not in body
+@dataclass(slots=True, kw_only=True, frozen=True)
+class RevisionScenario:
+    revision: ModuleType
+    context: MigrationContext
+    cursor: MigrationCursor
 
 
-def test_frozen_initial_schema_rejects_edits(tmp_path):
-    revision = load_initial_revision()
-    changed_schema = tmp_path / "schema.sql"
-    changed_schema.write_text("BEGIN;\nSELECT 1;\nCOMMIT;\n", encoding="utf-8")
+class TestFrozenRevision:
+    @pytest.fixture
+    def revision(self):
+        return load_initial_revision()
 
-    with patch.object(revision, "SCHEMA_PATH", changed_schema):
+    def test_frozen_initial_schema_checksum_and_transaction_stripping(self, revision):
+        body = revision._schema_body()
+        assert "CREATE TYPE roster_status" in body
+        assert "CREATE TABLE predictions" in body
+        assert "\nBEGIN;" not in body
+        assert "\nCOMMIT;" not in body
+
+    @pytest.fixture
+    def changed_revision(self, revision, tmp_path, monkeypatch):
+        changed_schema = tmp_path.joinpath("schema.sql")
+        changed_schema.write_text("BEGIN;\nSELECT 1;\nCOMMIT;\n", encoding="utf-8")
+        monkeypatch.setattr(revision, "SCHEMA_PATH", changed_schema)
+        return revision
+
+    def test_frozen_initial_schema_rejects_edits(self, changed_revision):
         with pytest.raises(RuntimeError, match="frozen initial-schema snapshot"):
-            revision._schema_body()
+            changed_revision._schema_body()
 
+    @pytest.fixture(
+        params=[pytest.param(True, id="offline"), pytest.param(False, id="online")]
+    )
+    def execution(self, revision, request, monkeypatch):
+        context = MigrationContext(as_sql=request.param)
+        cursor = MigrationCursor()
+        bind = MigrationBind(connection=MigrationConnection(active_cursor=cursor))
 
-def test_initial_revision_emits_raw_sql_in_offline_mode():
-    revision = load_initial_revision()
-    context = Mock(as_sql=True)
+        def provide_context():
+            return context
 
-    with patch.object(revision.op, "get_context", return_value=context):
-        revision._execute_script("SELECT 1;")
+        def provide_bind():
+            return bind
 
-    context.impl.static_output.assert_called_once_with("SELECT 1;\n")
+        monkeypatch.setattr(revision.op, "get_context", provide_context)
+        monkeypatch.setattr(revision.op, "get_bind", provide_bind)
+        return RevisionScenario(revision=revision, context=context, cursor=cursor)
 
-
-def test_initial_revision_executes_raw_sql_and_closes_cursor_online():
-    revision = load_initial_revision()
-    context = Mock(as_sql=False)
-    bind = Mock()
-    cursor = bind.connection.cursor.return_value
-
-    with (
-        patch.object(revision.op, "get_context", return_value=context),
-        patch.object(revision.op, "get_bind", return_value=bind),
+    def test_initial_revision_executes_raw_sql_and_closes_online_cursor(
+        self, execution
     ):
-        revision._execute_script("SELECT 100 % 9;")
-
-    cursor.execute.assert_called_once_with("SELECT 100 % 9;")
-    cursor.close.assert_called_once_with()
+        execution.revision._execute_script("SELECT 100 % 9;")
+        if execution.context.as_sql:
+            assert execution.context.impl.statements == ["SELECT 100 % 9;\n"]
+            assert execution.cursor.statements == []
+            assert execution.cursor.closures == []
+            return
+        assert execution.cursor.statements == ["SELECT 100 % 9;"]
+        assert execution.cursor.closures == [True]
 
 
 def migration_scripts(*revisions, heads=("head",)):
-    scripts = Mock()
-    scripts.get_heads.return_value = list(heads)
-    scripts.walk_revisions.return_value = list(revisions)
-    return scripts
+    return MigrationHistory(revisions=tuple(revisions), heads=heads)
 
 
 def revision(name="revision", *, doc="description", merge=False):
-    return SimpleNamespace(revision=name, doc=doc, is_merge_point=merge)
+    return MigrationRevision(revision=name, doc=doc, is_merge_point=merge)
 
 
-def test_migration_history_accepts_one_documented_linear_head():
-    scripts = migration_scripts(revision("one"))
-
-    with patch.object(
-        verify_migrations.ScriptDirectory, "from_config", return_value=scripts
-    ):
-        assert verify_migrations.validate(ALEMBIC_CONFIG) == []
-
-
-@pytest.mark.parametrize(
-    ("scripts", "message"),
-    [
-        (migration_scripts(revision(), heads=()), "exactly one migration head"),
-        (
-            migration_scripts(revision(), heads=("one", "two")),
-            "exactly one migration head",
-        ),
-        (migration_scripts(heads=("one",)), "migration history is empty"),
-        (migration_scripts(revision(doc="")), "has no description"),
-        (migration_scripts(revision(merge=True)), "unapproved merge point"),
-    ],
-)
-def test_migration_history_rejects_invalid_graphs(scripts, message):
-    with patch.object(
-        verify_migrations.ScriptDirectory, "from_config", return_value=scripts
-    ):
-        assert any(
-            message in error for error in verify_migrations.validate(ALEMBIC_CONFIG)
+class TestMigrationHistory:
+    @pytest.fixture(
+        params=[
+            pytest.param((migration_scripts(revision("one")), None), id="linear"),
+            pytest.param(
+                (migration_scripts(revision(), heads=()), "exactly one migration head"),
+                id="no-head",
+            ),
+            pytest.param(
+                (
+                    migration_scripts(revision(), heads=("one", "two")),
+                    "exactly one migration head",
+                ),
+                id="multiple-heads",
+            ),
+            pytest.param(
+                (migration_scripts(heads=("one",)), "migration history is empty"),
+                id="empty-history",
+            ),
+            pytest.param(
+                (migration_scripts(revision(doc="")), "has no description"),
+                id="missing-description",
+            ),
+            pytest.param(
+                (migration_scripts(revision(merge=True)), "unapproved merge point"),
+                id="merge-point",
+            ),
+        ]
+    )
+    def history(self, request, monkeypatch):
+        scripts, message = request.param
+        monkeypatch.setattr(
+            verify_migrations.ScriptDirectory,
+            "from_config",
+            StageOutcome(result=scripts),
         )
+        return message
+
+    def test_only_documented_linear_history_is_accepted(self, history):
+        errors = verify_migrations.validate(ALEMBIC_CONFIG)
+        if history is None:
+            assert errors == []
+            return
+        assert any(history in error for error in errors)
 
 
-def test_database_url_prefers_primary_url():
-    with patch.dict(
-        os.environ,
-        {
-            "DATABASE_URL": "postgresql://primary/db",
-            "TEST_DATABASE_URL": "postgresql://test/db",
-        },
-        clear=True,
-    ):
-        assert schema_snapshot.database_url() == "postgresql://primary/db"
-        assert migration_preflight.database_url() == "postgresql://primary/db"
+class TestMigrationDatabaseSettings:
+    @pytest.fixture(
+        params=[
+            pytest.param(
+                (
+                    {
+                        "DATABASE_URL": "postgresql://primary/db",
+                        "TEST_DATABASE_URL": "postgresql://test/db",
+                    },
+                    "postgresql://primary/db",
+                ),
+                id="primary",
+            ),
+            pytest.param(
+                ({"TEST_DATABASE_URL": "postgresql://test/db"}, "postgresql://test/db"),
+                id="test-fallback",
+            ),
+            pytest.param(({}, None), id="missing"),
+        ]
+    )
+    def url(self, request, monkeypatch):
+        values, expected = request.param
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
+        for name, value in values.items():
+            monkeypatch.setenv(name, value)
+        return expected
 
-
-def test_database_url_falls_back_to_test_url_and_requires_one():
-    with patch.dict(
-        os.environ, {"TEST_DATABASE_URL": "postgresql://test/db"}, clear=True
-    ):
-        assert schema_snapshot.database_url() == "postgresql://test/db"
-        assert migration_preflight.database_url() == "postgresql://test/db"
-
-    with patch.dict(os.environ, {}, clear=True):
-        with pytest.raises(RuntimeError, match="DATABASE_URL or TEST_DATABASE_URL"):
-            schema_snapshot.database_url()
-        with pytest.raises(RuntimeError, match="DATABASE_URL or TEST_DATABASE_URL"):
-            migration_preflight.database_url()
+    def test_url_precedence_and_required_value(self, url):
+        if url is None:
+            with pytest.raises(RuntimeError, match="DATABASE_URL or TEST_DATABASE_URL"):
+                schema_snapshot.database_url()
+            with pytest.raises(RuntimeError, match="DATABASE_URL or TEST_DATABASE_URL"):
+                migration_preflight.database_url()
+            return
+        assert schema_snapshot.database_url() == url
+        assert migration_preflight.database_url() == url
 
 
 def test_schema_snapshot_render_is_deterministic():
@@ -156,49 +212,76 @@ def test_schema_snapshot_render_is_deterministic():
     )
 
 
-def run_snapshot_main(*arguments):
-    with patch.object(sys, "argv", ["schema_snapshot.py", *map(str, arguments)]):
-        return schema_snapshot.main()
+@dataclass(slots=True, kw_only=True, frozen=True)
+class SnapshotScenario:
+    expected: Path
+    actual: Path
 
 
-def test_schema_snapshot_update_then_compare(tmp_path):
-    expected = tmp_path / "expected.json"
-    actual = tmp_path / "actual.json"
-    catalog = {"tables": [{"table_name": "players"}]}
+class TestSchemaSnapshot:
+    @pytest.fixture
+    def paths(self, tmp_path):
+        return SnapshotScenario(
+            expected=tmp_path.joinpath("expected.json"),
+            actual=tmp_path.joinpath("actual.json"),
+        )
 
-    with patch.object(schema_snapshot, "snapshot", return_value=catalog):
-        assert run_snapshot_main("--expected", expected, "--update") == 0
-        assert run_snapshot_main("--expected", expected, "--actual", actual) == 0
+    @pytest.fixture
+    def catalog(self, monkeypatch):
+        catalog = {"tables": [{"table_name": "players"}]}
+        monkeypatch.setattr(schema_snapshot, "snapshot", StageOutcome(result=catalog))
+        return catalog
 
-    assert expected.read_text(encoding="utf-8") == actual.read_text(encoding="utf-8")
+    @pytest.mark.usefixtures("catalog")
+    def test_schema_snapshot_update_then_compare(self, paths):
+        assert (
+            schema_snapshot.main(["--expected", str(paths.expected), "--update"]) == 0
+        )
+        assert (
+            schema_snapshot.main(
+                ["--expected", str(paths.expected), "--actual", str(paths.actual)]
+            )
+            == 0
+        )
+        assert paths.expected.read_text(encoding="utf-8") == paths.actual.read_text(
+            encoding="utf-8"
+        )
 
+    @pytest.fixture
+    def drifted(self, paths, catalog):
+        paths.expected.write_text(
+            schema_snapshot.render({"tables": []}), encoding="utf-8"
+        )
+        return paths
 
-def test_schema_snapshot_reports_missing_and_drifted_contracts(tmp_path, caplog):
-    expected = tmp_path / "expected.json"
-    actual = tmp_path / "actual.json"
-    expected.write_text(schema_snapshot.render({"tables": []}), encoding="utf-8")
+    def test_schema_snapshot_reports_drifted_contract(self, drifted, caplog):
+        assert (
+            schema_snapshot.main(
+                ["--expected", str(drifted.expected), "--actual", str(drifted.actual)]
+            )
+            == 1
+        )
+        assert "does not match" in caplog.text
+        assert "players" in drifted.actual.read_text(encoding="utf-8")
 
-    with patch.object(
-        schema_snapshot,
-        "snapshot",
-        return_value={"tables": [{"table_name": "players"}]},
-    ):
-        assert run_snapshot_main("--expected", expected, "--actual", actual) == 1
-    assert "does not match" in caplog.text
-    assert "players" in actual.read_text(encoding="utf-8")
-
-    with patch.object(schema_snapshot, "snapshot", return_value={"tables": []}):
-        assert run_snapshot_main("--expected", tmp_path / "missing.json") == 1
-    assert "snapshot is missing" in caplog.text
+    @pytest.mark.usefixtures("catalog")
+    def test_schema_snapshot_reports_missing_contract(self, paths, caplog):
+        assert schema_snapshot.main(["--expected", str(paths.expected)]) == 1
+        assert "snapshot is missing" in caplog.text
 
 
 @pytest.mark.parametrize(
     ("tables", "versions", "expected"),
     [
-        ([], [], None),
-        (["players"], ["20260910_0001"], None),
-        (["players"], [], "no Alembic revision"),
-        (["players"], ["one", "two"], "multiple Alembic revisions"),
+        pytest.param([], [], None, id="empty-database"),
+        pytest.param(["players"], ["20260910_0001"], None, id="versioned-database"),
+        pytest.param(["players"], [], "no Alembic revision", id="unversioned-tables"),
+        pytest.param(
+            ["players"],
+            ["one", "two"],
+            "multiple Alembic revisions",
+            id="multiple-revisions",
+        ),
     ],
 )
 def test_migration_preflight_decisions(tables, versions, expected):
@@ -211,134 +294,154 @@ def test_migration_preflight_decisions(tables, versions, expected):
         assert expected in error
 
 
-def test_migration_preflight_inspects_tables_and_revision():
-    connection = Mock()
-    table_result = Mock()
-    table_result.scalars.return_value.all.return_value = ["players", "teams"]
-    exists_result = Mock()
-    exists_result.scalar_one.return_value = True
-    version_result = Mock()
-    version_result.scalars.return_value.all.return_value = ["20260910_0001"]
-    connection.execute.side_effect = [table_result, exists_result, version_result]
+class TestMigrationPreflightInspectsTablesAndRevision:
+    @pytest.fixture
+    def scenario(self):
+        connection = CatalogDatabase(
+            tables=("players", "teams"),
+            versions=("20260910_0001",),
+            version_table_exists=True,
+        )
+        return connection
 
-    assert migration_preflight.inspect_database(connection) == (
-        ["players", "teams"],
-        ["20260910_0001"],
-    )
-
-
-def test_migration_preflight_does_not_query_missing_version_table():
-    connection = Mock()
-    table_result = Mock()
-    table_result.scalars.return_value.all.return_value = []
-    exists_result = Mock()
-    exists_result.scalar_one.return_value = False
-    connection.execute.side_effect = [table_result, exists_result]
-
-    assert migration_preflight.inspect_database(connection) == ([], [])
-    assert connection.execute.call_count == 2
+    def test_migration_preflight_inspects_tables_and_revision(self, scenario):
+        connection = scenario
+        assert migration_preflight.inspect_database(connection) == (
+            ["players", "teams"],
+            ["20260910_0001"],
+        )
 
 
-def import_migration_smoke():
-    os.environ.setdefault("ENV", "dev")
-    os.environ.setdefault("DATABASE_URL", "postgresql://example.test/tradevalue")
-    from backend.database import migration_smoke
+class TestMigrationPreflightDoesNotQueryMissingVersionTable:
+    @pytest.fixture
+    def scenario(self):
+        connection = CatalogDatabase()
+        return connection
 
-    return migration_smoke
-
-
-def test_reference_data_smoke_accepts_complete_baseline():
-    migration_smoke = import_migration_smoke()
-    session = Mock()
-    sources = Mock()
-    sources.scalars.return_value.all.return_value = [
-        "capspace",
-        "capwages",
-        "moneypuck",
-        "nhl",
-    ]
-    seasons = Mock()
-    seasons.scalar_one.return_value = 22
-    session.execute.side_effect = [sources, seasons]
-
-    migration_smoke.validate_reference_data(session)
+    def test_migration_preflight_does_not_query_missing_version_table(self, scenario):
+        connection = scenario
+        assert migration_preflight.inspect_database(connection) == ([], [])
+        assert len(connection.statements) == 2
 
 
-@pytest.mark.parametrize(
-    ("sources", "seasons"),
-    [(["nhl"], 22), (["capwages", "moneypuck", "nhl"], 21)],
-)
-def test_reference_data_smoke_rejects_incomplete_baseline(sources, seasons):
-    migration_smoke = import_migration_smoke()
-    session = Mock()
-    source_result = Mock()
-    source_result.scalars.return_value.all.return_value = sources
-    season_result = Mock()
-    season_result.scalar_one.return_value = seasons
-    session.execute.side_effect = [source_result, season_result]
+class TestReferenceDataSmokeAcceptsCompleteBaseline:
+    @pytest.fixture
+    def scenario(self):
+        session = CatalogDatabase()
+        return session
 
-    with pytest.raises(RuntimeError, match="initial reference data is incomplete"):
+    def test_reference_data_smoke_accepts_complete_baseline(self, scenario):
+        session = scenario
         migration_smoke.validate_reference_data(session)
 
 
+class TestReferenceDataSmokeRejectsIncompleteBaseline:
+    @pytest.fixture
+    def scenario(self, sources, seasons):
+        session = CatalogDatabase(sources=tuple(sources), seasons=seasons)
+        return session
+
+    @pytest.mark.parametrize(
+        ("sources", "seasons"),
+        [
+            pytest.param(["nhl"], 22, id="missing-sources"),
+            pytest.param(["capwages", "moneypuck", "nhl"], 21, id="missing-seasons"),
+        ],
+    )
+    def test_reference_data_smoke_rejects_incomplete_baseline(
+        self, scenario, sources, seasons
+    ):
+        session = scenario
+        with pytest.raises(RuntimeError, match="initial reference data is incomplete"):
+            migration_smoke.validate_reference_data(session)
+
+
 def response(status, body, text_body=None):
-    result = Mock(status_code=status, text=text_body or str(body))
-    result.json.return_value = body
-    return result
+    if text_body is not None:
+        return httpx.Response(status, text=text_body)
+    return httpx.Response(status, json=body)
 
 
-def test_api_smoke_accepts_expected_empty_database_responses():
-    migration_smoke = import_migration_smoke()
-    client = Mock()
-    client.get.side_effect = [
-        response(200, {"status": "ok"}),
-        response(200, {"availableSeasons": [{}], "currentSeason": 2026}),
-        response(200, []),
-    ]
+class TestApiSmokeAcceptsExpectedEmptyDatabaseResponses:
+    @pytest.fixture
+    def scenario(self):
+        client = SavedApiClient(
+            responses=dict(
+                zip(
+                    ("/api/health", "/api/seasons", "/api/teams"),
+                    [
+                        response(200, {"status": "ok"}),
+                        response(
+                            200, {"availableSeasons": [{}], "currentSeason": 2026}
+                        ),
+                        response(200, []),
+                    ],
+                )
+            )
+        )
+        return client
 
-    migration_smoke.smoke_checks(client)
-
-    assert [call.args[0] for call in client.get.call_args_list] == [
-        "/api/health",
-        "/api/seasons",
-        "/api/teams",
-    ]
-
-
-@pytest.mark.parametrize(
-    "responses",
-    [
-        [response(503, {"error": "down"})],
-        [response(200, {"status": "wrong"})],
-        [
-            response(200, {"status": "ok"}),
-            response(200, {"availableSeasons": [], "currentSeason": 2026}),
-        ],
-        [
-            response(200, {"status": "ok"}),
-            response(200, {"availableSeasons": [{}], "currentSeason": 2026}),
-            response(200, [{"id": 1}]),
-        ],
-    ],
-)
-def test_api_smoke_rejects_bad_status_or_payload(responses):
-    migration_smoke = import_migration_smoke()
-    client = Mock()
-    client.get.side_effect = responses
-
-    with pytest.raises(RuntimeError, match="post-migration smoke check failed"):
+    def test_api_smoke_accepts_expected_empty_database_responses(self, scenario):
+        client = scenario
         migration_smoke.smoke_checks(client)
 
+        assert client.paths == [
+            "/api/health",
+            "/api/seasons",
+            "/api/teams",
+        ]
 
-def test_api_smoke_rejects_invalid_json():
-    migration_smoke = import_migration_smoke()
-    client = Mock()
-    invalid = response(200, {}, "not-json")
-    invalid.json.side_effect = ValueError("invalid JSON")
-    client.get.return_value = invalid
 
-    with pytest.raises(RuntimeError, match="body=not-json"):
-        migration_smoke.smoke_checks(client)
+class TestApiSmokeRejectsBadStatusOrPayload:
+    @pytest.fixture
+    def scenario(self, responses):
+        client = SavedApiClient(
+            responses=dict(
+                zip(("/api/health", "/api/seasons", "/api/teams"), responses)
+            )
+        )
+        return client
+
+    @pytest.mark.parametrize(
+        "responses",
+        [
+            pytest.param([response(503, {"error": "down"})], id="unhealthy-status"),
+            pytest.param([response(200, {"status": "wrong"})], id="invalid-health"),
+            pytest.param(
+                [
+                    response(200, {"status": "ok"}),
+                    response(200, {"availableSeasons": [], "currentSeason": 2026}),
+                ],
+                id="missing-seasons",
+            ),
+            pytest.param(
+                [
+                    response(200, {"status": "ok"}),
+                    response(200, {"availableSeasons": [{}], "currentSeason": 2026}),
+                    response(200, [{"id": 1}]),
+                ],
+                id="nonempty-teams",
+            ),
+        ],
+    )
+    def test_api_smoke_rejects_bad_status_or_payload(self, scenario, responses):
+        client = scenario
+        with pytest.raises(RuntimeError, match="post-migration smoke check failed"):
+            migration_smoke.smoke_checks(client)
+
+
+class TestApiSmokeRejectsInvalidJson:
+    @pytest.fixture
+    def scenario(self):
+        client = SavedApiClient(
+            responses={"/api/health": response(200, {}, "not-json")}
+        )
+        return client
+
+    def test_api_smoke_rejects_invalid_json(self, scenario):
+        client = scenario
+        with pytest.raises(RuntimeError, match="body=not-json"):
+            migration_smoke.smoke_checks(client)
 
 
 def run_command(database_url: str, *arguments: str, success=True):
@@ -368,7 +471,7 @@ def run_command(database_url: str, *arguments: str, success=True):
 
 def test_alembic_environment_rejects_non_postgresql_database(tmp_path):
     result = run_command(
-        f"sqlite:///{tmp_path / 'wrong.db'}",
+        f"sqlite:///{tmp_path.joinpath('wrong.db')}",
         "-m",
         "alembic",
         "-c",
@@ -382,25 +485,42 @@ def test_alembic_environment_rejects_non_postgresql_database(tmp_path):
     assert "TradeValue migrations require PostgreSQL" in result.stderr
 
 
-@pytest.mark.skipif(
-    not TEST_DATABASE_URL,
-    reason="TEST_DATABASE_URL is required for migration lifecycle integration tests",
-)
-def test_complete_migration_lifecycle_on_isolated_database(tmp_path):
-    assert TEST_DATABASE_URL is not None
-    source_url = make_url(TEST_DATABASE_URL)
-    database_name = f"tradevalue_migration_{uuid4().hex[:12]}"
-    database_url = source_url.set(database=database_name).render_as_string(
-        hide_password=False
-    )
-    admin_url = source_url.set(database="postgres")
-    admin = create_engine(admin_url, isolation_level="AUTOCOMMIT", pool_pre_ping=True)
-    quoted_name = admin.dialect.identifier_preparer.quote(database_name)
+@pytest.mark.integration
+class TestCompleteMigrationLifecycle:
+    @pytest.fixture
+    def isolated_database(self, disposable_database_url) -> Generator[str]:
+        source_url = make_url(disposable_database_url)
+        database_name = f"tradevalue_migration_{uuid4().hex[:12]}"
+        database_url = source_url.set(database=database_name).render_as_string(
+            hide_password=False
+        )
+        admin_url = source_url.set(database="postgres")
+        admin = create_engine(
+            admin_url, isolation_level="AUTOCOMMIT", pool_pre_ping=True
+        )
+        quoted_name = admin.dialect.identifier_preparer.quote(database_name)
 
-    with admin.connect() as connection:
-        connection.execute(text(f"CREATE DATABASE {quoted_name}"))
+        with admin.connect() as connection:
+            connection.execute(text(f"CREATE DATABASE {quoted_name}"))
 
-    try:
+        try:
+            yield database_url
+        finally:
+            with admin.connect() as connection:
+                connection.execute(
+                    text(
+                        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                        "WHERE datname = :database_name AND pid <> pg_backend_pid()"
+                    ),
+                    {"database_name": database_name},
+                )
+                connection.execute(text(f"DROP DATABASE IF EXISTS {quoted_name}"))
+            admin.dispose()
+
+    def test_complete_migration_lifecycle_on_isolated_database(
+        self, tmp_path, isolated_database
+    ):
+        database_url = isolated_database
         run_command(database_url, "backend/database/verify_migrations.py")
         run_command(database_url, "backend/database/migration_preflight.py")
 
@@ -439,7 +559,7 @@ def test_complete_migration_lifecycle_on_isolated_database(tmp_path):
             database_url,
             "backend/database/schema_snapshot.py",
             "--actual",
-            str(tmp_path / "actual.json"),
+            str(tmp_path.joinpath("actual.json")),
         )
         run_command(database_url, "backend/database/migration_smoke.py")
 
@@ -467,14 +587,3 @@ def test_complete_migration_lifecycle_on_isolated_database(tmp_path):
                 == 4
             )
         isolated.dispose()
-    finally:
-        with admin.connect() as connection:
-            connection.execute(
-                text(
-                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                    "WHERE datname = :database_name AND pid <> pg_backend_pid()"
-                ),
-                {"database_name": database_name},
-            )
-            connection.execute(text(f"DROP DATABASE IF EXISTS {quoted_name}"))
-        admin.dispose()
