@@ -133,7 +133,7 @@ jobs:
       - name: Run backend and ML tests with coverage
         run: uv run pytest -q
       - name: Enforce complete service-layer coverage
-        run: uv run python -m coverage report --include='backend/src/app/api/service.py,backend/src/app/api/repository.py,backend/src/app/api/policy.py,backend/src/app/api/util.py,backend/src/app/api/errors.py' --fail-under=100
+        run: uv run python -m coverage report --include='backend/src/app/api/service.py,backend/src/app/api/repository.py,backend/src/app/api/policy.py,backend/src/app/api/util.py,backend/src/app/api/errors.py,backend/src/app/shared/calendar.py' --fail-under=100
       - name: Build backend container artifact
         run: docker build --tag "tradevalue-api:${{ github.sha }}" backend
       - name: Start and smoke-test backend container artifact

@@ -1,0 +1,1 @@
+"""moneypuck source ingestion."""

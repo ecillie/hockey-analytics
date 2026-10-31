@@ -1,0 +1,166 @@
+"""Validation schemas at JSON, CSV, and normalized identity boundaries."""
+
+from datetime import date
+from typing import Annotated
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    AfterValidator,
+    ConfigDict,
+    Field,
+    ValidationError,
+)
+
+from app.ScriptingFiles.FullDataScript.source_ingestion.errors import PayloadViolation
+from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
+    parse_strict_integer,
+    parse_team_abbreviation,
+)
+
+
+def required_integer(value: object) -> int:
+    result = parse_strict_integer(value)
+    if result is None:
+        raise ValueError("a finite integer is required")
+    return result
+
+
+def normalize_team_abbreviation(value: str) -> str:
+    abbreviation = parse_team_abbreviation(value)
+    if abbreviation is None:
+        raise ValueError("a team abbreviation is required")
+    return abbreviation
+
+
+def localized_value(value: object) -> object:
+    if isinstance(value, dict):
+        default = value.get("default")
+        return (
+            next(iter(value.values()), None)
+            if default is None or default == ""
+            else default
+        )
+    return value
+
+
+type TeamAbbreviation = Annotated[str, AfterValidator(normalize_team_abbreviation)]
+
+
+type Integer = Annotated[int, BeforeValidator(required_integer)]
+type NonnegativeInteger = Annotated[Integer, Field(ge=0)]
+type Season = Annotated[Integer, Field(ge=1900, le=2200)]
+type NonnegativeFloat = Annotated[float, Field(ge=0, allow_inf_nan=False)]
+type NonemptyText = Annotated[str, Field(min_length=1, pattern=r"\S")]
+type PageTotal = Annotated[int, Field(ge=0, strict=True)]
+
+
+class BoundaryModel(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+
+class MoneyPuckRow(BoundaryModel):
+    playerId: Integer
+    season: Season
+    name: NonemptyText
+    situation: NonemptyText
+    games_played: NonnegativeInteger
+    icetime: NonnegativeFloat
+    team: str | None = None
+    position: str | None = None
+
+
+class NhlStatRow(BoundaryModel):
+    playerId: Integer
+    teamAbbrevs: str | None = None
+    skaterFullName: str | None = None
+    goalieFullName: str | None = None
+    lastName: str | None = None
+    positionCode: str | None = None
+    shootsCatches: str | None = None
+    gamesPlayed: NonnegativeInteger
+
+
+class SkaterStatRow(NhlStatRow):
+    goals: NonnegativeInteger
+    assists: NonnegativeInteger
+    points: NonnegativeInteger
+
+
+class GoalieStatRow(NhlStatRow):
+    shotsAgainst: NonnegativeInteger
+    saves: NonnegativeInteger
+    goalsAgainst: NonnegativeInteger
+
+
+class StatsPage(BoundaryModel):
+    data: tuple[dict[str, object], ...]
+    total: PageTotal | None = None
+
+
+type LocalizedText = Annotated[str | None, BeforeValidator(localized_value)]
+type LocalizedTeam = Annotated[TeamAbbreviation, BeforeValidator(localized_value)]
+
+
+class Standing(BoundaryModel):
+    teamAbbrev: LocalizedTeam
+    teamName: LocalizedText = None
+    placeName: LocalizedText = None
+
+
+class Standings(BoundaryModel):
+    standings: tuple[Standing, ...]
+
+
+class RosterPlayer(BoundaryModel):
+    id: Integer
+    firstName: LocalizedText = None
+    lastName: LocalizedText = None
+    birthDate: date | None = None
+    positionCode: str | None = None
+    shootsCatches: str | None = None
+    birthCountry: str | None = None
+
+
+class Roster(BoundaryModel):
+    forwards: tuple[RosterPlayer, ...]
+    defensemen: tuple[RosterPlayer, ...]
+    goalies: tuple[RosterPlayer, ...]
+
+
+class GameTeam(BoundaryModel):
+    abbrev: TeamAbbreviation
+    score: Integer | None = None
+
+
+class ScheduleGame(BoundaryModel):
+    id: Integer
+    gameType: Integer
+    awayTeam: GameTeam
+    homeTeam: GameTeam
+    startTimeUTC: str | None = None
+    venue: LocalizedText = None
+    gameState: str | None = None
+
+
+class ScheduleDay(BoundaryModel):
+    date: date
+    games: tuple[dict[str, object], ...]
+
+
+class SchedulePage(BoundaryModel):
+    gameWeek: tuple[ScheduleDay, ...]
+    nextStartDate: date | None = None
+
+
+def validate_payload[T: BaseModel](value: object, schema: type[T], *, source: str) -> T:
+    try:
+        return schema.model_validate(value)
+    except ValidationError as exc:
+        issues = tuple(
+            f"{'.'.join(map(str, issue['loc']))}: {issue['msg']}"
+            for issue in exc.errors(include_input=False, include_url=False)
+        )
+        raise PayloadViolation(
+            source=source,
+            reason=f"source response does not match {schema.__name__}: {'; '.join(issues)}",
+        ) from exc
