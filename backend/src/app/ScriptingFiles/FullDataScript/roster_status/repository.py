@@ -1,12 +1,12 @@
 """PostgreSQL persistence adapter for roster-status synchronization."""
 
-from __future__ import annotations
-
 from datetime import date
-from typing import Iterable, Protocol, runtime_checkable
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 from psycopg2.extensions import connection as PgConnection
 
-from app.ScriptingFiles.FullDataScript.roster_status.roster_models import (
+from app.ScriptingFiles.FullDataScript.roster_status.domain import (
     RosterStatus,
     StoredPlayer,
 )
@@ -14,11 +14,11 @@ from app.ScriptingFiles.FullDataScript.roster_status.roster_models import (
 
 @runtime_checkable
 class RosterRepository(Protocol):
-    def load_players(self) -> list[StoredPlayer]: ...
+    def load_players(self) -> tuple[StoredPlayer, ...]: ...
 
-    def load_active_ltir_player_ids(self, as_of: date) -> set[int]: ...
+    def load_active_ltir_player_ids(self, as_of: date) -> frozenset[int]: ...
 
-    def bulk_update_statuses(self, updates: dict[int, RosterStatus]) -> None: ...
+    def bulk_update_statuses(self, updates: Mapping[int, RosterStatus]) -> None: ...
 
     def save_ahl_external_ids(
         self,
@@ -26,13 +26,11 @@ class RosterRepository(Protocol):
     ) -> None: ...
 
 
+@dataclass(slots=True, kw_only=True, frozen=True)
 class PostgresRosterRepository:
-    """Uses a PEP-249 connection, such as a psycopg2 connection."""
+    connection: PgConnection
 
-    def __init__(self, connection: PgConnection) -> None:
-        self.connection = connection
-
-    def load_players(self) -> list[StoredPlayer]:
+    def load_players(self) -> tuple[StoredPlayer, ...]:
         query = """
             SELECT
                 p.id,
@@ -50,20 +48,20 @@ class PostgresRosterRepository:
         """
         with self.connection.cursor() as cursor:
             cursor.execute(query)
-            return [
+            return tuple(
                 StoredPlayer(
                     id=row[0],
                     first_name=row[1],
                     last_name=row[2],
                     birth_date=row[3],
-                    roster_status=RosterStatus(row[4]),
+                    roster_status=RosterStatus[row[4]],
                     nhl_external_id=row[5],
                     ahl_external_id=row[6],
                 )
                 for row in cursor.fetchall()
-            ]
+            )
 
-    def load_active_ltir_player_ids(self, as_of: date) -> set[int]:
+    def load_active_ltir_player_ids(self, as_of: date) -> frozenset[int]:
         query = """
             SELECT DISTINCT player_id
             FROM ltir_overrides
@@ -72,10 +70,10 @@ class PostgresRosterRepository:
         """
         with self.connection.cursor() as cursor:
             cursor.execute(query, (as_of, as_of))
-            return {row[0] for row in cursor.fetchall()}
+            return frozenset(row[0] for row in cursor.fetchall())
 
-    def bulk_update_statuses(self, updates: dict[int, RosterStatus]) -> None:
-        if not updates:
+    def bulk_update_statuses(self, updates: Mapping[int, RosterStatus]) -> None:
+        if len(updates) == 0:
             return
         query = """
             UPDATE players
@@ -87,7 +85,10 @@ class PostgresRosterRepository:
         with self.connection.cursor() as cursor:
             cursor.executemany(
                 query,
-                [(status.value, player_id) for player_id, status in updates.items()],
+                [
+                    (status.database_value, player_id)
+                    for player_id, status in updates.items()
+                ],
             )
 
     def save_ahl_external_ids(
@@ -95,7 +96,7 @@ class PostgresRosterRepository:
         matches: Iterable[tuple[int, str, str]],
     ) -> None:
         rows = list(matches)
-        if not rows:
+        if len(rows) == 0:
             return
         source_query = """
             INSERT INTO data_sources (code, display_name, base_url)
