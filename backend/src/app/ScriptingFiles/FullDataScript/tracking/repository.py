@@ -137,6 +137,15 @@ class RunUnlocker:
         self.connection.commit()
 
 
+def retain_cleanup_failure(
+    primary: BaseException | None, cleanup: BaseException
+) -> BaseException:
+    if primary is None:
+        return cleanup
+    primary.add_note(f"Ingestion cleanup also failed: {cleanup!r}")
+    return primary
+
+
 def close_run_resources(
     operations: tuple[Callable[[], object], ...], primary: BaseException | None
 ) -> None:
@@ -145,10 +154,7 @@ def close_run_resources(
         try:
             operation()
         except BaseException as cleanup:
-            if failure is None:
-                failure = cleanup
-                continue
-            failure.add_note(f"Ingestion cleanup also failed: {cleanup!r}")
+            failure = retain_cleanup_failure(failure, cleanup)
     if primary is None and failure is not None:
         raise failure
 

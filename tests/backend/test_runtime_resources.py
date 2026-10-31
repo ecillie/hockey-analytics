@@ -1,6 +1,7 @@
 """Resource lifetime and import isolation at composition boundaries."""
 
 from dataclasses import dataclass, field
+from collections.abc import Generator
 import os
 from pathlib import Path
 import subprocess
@@ -11,7 +12,7 @@ from fastapi import Request
 from fastapi.testclient import TestClient
 import pytest
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import (
     AppEnvironment,
@@ -23,6 +24,7 @@ from app.config import (
 )
 from app.api.routes import get_service
 from app.api.repository import SqlApiRepository
+from app.api.service import TradeValueService
 from app import database
 from app.database import DatabaseResources
 from app.main import create_app
@@ -138,6 +140,12 @@ class TestEnvironmentLoading:
         assert dict(os.environ) == before
 
 
+@dataclass(slots=True, kw_only=True, frozen=True)
+class RequestSessionScenario:
+    session: Session
+    dependency: Generator[TradeValueService]
+
+
 class TestRequestSessions:
     @pytest.fixture
     def active_session(self):
@@ -151,18 +159,20 @@ class TestRequestSessions:
         service = next(dependency)
         service.check_health()
         assert isinstance(service.repository, SqlApiRepository)
-        yield service.repository.session, dependency
+        yield RequestSessionScenario(
+            session=service.repository.session, dependency=dependency
+        )
         dependency.close()
         engine.dispose()
 
     def test_session_closes_and_rolls_back_after_success(self, active_session):
-        session, dependency = active_session
+        session, dependency = active_session.session, active_session.dependency
         assert session.in_transaction()
         dependency.close()
         assert not session.in_transaction()
 
     def test_session_closes_and_rolls_back_after_failure(self, active_session):
-        session, dependency = active_session
+        session, dependency = active_session.session, active_session.dependency
         with pytest.raises(RuntimeError, match="request failed"):
             dependency.throw(RuntimeError("request failed"))
         assert not session.in_transaction()

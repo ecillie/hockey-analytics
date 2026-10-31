@@ -1,6 +1,3 @@
-from __future__ import annotations
-
-import os
 from datetime import date
 
 import pytest
@@ -10,13 +7,6 @@ from sqlalchemy.orm import Session
 from app.api.errors import ApiProblem
 from app.api.repository import SqlApiRepository
 from app.api.service import TradeValueService
-
-
-TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
-pytestmark = pytest.mark.skipif(
-    not TEST_DATABASE_URL,
-    reason="TEST_DATABASE_URL is required for PostgreSQL integration tests",
-)
 
 
 SEED_SQL = r"""
@@ -124,9 +114,8 @@ VALUES
 
 
 @pytest.fixture(scope="module")
-def engine():
-    assert TEST_DATABASE_URL is not None
-    database_engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+def engine(disposable_database_url):
+    database_engine = create_engine(disposable_database_url, pool_pre_ping=True)
     with database_engine.begin() as connection:
         assert (
             connection.execute(
@@ -145,6 +134,7 @@ def service(engine):
         yield TradeValueService(repository=SqlApiRepository(session=session))
 
 
+@pytest.mark.integration
 def test_listing_prefers_total_rows_and_current_team(service):
     result = service.players(2025, None, None, None, None, "points", "desc", 1, 3)
     assert result["pagination"] == {
@@ -173,6 +163,7 @@ def test_listing_prefers_total_rows_and_current_team(service):
     assert [player["id"] for player in filtered["data"]] == [1004]
 
 
+@pytest.mark.integration
 def test_validation_missing_entities_and_nullable_identity(service):
     assert [team["id"] for team in service.teams()] == [101, 102]
 
@@ -203,6 +194,7 @@ def test_validation_missing_entities_and_nullable_identity(service):
     }
 
 
+@pytest.mark.integration
 def test_season_catalog_and_validation_share_the_july_first_boundary(engine):
     with Session(engine) as session:
         before_cutoff = TradeValueService(
@@ -224,6 +216,7 @@ def test_season_catalog_and_validation_share_the_july_first_boundary(engine):
         on_cutoff.require_season(2026)
 
 
+@pytest.mark.integration
 def test_skater_goalie_history_and_value(service):
     skater = service.player_stats(1001, 2025)
     assert skater["traditional"]["gamesPlayed"] == 82
@@ -244,6 +237,7 @@ def test_skater_goalie_history_and_value(service):
     ]
 
 
+@pytest.mark.integration
 def test_team_roster_contract_and_raw_cap_subtotals(service):
     team = service.team(102)
     assert team["rosterCounts"] == {"ACTIVE": 3, "MINORS": 0, "LTIR": 1, "UNKNOWN": 0}
@@ -268,6 +262,7 @@ def test_team_roster_contract_and_raw_cap_subtotals(service):
     assert cap["calculationStatus"] == "ESTIMATE"
 
 
+@pytest.mark.integration
 def test_search_leaders_overview_and_compare(service):
     found = service.search("Beta", ["player", "team"], 8)
     assert found["players"] == []
@@ -290,8 +285,8 @@ def test_search_leaders_overview_and_compare(service):
     assert comparison["players"][1]["stats"]["goalie"] is not None
 
 
+@pytest.mark.integration
 def test_known_player_without_season_data_returns_empty_stat_groups(service):
-    """A known player is not a missing player merely because he did not play that season."""
     stats = service.player_stats(1007, 2025)
 
     assert stats == {
@@ -304,88 +299,107 @@ def test_known_player_without_season_data_returns_empty_stat_groups(service):
     }
 
 
-def test_only_the_active_model_can_supply_the_current_projection(service):
-    """A newer prediction from an inactive model must not replace the published model."""
-    service.repository.session.execute(
-        text(
-            """INSERT INTO model_versions
-                 (id, model_type, version, artifact_uri, feature_schema,
-                  training_start_season, training_end_season, active, created_at)
-               VALUES
-                 (3002, 'skater_value', 'retired-v2', 'memory://retired', '{}',
-                  2024, 2025, FALSE, CURRENT_TIMESTAMP + INTERVAL '1 day')"""
+class TestOnlyTheActiveModelCanSupplyTheCurrentProjection:
+    @pytest.fixture
+    def scenario(self, service):
+        service.repository.session.execute(
+            text(
+                """INSERT INTO model_versions
+                     (id, model_type, version, artifact_uri, feature_schema,
+                      training_start_season, training_end_season, active, created_at)
+                   VALUES
+                     (3002, 'skater_value', 'retired-v2', 'memory://retired', '{}',
+                      2024, 2025, FALSE, CURRENT_TIMESTAMP + INTERVAL '1 day')"""
+            )
         )
-    )
-    service.repository.session.execute(
-        text(
-            """INSERT INTO predictions
-                 (model_version_id, player_id, target_season, position_group,
-                  predicted_aav_cents, input_features, created_at)
-               VALUES
-                 (3002, 1001, 2026, 'forward', 999999999,
-                  '{"predicted_hockey_value": 99}',
-                  CURRENT_TIMESTAMP + INTERVAL '1 day')"""
+        service.repository.session.execute(
+            text(
+                """INSERT INTO predictions
+                     (model_version_id, player_id, target_season, position_group,
+                      predicted_aav_cents, input_features, created_at)
+                   VALUES
+                     (3002, 1001, 2026, 'forward', 999999999,
+                      '{"predicted_hockey_value": 99}',
+                      CURRENT_TIMESTAMP + INTERVAL '1 day')"""
+            )
         )
-    )
+        return service
 
-    value = service.hockey_value(1001, 2025)
+    @pytest.mark.integration
+    def test_only_the_active_model_can_supply_the_current_projection(
+        self, scenario, service
+    ):
+        service = scenario
+        value = service.hockey_value(1001, 2025)
 
-    assert value["modelVersion"] == "integration-v1"
-    assert value["projectedNextSeasonHockeyValue"] == pytest.approx(42.5)
+        assert value["modelVersion"] == "integration-v1"
+        assert value["projectedNextSeasonHockeyValue"] == pytest.approx(42.5)
 
 
-def test_replacement_level_excludes_players_below_twenty_games(service):
-    """A 19-game call-up cannot move the established replacement baseline."""
-    service.repository.session.execute(
-        text(
-            """INSERT INTO players
-                 (id, first_name, last_name, primary_position, active, roster_status)
-               VALUES (1009, 'Short', 'Callup', 'C', TRUE, 'ACTIVE');
-               INSERT INTO player_team_stints
-                 (player_id, season_start_year, team_id, joined_on)
-               VALUES (1009, 2025, 101, '2026-03-01');
-               INSERT INTO skater_season_stats
-                 (player_id, season_start_year, team_id, stat_scope, game_type,
-                  source_id, games_played, goals, assists, points, shots)
-               VALUES (1009, 2025, NULL, 'TOTAL', 2, 1, 19, 0, 0, 0, 10);
-               INSERT INTO skater_advanced_season_stats
-                 (player_id, season_start_year, team_id, stat_scope, game_type,
-                  situation, source_id, games_played, ice_time_seconds, game_score)
-               VALUES (1009, 2025, NULL, 'TOTAL', 2, 'all', 2, 19, 3000, -10)"""
+class TestReplacementLevelExcludesPlayersBelowTwentyGames:
+    @pytest.fixture
+    def scenario(self, service):
+        service.repository.session.execute(
+            text(
+                """INSERT INTO players
+                     (id, first_name, last_name, primary_position, active, roster_status)
+                   VALUES (1009, 'Short', 'Callup', 'C', TRUE, 'ACTIVE');
+                   INSERT INTO player_team_stints
+                     (player_id, season_start_year, team_id, joined_on)
+                   VALUES (1009, 2025, 101, '2026-03-01');
+                   INSERT INTO skater_season_stats
+                     (player_id, season_start_year, team_id, stat_scope, game_type,
+                      source_id, games_played, goals, assists, points, shots)
+                   VALUES (1009, 2025, NULL, 'TOTAL', 2, 1, 19, 0, 0, 0, 10);
+                   INSERT INTO skater_advanced_season_stats
+                     (player_id, season_start_year, team_id, stat_scope, game_type,
+                      situation, source_id, games_played, ice_time_seconds, game_score)
+                   VALUES (1009, 2025, NULL, 'TOTAL', 2, 'all', 2, 19, 3000, -10)"""
+            )
         )
-    )
+        return service
 
-    assert service.hockey_value(1001, 2025)["hockeyValue"] == pytest.approx(41.0)
-    assert service.hockey_value(1005, 2025)["hockeyValue"] == pytest.approx(0.0)
+    @pytest.mark.integration
+    def test_replacement_level_excludes_players_below_twenty_games(
+        self, scenario, service
+    ):
+        service = scenario
+        assert service.hockey_value(1001, 2025)["hockeyValue"] == pytest.approx(41.0)
+        assert service.hockey_value(1005, 2025)["hockeyValue"] == pytest.approx(0.0)
 
 
-def test_measured_zero_is_not_reported_as_missing(service):
-    """A player who recorded zero production must remain distinct from absent data."""
-    service.repository.session.execute(
-        text(
-            """INSERT INTO players
-                 (id, first_name, last_name, primary_position, active, roster_status)
-               VALUES (1008, 'Zero', 'Scorer', 'C', TRUE, 'ACTIVE');
-               INSERT INTO player_team_stints
-                 (player_id, season_start_year, team_id, joined_on)
-               VALUES (1008, 2025, 101, '2025-07-01');
-               INSERT INTO skater_season_stats
-                 (player_id, season_start_year, team_id, stat_scope, game_type,
-                  source_id, games_played, goals, assists, points, shots)
-               VALUES (1008, 2025, NULL, 'TOTAL', 2, 1, 20, 0, 0, 0, 0)"""
+class TestMeasuredZeroIsNotReportedAsMissing:
+    @pytest.fixture
+    def scenario(self, service):
+        service.repository.session.execute(
+            text(
+                """INSERT INTO players
+                     (id, first_name, last_name, primary_position, active, roster_status)
+                   VALUES (1008, 'Zero', 'Scorer', 'C', TRUE, 'ACTIVE');
+                   INSERT INTO player_team_stints
+                     (player_id, season_start_year, team_id, joined_on)
+                   VALUES (1008, 2025, 101, '2025-07-01');
+                   INSERT INTO skater_season_stats
+                     (player_id, season_start_year, team_id, stat_scope, game_type,
+                      source_id, games_played, goals, assists, points, shots)
+                   VALUES (1008, 2025, NULL, 'TOTAL', 2, 1, 20, 0, 0, 0, 0)"""
+            )
         )
-    )
+        return service
 
-    traditional = service.player_stats(1008, 2025)["traditional"]
+    @pytest.mark.integration
+    def test_measured_zero_is_not_reported_as_missing(self, scenario, service):
+        service = scenario
+        traditional = service.player_stats(1008, 2025)["traditional"]
 
-    assert traditional["gamesPlayed"] == 20
-    assert traditional["goals"] == 0
-    assert traditional["points"] == 0
-    assert traditional["shootingPercentage"] is None
+        assert traditional["gamesPlayed"] == 20
+        assert traditional["goals"] == 0
+        assert traditional["points"] == 0
+        assert traditional["shootingPercentage"] is None
 
 
+@pytest.mark.integration
 def test_minor_league_contract_uses_the_cba_buried_relief(service):
-    """CBA 50.5(d)(i)(B)(6): 2025-26 buries $775K minimum plus $375K."""
     cap = service.team_cap(101, 2025)
 
     assert cap["minorsCapCents"] == 0
@@ -393,6 +407,7 @@ def test_minor_league_contract_uses_the_cba_buried_relief(service):
     assert cap["capSpaceCents"] == cap["salaryCapCents"]
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize(
     ("position", "team"),
     [
@@ -410,6 +425,7 @@ def test_leader_filters_and_null_values(service, position, team):
         assert all(row["team"]["abbreviation"].casefold() == team for row in leaders)
 
 
+@pytest.mark.integration
 class TestQueryBoundaries:
     @pytest.fixture
     def tied_service(self, service):

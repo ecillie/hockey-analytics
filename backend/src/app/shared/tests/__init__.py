@@ -1,0 +1,1 @@
+"""Shared operational test support."""

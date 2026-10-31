@@ -34,6 +34,15 @@ def _error(status: int, code: str, message: str, details=None) -> JSONResponse:
     return JSONResponse(status_code=status, content=body)
 
 
+def remove_validation_responses(schema: dict) -> None:
+    operations = (
+        operation for path in schema["paths"].values() for operation in path.values()
+    )
+    for operation in operations:
+        if isinstance(operation, dict):
+            operation.get("responses", {}).pop("422", None)
+
+
 class ContractFastAPI(FastAPI):
     def openapi(self) -> dict[str, object]:
         if self.openapi_schema is None:
@@ -42,10 +51,7 @@ class ContractFastAPI(FastAPI):
                 version=self.version,
                 routes=self.routes,
             )
-            for path in schema["paths"].values():
-                for operation in path.values():
-                    if isinstance(operation, dict):
-                        operation.get("responses", {}).pop("422", None)
+            remove_validation_responses(schema)
             self.openapi_schema = schema
         return self.openapi_schema
 

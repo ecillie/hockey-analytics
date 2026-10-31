@@ -342,14 +342,16 @@ def fetch_capwages_profile(
             ),
         )
     result: ProfileResult | None = None
-    for suffix in options.capwages_slug_suffixes:
+    suffixes = iter(options.capwages_slug_suffixes)
+    searching = True
+    while searching and (suffix := next(suffixes, None)) is not None:
         attempt = request_capwages_slug(
             session, candidate, f"{url}{suffix}", is_base=suffix == "", options=options
         )
         if isinstance(attempt, ProfileResult):
             result = attempt
-            break
-        if attempt.result is not None:
+            searching = False
+        if isinstance(attempt, ContinueSlugSearch) and attempt.result is not None:
             result = attempt.result
     if result is not None:
         return result

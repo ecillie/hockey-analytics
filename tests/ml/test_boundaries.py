@@ -2,11 +2,11 @@
 
 import json
 from collections.abc import Generator
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from dataclasses import FrozenInstanceError
 from importlib import import_module
 from importlib.resources import files
-from types import SimpleNamespace
+from ml.tests.fakes import PipelineResources, ReadScenario
 
 import numpy as np
 import pandas as pd
@@ -49,8 +49,9 @@ class TestDataBoundaries:
     @pytest.fixture
     def counted_reads(self, monkeypatch, player_seasons, caps):
         module = import_module("ml.pipelines.run_pipeline")
-        calls = []
-        connection = object()
+        scenario = ReadScenario(connection=object())
+        calls = scenario.calls
+        connection = scenario.connection
         settings = DatabaseSettings(
             environment=AppEnvironment.DEV,
             database_url="postgresql://unused/tradevalue_test_ml",
@@ -68,24 +69,21 @@ class TestDataBoundaries:
             return caps
 
         @contextmanager
-        def resources(selected_settings) -> Generator[SimpleNamespace]:
+        def resources(selected_settings) -> Generator[PipelineResources]:
             assert selected_settings is settings
             calls.append(("opened", connection))
-            yield SimpleNamespace(engine=SimpleNamespace(connect=connect))
+            yield PipelineResources(connection=connection)
             calls.append(("closed", connection))
-
-        def connect():
-            return nullcontext(connection)
 
         monkeypatch.setenv("ENV", "")
         monkeypatch.setattr(module, "get_database_settings", read_settings)
         monkeypatch.setattr(module, "database_resources", resources)
         monkeypatch.setattr(module, "load_player_stats", read_players)
         monkeypatch.setattr(module, "load_salary_cap", read_caps)
-        return calls, connection
+        return scenario
 
     def test_reads_each_source_once_and_closes_shared_connection(self, counted_reads):
-        calls, connection = counted_reads
+        calls, connection = counted_reads.calls, counted_reads.connection
         result = run_pipeline()
         assert len(result) == 20
         assert calls == [
@@ -101,7 +99,7 @@ class TestDataBoundaries:
         before = player_seasons.copy(deep=True)
         before_caps = caps.copy(deep=True)
         result = run_pipeline(players=player_seasons, salary_caps=caps)
-        assert counted_reads[0] == []
+        assert counted_reads.calls == []
         assert len(result) == len(player_seasons)
         pd.testing.assert_frame_equal(before, player_seasons)
         pd.testing.assert_frame_equal(before_caps, caps)
