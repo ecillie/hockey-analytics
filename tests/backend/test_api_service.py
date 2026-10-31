@@ -1,599 +1,372 @@
-from __future__ import annotations
+"""API orchestration behavior against an in-memory repository."""
 
-from collections import deque
+from dataclasses import replace
 from datetime import date
 
 import pytest
 
-from app.api.queries import SUMMARY_CTES
-from app.api.service import (
-    ApiProblem,
-    TradeValueService,
-    _buried_relief_cents,
-    _identity,
-    _latest_started_season,
-    _summary,
-    _team,
-)
+from app.api.domain import GoalieRow
+from app.api.errors import ApiProblem
+from app.api.policy import buried_relief_cents, latest_started_season
+from app.api.repository import ApiRepository
+from app.api.service import TradeValueService
+from app.api.tests.fakes import MemoryApiRepository
+from app.api.util import identity_data, summary_data
 
 
-class Result:
-    def __init__(self, *, scalar=None, rows=()):
-        self.scalar = scalar
-        self.rows = list(rows)
-
-    def scalar_one(self):
-        return self.scalar
-
-    def scalar_one_or_none(self):
-        return self.scalar
-
-    def mappings(self):
-        return self
-
-    def first(self):
-        return self.rows[0] if self.rows else None
-
-    def __iter__(self):
-        return iter(self.rows)
+pytest_plugins = ("app.api.tests.fixtures",)
 
 
-class ScriptedSession:
-    def __init__(self, *results: Result):
-        self.results = deque(results)
-        self.calls = []
-
-    def execute(self, statement, params=None):
-        self.calls.append((str(statement), params or {}))
-        if not self.results:
-            raise AssertionError(f"Unexpected SQL: {statement}")
-        return self.results.popleft()
-
-
-TEAM_ROW = {
-    "team_id": 10,
-    "nhl_team_id": 20,
-    "abbreviation": "TST",
-    "team_name": "Testers",
-    "team_city": "Test City",
-    "team_active": True,
-}
-
-
-def summary_row(**overrides):
-    row = {
-        "id": 7,
-        "first_name": "Test",
-        "last_name": "Skater",
-        "full_name": "Test Skater",
-        "birth_date": date(2000, 1, 1),
-        "age": 26,
-        "primary_position": "C",
-        "shoots_catches": "L",
-        "nationality": "CAN",
-        "active": True,
-        "roster_status": "ACTIVE",
-        **TEAM_ROW,
-        "season": 2025,
-        "games_played": 82,
-        "goals": 30,
-        "assists": 50,
-        "points": 80,
-        "plus_minus": 10,
-        "penalty_minutes": 20,
-        "power_play_goals": 8,
-        "power_play_points": 20,
-        "short_handed_goals": 1,
-        "shots": 200,
-        "shooting_percentage": 0.15,
-        "ice_time_seconds": 3600.4,
-        "shifts": 100,
-        "game_score": 2.0,
-        "game_score_per_60": 2.0,
-        "individual_expected_goals": 18.5,
-        "expected_goals_per_60": 1.1,
-        "on_ice_expected_goals_pct": 0.55,
-        "takeaways": 12,
-        "giveaways": 8,
-        "shots_blocked": 6,
-        "penalties": 5,
-        "penalties_drawn": 9,
-        "hockey_value": 1.5,
-        "projected_hockey_value": 2.25,
-        "gs60_above_replacement": 1.5,
-        "model_version": "test-v1",
-        "cap_hit_cents": 800_000_000,
-    }
-    row.update(overrides)
-    return row
-
-
-def test_projection_query_joins_predictions_to_the_active_model():
-    assert "JOIN active_model am ON am.id = pr.model_version_id" in SUMMARY_CTES
-
-
-@pytest.mark.parametrize(
-    ("season", "expected_cents"),
-    [
-        (2012, 0),
-        (2013, 92_500_000),
-        (2015, 95_000_000),
-        (2017, 102_500_000),
-        (2019, 107_500_000),
-        (2021, 112_500_000),
-        (2025, 115_000_000),
-        (2026, 122_500_000),
-    ],
-)
-def test_buried_relief_uses_the_season_minimum_plus_cba_allowance(
-    season, expected_cents
-):
-    assert _buried_relief_cents(season) == expected_cents
-
-
-@pytest.mark.parametrize(
-    ("as_of", "expected"),
-    [
-        (date(2026, 1, 1), 2025),
-        (date(2026, 6, 30), 2025),
-        (date(2026, 7, 1), 2026),
-        (date(2026, 12, 31), 2026),
-    ],
-)
-def test_latest_started_season_uses_july_first_cutoff(as_of, expected):
-    assert _latest_started_season(as_of) == expected
-
-
-def test_mapping_helpers_preserve_nulls_and_round_time():
-    row = summary_row(team_id=None, ice_time_seconds=10.6, goals=None)
-
-    assert _team(row) is None
-    assert _identity(row)["team"] is None
-    assert _summary(row)["toiSeconds"] == 11
-    assert _summary(row)["goals"] is None
-
-
-def test_season_validation_and_unavailable_current_season():
-    unavailable_session = ScriptedSession(Result(scalar=None))
-    service = TradeValueService(unavailable_session, as_of=date(2026, 6, 30))
-    with pytest.raises(ApiProblem) as unavailable:
-        service.current_season()
-    assert (unavailable.value.status, unavailable.value.code) == (
-        503,
-        "SEASONS_UNAVAILABLE",
+class TestSeasonPolicy:
+    @pytest.mark.parametrize(
+        ("season", "expected"),
+        [
+            pytest.param(2012, 0, id="before-buried-relief"),
+            pytest.param(2013, 92_500_000, id="2013-minimum"),
+            pytest.param(2015, 95_000_000, id="2015-minimum"),
+            pytest.param(2017, 102_500_000, id="2017-minimum"),
+            pytest.param(2019, 107_500_000, id="2019-minimum"),
+            pytest.param(2021, 112_500_000, id="2021-minimum"),
+            pytest.param(2025, 115_000_000, id="2025-minimum"),
+            pytest.param(2026, 122_500_000, id="2026-minimum"),
+        ],
     )
-    assert unavailable_session.calls[0][1] == {"latest_started_season": 2025}
+    def test_buried_relief(self, season, expected):
+        assert buried_relief_cents(season) == expected
 
-    invalid_session = ScriptedSession(Result(scalar=False))
-    service = TradeValueService(invalid_session, as_of=date(2026, 7, 1))
-    with pytest.raises(ApiProblem) as invalid:
-        service.require_season(2027)
-    assert invalid.value.code == "INVALID_SEASON"
-    assert invalid.value.details == {"season": ["Unknown season."]}
-    statement, params = invalid_session.calls[0]
-    assert "start_year <= :latest_started_season" in statement
-    assert params == {"season": 2027, "latest_started_season": 2026}
-
-
-def test_season_validation_accepts_a_configured_started_season():
-    session = ScriptedSession(Result(scalar=True))
-    service = TradeValueService(session, as_of=date(2026, 7, 1))
-
-    service.require_season(2026)
-
-    assert session.calls[0][1] == {
-        "season": 2026,
-        "latest_started_season": 2026,
-    }
-
-
-def test_seasons_and_missing_identity_errors():
-    session = ScriptedSession(
-        Result(
-            rows=[
-                {
-                    "start_year": 2025,
-                    "end_year": 2026,
-                    "label": "2025-26",
-                    "salary_cap_cents": 9_550_000_000,
-                }
-            ]
-        ),
-        Result(scalar=2025),
-        Result(rows=[]),
-        Result(rows=[]),
+    @pytest.mark.parametrize(
+        ("as_of", "expected"),
+        [
+            pytest.param(date(2026, 1, 1), 2025, id="january"),
+            pytest.param(date(2026, 6, 30), 2025, id="before-cutoff"),
+            pytest.param(date(2026, 7, 1), 2026, id="cutoff"),
+            pytest.param(date(2026, 12, 31), 2026, id="december"),
+        ],
     )
-    service = TradeValueService(session, as_of=date(2026, 6, 30))
-
-    seasons = service.seasons()
-    assert seasons["currentSeason"] == 2025
-    assert [item["startYear"] for item in seasons["availableSeasons"]] == [2025]
-    season_statement, season_params = session.calls[0]
-    assert "start_year <= :latest_started_season" in season_statement
-    assert season_params == {"latest_started_season": 2025}
-    assert session.calls[1][1] == {"latest_started_season": 2025}
-    with pytest.raises(ApiProblem, match="Player not found"):
-        service.player_identity(999)
-    with pytest.raises(ApiProblem, match="Team not found"):
-        service.team_summary(999)
+    def test_visibility(self, as_of, expected):
+        assert latest_started_season(as_of) == expected
 
 
-def test_players_builds_filters_sort_and_pagination(monkeypatch):
-    service = TradeValueService(ScriptedSession(Result(scalar=True), Result(scalar=3)))
-    captured = {}
+class TestConfiguredSeasons:
+    def test_default_and_list_use_the_same_visibility(self, service):
+        result = service.seasons()
+        assert result["currentSeason"] == 2025
+        assert [r["startYear"] for r in result["availableSeasons"]] == [2025]
+        service.require_season(2025)
 
-    def rows(season, where, params, order, limit, offset):
-        captured.update(
-            season=season,
-            where=where,
-            params=params,
-            order=order,
-            limit=limit,
-            offset=offset,
+    def test_unknown_season_retains_public_error_and_typed_context(self, service):
+        with pytest.raises(ApiProblem) as failure:
+            service.require_season(2099)
+        assert (failure.value.status, failure.value.code, failure.value.details) == (
+            400,
+            "INVALID_SEASON",
+            {"season": ["Unknown season."]},
         )
-        return [summary_row()]
 
-    monkeypatch.setattr(service, "_summary_rows", rows)
-    result = service.players(
-        2025, "tst", "C", "ACTIVE", " Test ", "points", "asc", 2, 2
-    )
+    @pytest.fixture
+    def empty_service(self):
+        return TradeValueService(repository=MemoryApiRepository())
 
-    assert result["pagination"] == {
-        "page": 2,
-        "pageSize": 2,
-        "totalItems": 3,
-        "totalPages": 2,
-    }
-    assert result["data"][0]["fullName"] == "Test Skater"
-    assert captured["params"] == {
-        "team": "tst",
-        "position": "C",
-        "roster_status": "ACTIVE",
-        "search": "%Test%",
-    }
-    assert captured["order"] == "points ASC NULLS LAST, id ASC"
-    assert captured["offset"] == 2
-
-
-def test_skater_and_goalie_stats_branches(monkeypatch):
-    service = TradeValueService(ScriptedSession())
-    monkeypatch.setattr(service, "require_season", lambda _season: None)
-    monkeypatch.setattr(service, "player_identity", lambda _player_id: {})
-    monkeypatch.setattr(service, "summary_for_player", lambda *_args: summary_row())
-
-    skater = service.player_stats(7, 2025)
-    assert skater["traditional"]["shootingPercentage"] == 0.15
-    assert skater["advanced"]["iceTimeSeconds"] == 3600
-    assert skater["goalie"] is None
-
-    goalie_row = summary_row(
-        primary_position="G", games_played=22, ice_time_seconds=None
-    )
-    monkeypatch.setattr(service, "summary_for_player", lambda *_args: goalie_row)
-    monkeypatch.setattr(service, "_goalie_stats", lambda *_args: {"gamesPlayed": 22})
-    goalie = service.player_stats(8, 2025)
-    assert goalie["traditional"] is None
-    assert goalie["advanced"] is None
-    assert goalie["goalie"] == {"gamesPlayed": 22}
-
-    monkeypatch.setattr(service, "summary_for_player", lambda *_args: None)
-    with pytest.raises(ApiProblem, match="Player not found"):
-        service.player_stats(7, 2025)
-
-
-def test_skater_stats_preserve_missing_traditional_and_advanced_data(monkeypatch):
-    service = TradeValueService(ScriptedSession())
-    monkeypatch.setattr(service, "require_season", lambda _season: None)
-    monkeypatch.setattr(service, "player_identity", lambda _player_id: {})
-    monkeypatch.setattr(
-        service,
-        "summary_for_player",
-        lambda *_args: summary_row(games_played=None, ice_time_seconds=None),
-    )
-
-    result = service.player_stats(7, 2025)
-
-    assert result["traditional"] is None
-    assert result["advanced"] is None
-    assert result["goalie"] is None
-
-
-def test_goalie_stats_handles_missing_and_calculated_rows():
-    service = TradeValueService(
-        ScriptedSession(
-            Result(rows=[{"games_played": None}]),
-            Result(
-                rows=[
-                    {
-                        "games_played": 20,
-                        "wins": 12,
-                        "losses": 6,
-                        "overtime_losses": 2,
-                        "shots_against": 600,
-                        "saves": 550,
-                        "save_percentage": 550 / 600,
-                        "goals_against": 50,
-                        "time_on_ice_seconds": 72_000,
-                        "gaa": 2.5,
-                        "shutouts": 2,
-                        "xga": 55.0,
-                        "ga": 50.0,
-                        "gsae": 5.0,
-                    }
-                ]
-            ),
+    def test_no_configured_seasons(self, empty_service):
+        with pytest.raises(ApiProblem) as failure:
+            empty_service.current_season()
+        assert (failure.value.status, failure.value.code) == (
+            503,
+            "SEASONS_UNAVAILABLE",
         )
+
+
+class TestIdentityAndListing:
+    @pytest.fixture
+    def nullable(self, summary):
+        return replace(summary, team_id=None, ice_time_seconds=10.6, goals=None)
+
+    def test_nulls_and_rounding(self, nullable):
+        assert identity_data(nullable)["team"] is None
+        result = summary_data(nullable)
+        assert result["toiSeconds"] == 11
+        assert result["goals"] is None
+
+    def test_missing_entities(self, service):
+        with pytest.raises(ApiProblem, match="Player not found"):
+            service.player_identity(999)
+        with pytest.raises(ApiProblem, match="Team not found"):
+            service.team_summary(999)
+
+    def test_repository_protocol_and_health(self, service):
+        assert isinstance(service.repository, ApiRepository)
+        service.check_health()
+
+    def test_players_filter_and_paginate(self, service):
+        result = service.players(
+            2025, "tst", "C", "ACTIVE", " Test ", "points", "asc", 1, 2
+        )
+        assert result["pagination"] == {
+            "page": 1,
+            "pageSize": 2,
+            "totalItems": 1,
+            "totalPages": 1,
+        }
+        assert result["data"][0]["fullName"] == "Test Skater"
+
+    def test_teams_counts_and_roster(self, service):
+        assert service.teams()[0]["id"] == 10
+        assert service.team(10)["rosterCounts"] == {
+            "ACTIVE": 1,
+            "MINORS": 0,
+            "LTIR": 0,
+            "UNKNOWN": 0,
+        }
+        assert service.roster(10, 2025, "ACTIVE")["players"][0]["id"] == 7
+
+
+class TestStats:
+    @pytest.fixture
+    def missing_summary(self, repository):
+        return TradeValueService(repository=replace(repository, summaries=()))
+
+    @pytest.fixture
+    def no_stats(self, repository, summary):
+        return TradeValueService(
+            repository=replace(
+                repository,
+                summaries=(replace(summary, games_played=None, ice_time_seconds=None),),
+            )
+        )
+
+    @pytest.fixture
+    def goalie_row(self):
+        return GoalieRow(
+            games_played=20,
+            wins=12,
+            losses=6,
+            overtime_losses=2,
+            shots_against=600,
+            saves=550,
+            save_percentage=550 / 600,
+            goals_against=50,
+            time_on_ice_seconds=72_000,
+            gaa=2.5,
+            shutouts=2,
+            xga=55.0,
+            ga=50.0,
+            gsae=5.0,
+        )
+
+    @pytest.fixture(
+        params=[
+            pytest.param("present", id="goalie-stats"),
+            pytest.param("empty", id="empty-aggregate"),
+            pytest.param("absent", id="missing-aggregate"),
+        ]
     )
-    assert service._goalie_stats(8, 2025) is None
-    goalie_stats = service._goalie_stats(8, 2025)
-    assert goalie_stats is not None
-    assert goalie_stats["goalsSavedAboveExpected"] == 5.0
+    def goalie_service(self, request, repository, summary, goalie_row):
+        row = replace(summary, primary_position="G")
+        stats = (
+            ()
+            if request.param == "absent"
+            else (
+                (
+                    7,
+                    2025,
+                    goalie_row
+                    if request.param == "present"
+                    else replace(goalie_row, games_played=None),
+                ),
+            )
+        )
+        return TradeValueService(
+            repository=replace(repository, summaries=(row,), goalie_rows=stats)
+        ), request.param
+
+    def test_skater(self, service):
+        result = service.player_stats(7, 2025)
+        assert result["traditional"] is not None
+        assert result["traditional"]["shootingPercentage"] == 0.15
+        assert result["advanced"] is not None
+        assert result["advanced"]["iceTimeSeconds"] == 3600
+        assert result["goalie"] is None
+
+    def test_goalie_and_missing_goalie_stats(self, goalie_service):
+        service, scenario = goalie_service
+        result = service.player_stats(7, 2025)
+        assert result["traditional"] is None
+        assert result["advanced"] is None
+        if scenario == "present":
+            assert result["goalie"]["goalsSavedAboveExpected"] == 5.0
+        if scenario != "present":
+            assert result["goalie"] is None
+
+    def test_missing_skater_stats(self, no_stats):
+        result = no_stats.player_stats(7, 2025)
+        assert result["traditional"] is None
+        assert result["advanced"] is None
+
+    def test_missing_summary(self, missing_summary):
+        with pytest.raises(ApiProblem, match="Player not found"):
+            missing_summary.player_stats(7, 2025)
 
 
-def test_value_history_leaders_and_overview(monkeypatch):
-    service = TradeValueService(ScriptedSession())
-    monkeypatch.setattr(service, "require_season", lambda _season: None)
-    monkeypatch.setattr(service, "player_identity", lambda _player_id: {})
-    monkeypatch.setattr(service, "summary_for_player", lambda *_args: summary_row())
-    monkeypatch.setattr(service, "current_season", lambda: 2025)
+class TestValueAndHistory:
+    @pytest.fixture
+    def missing_history(self, repository):
+        return TradeValueService(
+            repository=replace(repository, summaries=(), missing_history=(2024,))
+        )
 
-    value = service.hockey_value(7, None)
-    assert value == {
-        "playerId": 7,
-        "season": 2025,
-        "hockeyValue": 1.5,
-        "projectedNextSeasonHockeyValue": 2.25,
-        "gameScorePer60AboveReplacement": 1.5,
-        "toiHours": pytest.approx(1.000111),
-        "modelVersion": "test-v1",
-    }
+    def test_value_and_history(self, service):
+        assert service.hockey_value(7, None) == {
+            "playerId": 7,
+            "season": 2025,
+            "hockeyValue": 1.5,
+            "projectedNextSeasonHockeyValue": 2.25,
+            "gameScorePer60AboveReplacement": 1.5,
+            "toiHours": pytest.approx(1.000111),
+            "modelVersion": "test-v1",
+        }
+        assert service.player_seasons(7)[0]["season"] == 2025
+        assert service.value_history(7) == [{"season": 2025, "hockeyValue": 1.5}]
+        assert service.leaders(2025, "C", "TST", 5)[0]["id"] == 7
+        assert service.leaders(2025, None, None, 5)[0]["id"] == 7
 
-    monkeypatch.setattr(service, "_all", lambda *_args, **_kwargs: [{"season": 2025}])
-    history = service.player_seasons(7)
-    assert history[0]["season"] == 2025
-    assert service.value_history(7) == [{"season": 2025, "hockeyValue": 1.5}]
+    def test_missing_summary_history_is_omitted_and_value_is_null(
+        self, missing_history
+    ):
+        assert missing_history.player_seasons(7) == []
+        result = missing_history.hockey_value(7, 2025)
+        assert result["hockeyValue"] is None
+        assert result["toiHours"] is None
 
-    monkeypatch.setattr(
-        service, "_summary_rows", lambda *_args, **_kwargs: [summary_row()]
+
+class TestContractsAndCap:
+    @pytest.fixture
+    def unsigned(self, repository, contract_row):
+        return TradeValueService(
+            repository=replace(
+                repository,
+                contract_rows=(replace(contract_row, signing_team_id=None),),
+                contract_season_rows=(),
+            )
+        )
+
+    @pytest.fixture(
+        params=[
+            pytest.param("null-ceiling", id="null-ceiling"),
+            pytest.param("absent", id="absent-cap"),
+        ]
     )
-    assert service.leaders(2025, "C", "TST", 5)[0]["id"] == 7
+    def cap_service(self, request, repository):
+        cap = repository.cap_rows[0][2]
+        rows = (
+            ()
+            if request.param == "absent"
+            else ((10, 2025, replace(cap, salary_cap_cents=None)),)
+        )
+        return TradeValueService(
+            repository=replace(repository, cap_rows=rows)
+        ), request.param
 
-    rows = [
-        summary_row(),
-        summary_row(
+    @pytest.fixture
+    def unmatched_contract(self, repository, contract_row, contract_season):
+        row = replace(contract_season, season_start_year=2024)
+        return TradeValueService(
+            repository=replace(
+                repository,
+                contract_season_rows=((30, row),),
+                contract_player_rows=((10, 2025, 7),),
+            )
+        )
+
+    @pytest.fixture
+    def no_contract(self, repository):
+        return TradeValueService(
+            repository=replace(
+                repository, contract_rows=(), contract_player_rows=((10, 2025, 7),)
+            )
+        )
+
+    def test_contract_and_team_contracts(self, service):
+        result = service.contract(7)
+        assert result is not None
+        assert result["signingTeam"] is not None
+        assert result["signingTeam"]["id"] == 10
+        assert result["seasons"][0]["capPercentage"] == pytest.approx(0.08376963)
+        assert (
+            service.team_contracts(10, 2025)["contracts"][0]["season"]["capHitCents"]
+            == 800_000_000
+        )
+
+    def test_contract_without_signing_team(self, unsigned):
+        result = unsigned.contract(7, 2025)
+        assert result is not None
+        assert result["signingTeam"] is None
+        assert result["seasons"] == []
+
+    def test_no_contract(self, no_contract):
+        assert no_contract.contract(7, 2025) is None
+        assert no_contract.team_contracts(10, 2025)["contracts"] == []
+
+    def test_unmatched_contract_season(self, unmatched_contract):
+        assert unmatched_contract.team_contracts(10, 2025)["contracts"] == []
+
+    def test_estimated_cap(self, service):
+        result = service.team_cap(10, 2025)
+        assert result["capSpaceCents"] == 8_750_000_000
+        assert result["calculationStatus"] == "ESTIMATE"
+
+    def test_missing_and_null_cap(self, cap_service):
+        service, scenario = cap_service
+        if scenario == "absent":
+            with pytest.raises(ApiProblem) as failure:
+                service.team_cap(10, 2025)
+            assert (failure.value.status, failure.value.code) == (
+                503,
+                "SEASONS_UNAVAILABLE",
+            )
+            return
+        assert service.team_cap(10, 2025)["capSpaceCents"] is None
+
+
+class TestOverviewSearchAndCompare:
+    @pytest.fixture
+    def overview(self, repository, summary):
+        goalie = replace(
+            summary,
             id=8,
-            full_name="Goalie",
             primary_position="G",
             goals=None,
             points=None,
             hockey_value=None,
-        ),
-    ]
-    monkeypatch.setattr(service, "_summary_rows", lambda *_args, **_kwargs: rows)
-    overview = service.overview(2025)
-    assert overview["league"] == {
-        "players": 2,
-        "goals": 30,
-        "gamesPlayed": 164,
-        "averageHockeyValue": 1.5,
-    }
-    assert overview["leaders"]["points"][0]["id"] == 7
-
-
-def test_history_skips_missing_summary_and_leaders_allow_no_filters(monkeypatch):
-    service = TradeValueService(ScriptedSession())
-    monkeypatch.setattr(service, "player_identity", lambda _player_id: {})
-    monkeypatch.setattr(service, "_all", lambda *_args, **_kwargs: [{"season": 2025}])
-    monkeypatch.setattr(service, "summary_for_player", lambda *_args: None)
-
-    assert service.player_seasons(7) == []
-
-    monkeypatch.setattr(service, "require_season", lambda _season: None)
-    monkeypatch.setattr(
-        service, "_summary_rows", lambda *_args, **_kwargs: [summary_row()]
-    )
-    assert service.leaders(2025, None, None, 5)[0]["id"] == 7
-
-
-def test_contract_team_contracts_and_cap(monkeypatch):
-    contract_row = {
-        "id": 30,
-        "player_id": 7,
-        "signing_team_id": 10,
-        "signing_nhl_team_id": 20,
-        "signing_abbreviation": "TST",
-        "signing_team_name": "Testers",
-        "signing_team_city": "Test City",
-        "signing_team_active": True,
-        "signed_on": date(2025, 7, 1),
-        "start_season": 2025,
-        "end_season": 2026,
-        "term_years": 2,
-        "contract_type": "STANDARD",
-        "expiry_status": "UFA",
-        "total_value_cents": 1_600_000_000,
-        "average_value_cents": 800_000_000,
-        "is_entry_level": False,
-    }
-    contract_season = {
-        **TEAM_ROW,
-        "season_start_year": 2025,
-        "base_salary_cents": 700_000_000,
-        "signing_bonus_cents": 100_000_000,
-        "performance_bonus_cents": None,
-        "total_cash_cents": 800_000_000,
-        "cap_hit_cents": 800_000_000,
-        "cap_percentage": "0.08376963",
-        "is_slide": False,
-    }
-    service = TradeValueService(
-        ScriptedSession(Result(rows=[contract_row]), Result(rows=[contract_season]))
-    )
-    monkeypatch.setattr(service, "player_identity", lambda player_id: {"id": player_id})
-    monkeypatch.setattr(service, "current_season", lambda: 2025)
-    contract = service.contract(7)
-    assert contract is not None
-    assert contract["signingTeam"]["id"] == 10
-    assert contract["seasons"][0]["capPercentage"] == pytest.approx(0.08376963)
-
-    team = {"id": 10}
-    monkeypatch.setattr(service, "require_season", lambda _season: None)
-    monkeypatch.setattr(service, "team_summary", lambda _team_id: team)
-    monkeypatch.setattr(service, "_all", lambda *_args, **_kwargs: [{"player_id": 7}])
-    monkeypatch.setattr(service, "contract", lambda *_args: contract)
-    result = service.team_contracts(10, 2025)
-    assert result["contracts"][0]["season"]["capHitCents"] == 800_000_000
-
-    cap_session = ScriptedSession(
-        Result(
-            rows=[
-                {
-                    "salary_cap_cents": 9_550_000_000,
-                    "active_cap": 800_000_000,
-                    "ltir_cap": 200_000_000,
-                    "minors_cap": 100_000_000,
-                    "total_cap": 1_100_000_000,
-                }
-            ]
         )
-    )
-    cap_service = TradeValueService(cap_session)
-    monkeypatch.setattr(cap_service, "require_season", lambda _season: None)
-    monkeypatch.setattr(cap_service, "team_summary", lambda _team_id: team)
-    cap = cap_service.team_cap(10, 2025)
-    assert cap["capSpaceCents"] == 8_750_000_000
-    assert cap["calculationStatus"] == "ESTIMATE"
-    statement, params = cap_session.calls[0]
-    assert "GREATEST(cs.cap_hit_cents - :buried_relief_cents, 0)" in statement
-    assert params["buried_relief_cents"] == 115_000_000
-
-
-def test_contract_without_signing_team_and_unmatched_team_contracts(monkeypatch):
-    unsigned_contract_row = {
-        "id": 31,
-        "player_id": 7,
-        "signing_team_id": None,
-        "signed_on": None,
-        "start_season": 2025,
-        "end_season": 2025,
-        "term_years": 1,
-        "contract_type": None,
-        "expiry_status": None,
-        "total_value_cents": None,
-        "average_value_cents": None,
-        "is_entry_level": False,
-    }
-    service = TradeValueService(
-        ScriptedSession(Result(rows=[unsigned_contract_row]), Result(rows=[]))
-    )
-    monkeypatch.setattr(service, "player_identity", lambda player_id: {"id": player_id})
-
-    contract = service.contract(7, 2025)
-    assert contract is not None
-    assert contract["signingTeam"] is None
-    assert contract["seasons"] == []
-
-    monkeypatch.setattr(service, "require_season", lambda _season: None)
-    monkeypatch.setattr(service, "team_summary", lambda team_id: {"id": team_id})
-    monkeypatch.setattr(
-        service,
-        "_all",
-        lambda *_args, **_kwargs: [{"player_id": 7}, {"player_id": 8}],
-    )
-    contracts = {
-        7: None,
-        8: {"seasons": [{"season": 2024, "owningTeam": {"id": 10}}]},
-    }
-    monkeypatch.setattr(
-        service,
-        "contract",
-        lambda player_id, _season: contracts[player_id],
-    )
-
-    assert service.team_contracts(10, 2025)["contracts"] == []
-
-
-def test_team_roster_search_and_compare(monkeypatch):
-    service = TradeValueService(ScriptedSession())
-    monkeypatch.setattr(service, "require_season", lambda _season: None)
-    monkeypatch.setattr(service, "team_summary", lambda team_id: {"id": team_id})
-    monkeypatch.setattr(
-        service, "_summary_rows", lambda *_args, **_kwargs: [summary_row()]
-    )
-    roster = service.roster(10, 2025, "ACTIVE")
-    assert roster["status"] == "ACTIVE"
-    assert roster["players"][0]["id"] == 7
-
-    monkeypatch.setattr(
-        service,
-        "_all",
-        lambda sql, _params=None: (
-            [{"id": 7}]
-            if "FROM players" in sql
-            else [
-                {
-                    "id": 10,
-                    "nhl_team_id": 20,
-                    "abbreviation": "TST",
-                    "team_name": "Testers",
-                    "team_city": "Test City",
-                    "team_active": True,
-                }
-            ]
-        ),
-    )
-    monkeypatch.setattr(service, "player_identity", lambda player_id: {"id": player_id})
-    found = service.search("test", ["player", "team"], 8)
-    assert found["players"] == [{"id": 7}]
-    assert found["teams"][0]["abbreviation"] == "TST"
-
-    monkeypatch.setattr(
-        service,
-        "player_stats",
-        lambda player_id, season: {"playerId": player_id, "season": season},
-    )
-    monkeypatch.setattr(
-        service,
-        "hockey_value",
-        lambda player_id, season: {"playerId": player_id, "season": season},
-    )
-    monkeypatch.setattr(service, "contract", lambda *_args: None)
-    compared = service.compare([7, 8], 2025)
-    assert [row["player"]["id"] for row in compared["players"]] == [7, 8]
-
-
-def test_search_can_request_each_entity_type_independently(monkeypatch):
-    service = TradeValueService(ScriptedSession())
-    team_row = {
-        "id": 10,
-        "nhl_team_id": 20,
-        "abbreviation": "TST",
-        "team_name": "Testers",
-        "team_city": "Test City",
-        "team_active": True,
-    }
-    monkeypatch.setattr(service, "_all", lambda *_args, **_kwargs: [team_row])
-
-    teams_only = service.search("test", ["team"], 8)
-    assert teams_only["players"] == []
-    assert teams_only["teams"][0]["id"] == 10
-
-    monkeypatch.setattr(service, "_all", lambda *_args, **_kwargs: [{"id": 7}])
-    monkeypatch.setattr(service, "player_identity", lambda player_id: {"id": player_id})
-    players_only = service.search("test", ["player"], 8)
-    assert players_only == {"players": [{"id": 7}], "teams": []}
-
-
-class TestMissingCapAggregate:
-    @pytest.fixture
-    def service(self):
-        team = {**TEAM_ROW, "id": 10}
         return TradeValueService(
-            ScriptedSession(Result(scalar=True), Result(rows=[team]), Result())
+            repository=replace(repository, summaries=(summary, goalie))
         )
 
-    def test_missing_cap_row_is_a_service_failure(self, service):
-        with pytest.raises(ApiProblem) as failure:
-            service.team_cap(10, 2025)
-        assert failure.value.status == 503
-        assert failure.value.code == "SEASONS_UNAVAILABLE"
+    @pytest.fixture
+    def empty_overview(self, repository):
+        return TradeValueService(repository=replace(repository, summaries=()))
+
+    def test_overview(self, overview):
+        result = overview.overview(2025)
+        assert result["league"] == {
+            "players": 2,
+            "goals": 30,
+            "gamesPlayed": 164,
+            "averageHockeyValue": 1.5,
+        }
+        assert result["leaders"]["points"][0]["id"] == 7
+
+    def test_empty_overview(self, empty_overview):
+        assert empty_overview.overview(2025)["league"]["averageHockeyValue"] is None
+
+    def test_search(self, service):
+        assert service.search("Test", ["player"], 8)["players"][0]["id"] == 7
+        assert service.search("Test", ["team"], 8)["teams"][0]["id"] == 10
+        result = service.search("Test", ["player", "team"], 8)
+        assert len(result["players"]) == len(result["teams"]) == 1
+
+    def test_compare(self, service):
+        result = service.compare([7], 2025)
+        assert result["players"][0]["player"]["id"] == 7
+        assert result["players"][0]["stats"]["season"] == 2025
+        assert result["players"][0]["contract"] is not None

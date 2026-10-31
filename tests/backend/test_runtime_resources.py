@@ -10,7 +10,7 @@ from textwrap import dedent
 from fastapi import Request
 from fastapi.testclient import TestClient
 import pytest
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app.config import (
@@ -22,6 +22,7 @@ from app.config import (
     load_environment,
 )
 from app.api.routes import get_service
+from app.api.repository import SqlApiRepository
 from app import database
 from app.database import DatabaseResources
 from app.main import create_app
@@ -148,8 +149,9 @@ class TestRequestSessions:
         request = Request({"type": "http", "app": application})
         dependency = get_service(request)
         service = next(dependency)
-        service.session.execute(text("SELECT 1"))
-        yield service.session, dependency
+        service.check_health()
+        assert isinstance(service.repository, SqlApiRepository)
+        yield service.repository.session, dependency
         dependency.close()
         engine.dispose()
 
