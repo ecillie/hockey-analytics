@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ml.paths import artifact_directory
+
 import joblib
 import numpy as np
 import pandas as pd
@@ -23,8 +25,7 @@ from ml.features.replacement_level import (
 )
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-MODEL_DIR = REPO_ROOT / "ml" / "models"
+MODEL_DIR = artifact_directory("TRADEVALUE_MODEL_DIR", Path("models"))
 
 MODEL_PATH = MODEL_DIR / "skater_value_model.joblib"
 METADATA_PATH = MODEL_DIR / "skater_value_model_metadata.json"

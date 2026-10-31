@@ -1,4 +1,4 @@
-from __future__ import annotations
+from importlib.resources import files
 
 import json
 
@@ -166,9 +166,7 @@ def test_metric_regression_uses_worse_direction_for_r2():
 
 
 def test_metadata_is_stable_and_valid():
-    from pathlib import Path
-
-    path = Path(__file__).parents[1] / "models" / "skater_value_model_metadata.json"
+    path = files("ml").joinpath("resources/skater_value_model_metadata.json")
     metadata = json.loads(path.read_text(encoding="utf-8"))
     validate_metadata(metadata)
     assert stable_metadata_json(metadata) == stable_metadata_json(
@@ -196,11 +194,7 @@ def test_metadata_validation_rejects_leakage_and_bad_split_order():
 
 
 def test_metadata_validation_rejects_incomplete_or_nonfinite_metrics():
-    path = (
-        __import__("pathlib").Path(__file__).parents[1]
-        / "models"
-        / "skater_value_model_metadata.json"
-    )
+    path = files("ml").joinpath("resources/skater_value_model_metadata.json")
     valid = json.loads(path.read_text(encoding="utf-8"))
 
     incomplete = json.loads(json.dumps(valid))

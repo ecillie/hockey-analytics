@@ -137,7 +137,7 @@ uv run python -m app.ScriptingFiles.FullDataScript.populate_roster_status
 Run tests with:
 
 ```bash
-PYTHONPATH=backend uv run pytest
+uv run pytest
 ```
 
 The backend OpenAPI document and frontend TypeScript contract are committed so
@@ -218,12 +218,8 @@ GitHub repository settings, hotfix branch policy, and rollout sequence.
 
 This is an independent project and is not affiliated with the NHL, AHL, MoneyPuck, CapWages, or their respective organizations.
 
-The root project manages the current source tree without packaging it yet.
-Pytest resolves `backend` and the repository root through its configuration;
-module commands still need `PYTHONPATH=backend` for `app` imports. Use
-`uv sync --locked --all-groups` for development, or
-`uv sync --locked --no-default-groups` and
-`uv run --no-default-groups python ...` for runtime-only operations.
+The uv workspace installs `app` from `backend/src` and `ml` from `ml/src`.
+Run commands from the repository root after `uv sync --locked --all-groups`.
 The `ingestion`, `ml`, and `dev` groups keep job, training, and test tools out
 of the API requirements export. Preserve the compatibility pins in
 `tool.uv.constraint-dependencies` until an intentional dependency upgrade.
@@ -236,3 +232,22 @@ thresholds are used. The retired loaders are archived as byte-preserved `.py.txt
 references. Framework-state exceptions and enum
 boundary decisions remain prerequisites for their source-remediation phases;
 this configuration change grants no exception to the Python rules.
+
+Build and verify both distributions with `bash scripts/verify-packages.sh`.
+It checks wheel contents and imports non-editable installations from outside
+this checkout. Backend CI runs the same check. The API wheel includes `app`
+without `app.ScriptingFiles`; run ingestion from the trusted workspace with
+`uv sync --locked --all-groups`, which installs the source package in editable
+mode. The ML wheel includes its published metadata resource, but excludes
+training outputs, model binaries, datasets, and tests.
+
+Historical CSVs now live in `backend/data/`. Source ingestion resolves that
+location independently of the current directory; `TRADEVALUE_DATA_DIR` can
+select another dataset directory. Editable ML installations resolve their project directory independently of the
+current working directory; wheel installations use the current working directory.
+When run from the repository root,
+outputs retain their `ml/models/` and `ml/evaluation/outputs/` destinations.
+Override these with `TRADEVALUE_MODEL_DIR` and `TRADEVALUE_EVALUATION_DIR`.
+`TRADEVALUE_ENV_FILE` selects an explicit dotenv file; source installations
+continue to default to `backend/.env`. Deployed applications use exported
+settings and do not bundle dotenv files.

@@ -14,7 +14,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 BACKEND = ROOT / "backend"
-APP = BACKEND / "app"
+APP = BACKEND / "src" / "app"
 FULL_DATA_SCRIPT = APP / "ScriptingFiles" / "FullDataScript"
 LEGACY_LOADERS = BACKEND / "legacy_loaders"
 
@@ -41,7 +41,7 @@ def supported_python_files() -> list[Path]:
 
 def full_data_modules() -> list[str]:
     return [
-        ".".join(path.relative_to(BACKEND).with_suffix("").parts)
+        ".".join(path.relative_to(BACKEND / "src").with_suffix("").parts)
         for path in sorted(FULL_DATA_SCRIPT.rglob("*.py"))
         if path.name != "__init__.py" and "__pycache__" not in path.parts
     ]
@@ -110,7 +110,7 @@ def test_complete_legacy_loader_set_is_quarantined_outside_application_tree():
 
 def test_supported_cli_manifest_matches_executable_modules():
     executable_modules = {
-        ".".join(path.relative_to(BACKEND).with_suffix("").parts)
+        ".".join(path.relative_to(BACKEND / "src").with_suffix("").parts)
         for path in FULL_DATA_SCRIPT.rglob("*.py")
         if has_main_guard(path)
     }
@@ -120,11 +120,11 @@ def test_supported_cli_manifest_matches_executable_modules():
 @pytest.mark.parametrize("module", full_data_modules())
 def test_supported_ingestion_module_imports_in_fresh_interpreter(module):
     environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
     environment.update(
         {
             "ENV": "dev",
             "DATABASE_URL": "postgresql://fixture:fixture@127.0.0.1:9/fixture",
-            "PYTHONPATH": str(BACKEND),
         }
     )
     completed = subprocess.run(

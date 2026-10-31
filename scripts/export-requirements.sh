@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-export_args=(--locked --no-hashes --no-header --no-annotate --no-emit-project)
+export_args=(--locked --no-hashes --no-header --no-annotate --no-emit-workspace)
 export_file() {
   local target="$1"
   shift
   if [[ "${check_exports}" == true ]]; then
-    uv export "${export_args[@]}" "$@" | diff -u "$target" -
+    { uv export "${export_args[@]}" "$@"; if [[ "$target" == backend/requirements.txt ]]; then echo .; fi; } | diff -u "$target" -
   else
-    uv export "${export_args[@]}" "$@" --output-file "$target" > /dev/null
+    { uv export "${export_args[@]}" "$@"; if [[ "$target" == backend/requirements.txt ]]; then echo .; fi; } > "$target"
   fi
 }
 check_exports=false

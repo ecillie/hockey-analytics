@@ -20,7 +20,6 @@ def _schema_text() -> str:
     # developer secrets and hosted infrastructure.
     os.environ["ENV"] = "dev"
     os.environ["DEV_DATABASE_URL"] = "postgresql://openapi:openapi@127.0.0.1:9/openapi"
-    sys.path.insert(0, str(BACKEND))
 
     from app.main import app
 
