@@ -1,11 +1,9 @@
 """Exact source amount, season, text, and signing date conversion."""
 
-from datetime import date
-from decimal import Decimal, DecimalException, InvalidOperation, ROUND_HALF_UP
-import re
 import json
-
-from dateutil.parser import parse as parse_date
+import re
+from datetime import date
+from decimal import ROUND_HALF_UP, Decimal, DecimalException, InvalidOperation
 
 from app.ScriptingFiles.FullDataScript.contracts.errors import (
     MoneyFailure,
@@ -13,6 +11,7 @@ from app.ScriptingFiles.FullDataScript.contracts.errors import (
     SeasonParseError,
     SigningDateParseError,
 )
+from dateutil.parser import parse as parse_date
 
 
 def money_to_cents(value: object, *, rounding: str = ROUND_HALF_UP) -> int | None:

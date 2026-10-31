@@ -1,0 +1,90 @@
+"""Validate a bounded active CapWages fetch before opening its write transaction."""
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+
+import requests
+from app.ScriptingFiles.FullDataScript.contracts.active_repository import (
+    ActiveRepositoryFactory,
+)
+from app.ScriptingFiles.FullDataScript.contracts.domain import (
+    ActiveContractProfile,
+    ActiveContractSnapshot,
+    ActivePlayer,
+    ParsedContract,
+)
+from app.ScriptingFiles.FullDataScript.contracts.errors import (
+    ActiveProfileCoverageError,
+)
+from app.ScriptingFiles.FullDataScript.contracts.http import ActiveSessionFactory
+from app.ScriptingFiles.FullDataScript.contracts.options import (
+    ActiveContractOptions,
+    find_active_option_violation,
+)
+from app.ScriptingFiles.FullDataScript.contracts.schemas.active import (
+    parse_active_index,
+    parse_active_players,
+    parse_active_profile,
+)
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ActiveContractService:
+    session_factory: ActiveSessionFactory
+    repository_factory: ActiveRepositoryFactory
+
+    def fetch_players(self, options: ActiveContractOptions) -> tuple[ActivePlayer, ...]:
+        with self.session_factory() as session:
+            response = session.get("https://capwages.com/players/active", timeout=60)
+            response.raise_for_status()
+            active = parse_active_index(
+                response.text, minimum_rows=options.minimum_players
+            )
+            return tuple(
+                parse_active_players(active, minimum_rows=options.minimum_players)
+            )
+
+    def fetch_contracts(self, player: ActivePlayer) -> tuple[ParsedContract, ...]:
+        with self.session_factory() as session:
+            response = session.get(
+                f"https://capwages.com/players/{player.slug}", timeout=30
+            )
+            response.raise_for_status()
+            return parse_active_profile(response.text, slug=player.slug)
+
+    def fetch_snapshot(self, options: ActiveContractOptions) -> ActiveContractSnapshot:
+        players = self.fetch_players(options)
+        contracts: dict[str, tuple[ParsedContract, ...]] = {}
+        failed: list[str] = []
+        with ThreadPoolExecutor(max_workers=options.workers) as executor:
+            futures = {
+                executor.submit(self.fetch_contracts, player): player.slug
+                for player in players
+            }
+            for future in as_completed(futures):
+                slug = futures[future]
+                try:
+                    contracts[slug] = future.result()
+                except requests.RequestException:
+                    failed.append(slug)
+        ratio = (len(players) - len(failed)) / len(players)
+        if ratio < options.minimum_profile_success_ratio:
+            raise ActiveProfileCoverageError(
+                ratio=ratio, minimum=options.minimum_profile_success_ratio
+            )
+        return ActiveContractSnapshot(
+            profiles=tuple(
+                ActiveContractProfile(
+                    player=player, contracts=contracts.get(player.slug, ())
+                )
+                for player in players
+            ),
+            failed_slugs=tuple(failed),
+        )
+
+    def run(self, options: ActiveContractOptions) -> dict[str, int | str]:
+        if violation := find_active_option_violation(options):
+            raise violation
+        snapshot = self.fetch_snapshot(options)
+        with self.repository_factory() as repository:
+            return repository.save_snapshot(snapshot)

@@ -1,13 +1,11 @@
 """Contract JSON and rendered-table parsing independent of I/O."""
 
-from collections.abc import Iterable, Mapping
-from dataclasses import replace
-from itertools import takewhile
-from decimal import ROUND_HALF_UP
 import json
 import re
-
-from bs4 import Tag
+from collections.abc import Iterable, Mapping
+from dataclasses import replace
+from decimal import ROUND_HALF_UP
+from itertools import takewhile
 
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
     ContractSeason,
@@ -36,6 +34,7 @@ from app.ScriptingFiles.FullDataScript.contracts.util import (
     optional_text,
     season_start_year,
 )
+from bs4 import Tag
 
 
 def page_player(payload: dict[str, object]) -> dict[str, object]:

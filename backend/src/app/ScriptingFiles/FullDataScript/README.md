@@ -96,8 +96,13 @@ keeps missing/unrepresentable values as missing; contract money parsing remains
 separate. Typed stage summaries are flattened deliberately at the run-tracking
 boundary into the existing summary keys.
 
-The current CapWages contract refresh remains in `ingestion.py` for its later
-contract phases; its shared identity and HTTP imports use the extracted helpers.
+Contract composition remains in `ingestion.py` and `capspace.py`. The
+`contracts/` package owns frozen values and options, parsing in `schemas/`,
+identity and reconciliation policies, bounded profile fetching in `http.py`,
+and injected services and transaction-owned repositories. `active_services.py`
+and `active_repository.py` handle the current CapWages snapshot; `services.py`
+and `repository.py` handle historical reconciliation. Durable run records and
+advisory-lock ownership live in the sibling `tracking/` package.
 No live upstream calls are needed for verification. Source fakes and fixture
 plugins live under `source_ingestion/tests/`, with executable unit and PostgreSQL
 tests under root `tests/backend/`. Test support is excluded from production
@@ -130,6 +135,23 @@ batches (100 players by default), uses PostgreSQL bulk inserts for source
 snapshots and new contract-season rows, and retains prior committed batches if
 a later batch fails. Override the batch size with `--batch-size`; smaller
 batches reduce retry cost, while larger batches reduce transaction overhead.
+Each normal profile fetch owns and closes its HTTP session. A borrowed session
+remains caller-owned and its requests are guarded against concurrent access.
+Historical fetching retains four application attempts layered over the shared
+adapter's four GET retries, with the existing retry statuses and backoff.
+Malformed, negative, or non-finite `Retry-After` headers use normal backoff.
+The active CapWages snapshot retains its ten-worker limit and adapter retries.
+Invalid options fail before tracking, database, or session resources open.
+
+Run tracking uses a separate control connection from committed work batches.
+If a later batch fails, the run is marked `failed`; its record counts and
+`metadata.committed_summary` describe only completed batches, and
+`metadata.failure_stage` identifies fetching, persistence, or coverage. Original
+failures remain visible if reporting or cleanup also fails. Retrying selects
+remaining gaps. A profile source ID already owned by another player is a
+reconciliation conflict. Preview mode writes neither contracts, source records,
+nor run tracking; apply mode writes its run record independently of work batches.
+
 Source failures retain the last-good database state. CapWages slug guesses are
 bounded: a missing base slug is not followed by guaranteed-failing numbered
 guesses, while a same-name identity mismatch can try `-1` through `-3`. Use

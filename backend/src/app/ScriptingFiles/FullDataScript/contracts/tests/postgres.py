@@ -1,0 +1,88 @@
+"""Disposable PostgreSQL contract lifecycle scenarios."""
+
+from _thread import LockType
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from threading import Lock
+
+from app.ScriptingFiles.FullDataScript.contracts.tests.fixtures import SavedResponse
+from psycopg2.extensions import connection as PgConnection
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class HistoricalFixtureSession:
+    body: str
+    calls: list[str] = field(default_factory=list)
+    lock: LockType = field(default_factory=Lock)
+
+    def get(self, url: str, *, timeout: float) -> SavedResponse:
+        nhl_id = url.rsplit(":", 1)[-1]
+        with self.lock:
+            self.calls.append(nhl_id)
+        return SavedResponse(
+            status_code=200,
+            headers={},
+            url=url,
+            text=self.body.replace("8467514", nhl_id).replace(
+                "datsyuk-2007", f"contract-{nhl_id}"
+            ),
+        )
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ContractDatabaseScenario:
+    connection: PgConnection
+    session: HistoricalFixtureSession
+
+    def count_rows(self) -> tuple[int, int, int]:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT (SELECT count(*) FROM contracts),(SELECT count(*) FROM contract_seasons),(SELECT count(*) FROM source_records)"
+            )
+            row = cursor.fetchone()
+            assert row is not None
+            return row[0], row[1], row[2]
+
+    def latest_run(self) -> tuple[str, int, int, Mapping[str, object]]:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT status,records_created,records_read,metadata FROM ingestion_runs WHERE job_name='populate_historical_contracts' ORDER BY id DESC LIMIT 1"
+            )
+            row = cursor.fetchone()
+            assert row is not None
+            return row[0], row[1], row[2], row[3]
+
+    def install_batch_failure(self) -> None:
+        with self.connection.cursor() as cursor:
+            cursor.execute("""CREATE FUNCTION phase9_reject_late_contract() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    IF NEW.player_id=10101 THEN
+                        RAISE EXCEPTION 'late contract batch failed';
+                    END IF;
+                    RETURN NEW;
+                END $$""")
+            cursor.execute(
+                "CREATE TRIGGER phase9_late_contract BEFORE INSERT ON contracts FOR EACH ROW EXECUTE FUNCTION phase9_reject_late_contract()"
+            )
+        self.connection.commit()
+
+    def remove_batch_failure(self) -> None:
+        with self.connection.cursor() as cursor:
+            cursor.execute("DROP TRIGGER IF EXISTS phase9_late_contract ON contracts")
+            cursor.execute("DROP FUNCTION IF EXISTS phase9_reject_late_contract()")
+        self.connection.commit()
+
+
+def seed_contract_batch(connection: PgConnection) -> None:
+    with connection.cursor() as cursor:
+        cursor.execute("TRUNCATE teams,players,ingestion_runs RESTART IDENTITY CASCADE")
+        cursor.execute(
+            "INSERT INTO teams(id,abbreviation,name) VALUES (900,'DET','Detroit Red Wings')"
+        )
+        cursor.execute("""INSERT INTO players(id,first_name,last_name,primary_position)
+            SELECT 10000+n,'Fixture','Player ' || n,'C' FROM generate_series(1,101) n""")
+        cursor.execute("""INSERT INTO player_external_ids(player_id,source_id,external_id)
+            SELECT 10000+n,ds.id,(8100000+n)::text FROM generate_series(1,101) n CROSS JOIN data_sources ds WHERE ds.code='nhl'""")
+        cursor.execute("""INSERT INTO skater_season_stats(player_id,season_start_year,team_id,stat_scope,game_type,source_id,games_played)
+            SELECT 10000+n,y,900,'TEAM',2,ds.id,1 FROM generate_series(1,101) n CROSS JOIN generate_series(2008,2009) y CROSS JOIN data_sources ds WHERE ds.code='nhl'""")
+    connection.commit()

@@ -1,15 +1,24 @@
 """Conservative CapWages identity matching for current and legacy pages."""
 
 import re
+from dataclasses import dataclass
 
-from app.ScriptingFiles.FullDataScript.contracts.domain import Candidate
-from app.ScriptingFiles.FullDataScript.contracts.errors import CapSpaceParseError
+from app.ScriptingFiles.FullDataScript.contracts.domain import (
+    Candidate,
+    ParsedContract,
+    StoredContract,
+)
+from app.ScriptingFiles.FullDataScript.contracts.errors import (
+    CapSpaceParseError,
+    ContractConflictError,
+    ReconciliationFailure,
+)
+from app.ScriptingFiles.FullDataScript.contracts.schemas import SourceDocument
 from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
     embedded_nhl_id,
     mapping_rows,
     page_player,
 )
-from app.ScriptingFiles.FullDataScript.contracts.schemas import SourceDocument
 from app.ScriptingFiles.FullDataScript.contracts.util import clean_text
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import slug_from_name
 
@@ -57,3 +66,48 @@ def nhl_stat_season(row: dict[str, object]) -> int | None:
     if found is None or not games.isdigit() or int(games) <= 0:
         return None
     return int(found.group(1))
+
+
+def contracts_compatible(
+    existing: StoredContract, incoming: ParsedContract, team_id: int | None
+) -> bool:
+    if (
+        existing.signing_team_id is not None
+        and team_id is not None
+        and existing.signing_team_id != team_id
+    ):
+        return False
+    if (
+        existing.total_value_cents is not None
+        and incoming.total_value_cents is not None
+        and existing.total_value_cents != incoming.total_value_cents
+    ):
+        return False
+    return True
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ContractReconciliationPolicy:
+    player_id: int
+    incoming: ParsedContract
+    signing_team_id: int | None
+
+    def find_violation(
+        self, matches: tuple[StoredContract, ...]
+    ) -> ContractConflictError | None:
+        if len(matches) > 1:
+            return ContractConflictError(
+                player_id=self.player_id, reason=ReconciliationFailure.AMBIGUOUS
+            )
+        if len(matches) == 0:
+            return None
+        existing = matches[0]
+        if existing.player_id != self.player_id:
+            return ContractConflictError(
+                player_id=self.player_id, reason=ReconciliationFailure.FOREIGN_PLAYER
+            )
+        if not contracts_compatible(existing, self.incoming, self.signing_team_id):
+            return ContractConflictError(
+                player_id=self.player_id, reason=ReconciliationFailure.INCOMPATIBLE
+            )
+        return None
