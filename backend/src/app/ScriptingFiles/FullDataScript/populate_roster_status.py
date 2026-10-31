@@ -1,13 +1,13 @@
 """Populate player roster statuses from the free NHL/AHL roster feeds.
 
-Usage from the backend directory:
-    python -m app.ScriptingFiles.FullDataScript.populate_roster_status
+Usage from the repository root:
+    uv run python -m app.ScriptingFiles.FullDataScript.populate_roster_status
 """
 
-from __future__ import annotations
-
 from dataclasses import asdict
+from datetime import date
 import logging
+import os
 
 from app.database import database_transaction, init_db
 from app.ScriptingFiles.FullDataScript.roster_status.ahl_roster_service import (
@@ -16,33 +16,53 @@ from app.ScriptingFiles.FullDataScript.roster_status.ahl_roster_service import (
 from app.ScriptingFiles.FullDataScript.roster_status.nhl_roster_service import (
     NhlRosterService,
 )
-from app.ScriptingFiles.FullDataScript.roster_status.roster_repository import (
+from app.ScriptingFiles.FullDataScript.roster_status.repository import (
     PostgresRosterRepository,
 )
-from app.ScriptingFiles.FullDataScript.roster_status.roster_status_service import (
+from app.ScriptingFiles.FullDataScript.roster_status.services import (
     RosterStatusService,
+    RosterFeed,
 )
 from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingestion
+from app.ScriptingFiles.FullDataScript.roster_status.domain import AhlFeedOptions
+from app.ScriptingFiles.FullDataScript.roster_status.errors import (
+    IncompleteRosterFeedError,
+)
+from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import (
+    JsonHttpClient,
+)
 
 
 LOGGER = logging.getLogger(__name__)
 
 
-class IncompleteRosterFeedError(RuntimeError):
-    pass
-
-
 @tracked_ingestion("nhl", "populate_roster_status")
-def sync_roster_status() -> dict[str, object]:
+def sync_roster_status(
+    *,
+    nhl_service: RosterFeed | None = None,
+    ahl_service: RosterFeed | None = None,
+    as_of: date | None = None,
+) -> dict[str, object]:
+    nhl_service = (
+        NhlRosterService(http_client=JsonHttpClient())
+        if nhl_service is None
+        else nhl_service
+    )
+    if ahl_service is None:
+        options = AhlFeedOptions(
+            feed_key=os.environ.get("AHL_FEED_KEY", AhlFeedOptions().feed_key),
+            season_id=os.environ.get("AHL_SEASON_ID"),
+        )
+        ahl_service = AhlRosterService(http_client=JsonHttpClient(), options=options)
     with database_transaction() as connection:
         service = RosterStatusService(
-            repository=PostgresRosterRepository(connection),
-            nhl_service=NhlRosterService(),
-            ahl_service=AhlRosterService(),
+            repository=PostgresRosterRepository(connection=connection),
+            nhl_service=nhl_service,
+            ahl_service=ahl_service,
         )
-        summary = service.sync()
-        if summary.errors:
-            raise IncompleteRosterFeedError("; ".join(summary.errors))
+        summary = service.sync(as_of)
+        if not summary.nhl_complete or not summary.ahl_complete:
+            raise IncompleteRosterFeedError(errors=summary.errors)
         result = asdict(summary)
         result.update(
             {
