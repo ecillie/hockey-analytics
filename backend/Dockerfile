@@ -6,8 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt constraints.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt ./
+COPY --from=ghcr.io/astral-sh/uv:0.13.1 /uv /usr/local/bin/uv
+RUN uv pip install --system --no-cache -r requirements.txt
 
 COPY app ./app
 COPY database ./database
