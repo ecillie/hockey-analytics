@@ -22,7 +22,9 @@ from app.ScriptingFiles.FullDataScript.team_stints import (
 
 def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--apply", action="store_true", help="commit the repair; default is a dry run")
+    parser.add_argument(
+        "--apply", action="store_true", help="commit the repair; default is a dry run"
+    )
     parser.add_argument("--first-season", type=int)
     parser.add_argument("--last-season", type=int)
     return parser.parse_args()

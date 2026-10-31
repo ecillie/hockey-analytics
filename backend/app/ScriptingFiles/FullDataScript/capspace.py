@@ -196,20 +196,24 @@ def _date_value(value: Any) -> date | None:
                 return date(*parts)
             except ValueError as exc:
                 raise CapSpaceParseError(f"malformed signing date: {value!r}") from exc
-    month_match = re.fullmatch(
-        r"([A-Za-z]{3,9})\.?\s+(\d{1,2}),\s*(\d{4})", text
-    )
+    month_match = re.fullmatch(r"([A-Za-z]{3,9})\.?\s+(\d{1,2}),\s*(\d{4})", text)
     if month_match:
         month_names = {
             name: index
             for index, names in enumerate(
                 (
                     (),
-                    ("jan", "january"), ("feb", "february"),
-                    ("mar", "march"), ("apr", "april"), ("may",),
-                    ("jun", "june"), ("jul", "july"),
-                    ("aug", "august"), ("sep", "sept", "september"),
-                    ("oct", "october"), ("nov", "november"),
+                    ("jan", "january"),
+                    ("feb", "february"),
+                    ("mar", "march"),
+                    ("apr", "april"),
+                    ("may",),
+                    ("jun", "june"),
+                    ("jul", "july"),
+                    ("aug", "august"),
+                    ("sep", "sept", "september"),
+                    ("oct", "october"),
+                    ("nov", "november"),
                     ("dec", "december"),
                 )
             )
@@ -239,14 +243,24 @@ def _contract_type(value: Any) -> str | None:
 
 
 class _Node:
-    def __init__(self, tag: str = "root", attrs: dict[str, str] | None = None, parent: _Node | None = None):
+    def __init__(
+        self,
+        tag: str = "root",
+        attrs: dict[str, str] | None = None,
+        parent: _Node | None = None,
+    ):
         self.tag = tag
         self.attrs = attrs or {}
         self.parent = parent
         self.children: list[_Node | str] = []
 
     def text(self) -> str:
-        return _clean_text(" ".join(child if isinstance(child, str) else child.text() for child in self.children))
+        return _clean_text(
+            " ".join(
+                child if isinstance(child, str) else child.text()
+                for child in self.children
+            )
+        )
 
 
 class _TreeParser(HTMLParser):
@@ -256,7 +270,11 @@ class _TreeParser(HTMLParser):
         self.current = self.root
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        node = _Node(tag.lower(), {key.lower(): value or "" for key, value in attrs}, self.current)
+        node = _Node(
+            tag.lower(),
+            {key.lower(): value or "" for key, value in attrs},
+            self.current,
+        )
         self.current.children.append(node)
         if tag.lower() not in {"meta", "link", "img", "input", "br", "hr"}:
             self.current = node
@@ -334,7 +352,9 @@ def _is_entry_level(value: Any) -> bool:
 
 
 def _season_from_mapping(row: dict[str, Any]) -> ContractSeason:
-    normalized = {re.sub(r"[^a-z]", "", str(key).lower()): value for key, value in row.items()}
+    normalized = {
+        re.sub(r"[^a-z]", "", str(key).lower()): value for key, value in row.items()
+    }
     season = season_start_year(normalized.get("season"))
     cap_hit = money_to_cents(normalized.get("caphit", normalized.get("caphitcents")))
     if cap_hit is None:
@@ -357,9 +377,12 @@ def _season_from_mapping(row: dict[str, Any]) -> ContractSeason:
                 ),
             )
         ),
-        minors_salary_cents=money_to_cents(normalized.get("minor salary", normalized.get("minorssalary"))),
+        minors_salary_cents=money_to_cents(
+            normalized.get("minor salary", normalized.get("minorssalary"))
+        ),
         clause=_clean_text(normalized.get("clause")) or None,
-        owning_team=_clean_text(normalized.get("owningteam", normalized.get("team"))) or None,
+        owning_team=_clean_text(normalized.get("owningteam", normalized.get("team")))
+        or None,
         is_slide=is_slide,
         source_payload=dict(row),
     )
@@ -387,22 +410,39 @@ def _contracts_from_json(payload: dict[str, Any]) -> list[ParsedContract]:
         try:
             raw_start = min(row.season_start_year for row in seasons)
             raw_end = max(row.season_start_year for row in seasons)
-            term = int(raw.get("term") or raw.get("termYears") or raw.get("seasonsCount") or len(seasons))
-            if term <= 0 or raw_end < raw_start or len({row.season_start_year for row in seasons}) != len(seasons):
+            term = int(
+                raw.get("term")
+                or raw.get("termYears")
+                or raw.get("seasonsCount")
+                or len(seasons)
+            )
+            if (
+                term <= 0
+                or raw_end < raw_start
+                or len({row.season_start_year for row in seasons}) != len(seasons)
+            ):
                 continue
             parsed.append(
                 ParsedContract(
-                    contract_type=_contract_type(raw.get("type") or raw.get("contractType")),
+                    contract_type=_contract_type(
+                        raw.get("type") or raw.get("contractType")
+                    ),
                     is_entry_level=_is_entry_level(
                         raw.get("type") or raw.get("contractType")
                     ),
-                    total_value_cents=money_to_cents(raw.get("value") or raw.get("totalValue")),
+                    total_value_cents=money_to_cents(
+                        raw.get("value") or raw.get("totalValue")
+                    ),
                     term_years=term,
-                    signed_on=_date_value(raw.get("signingDate") or raw.get("signed_on")),
-                    signing_team=_clean_text(raw.get("signingTeam") or raw.get("team")) or None,
+                    signed_on=_date_value(
+                        raw.get("signingDate") or raw.get("signed_on")
+                    ),
+                    signing_team=_clean_text(raw.get("signingTeam") or raw.get("team"))
+                    or None,
                     expiry_status=_expiry(raw.get("expiryStatus") or raw.get("expiry")),
                     seasons=tuple(seasons),
-                    external_id=_clean_text(raw.get("id") or raw.get("contractId")) or None,
+                    external_id=_clean_text(raw.get("id") or raw.get("contractId"))
+                    or None,
                     source_payload=raw,
                 )
             )
@@ -417,20 +457,24 @@ def _table_rows(block: _Node) -> list[dict[str, str]]:
         rows = _descendants(table, "tr")
         for header_index, row in enumerate(rows):
             header_cells = [
-                node for node in row.children
+                node
+                for node in row.children
                 if isinstance(node, _Node) and node.tag in {"th", "td"}
             ]
             if not header_cells:
                 continue
-            headers = [re.sub(r"[^a-z]", "", cell.text().lower()) for cell in header_cells]
+            headers = [
+                re.sub(r"[^a-z]", "", cell.text().lower()) for cell in header_cells
+            ]
             # CapSpace currently renders the season-table header as <td>, and
             # places contract metadata in a separate table before it.
             if "season" not in headers or "caphit" not in headers:
                 continue
             parsed: list[dict[str, str]] = []
-            for data_row in rows[header_index + 1:]:
+            for data_row in rows[header_index + 1 :]:
                 cells = [
-                    node for node in data_row.children
+                    node
+                    for node in data_row.children
                     if isinstance(node, _Node) and node.tag in {"th", "td"}
                 ]
                 if not cells:
@@ -468,9 +512,21 @@ def _document_contracts(document: _SourceDocument) -> list[ParsedContract]:
     for node in _descendants(document.root):
         text = node.text()
         classes = _classes(node)
-        if (node.tag == "article" or "contract" in classes or "contract-block" in classes) and "Total Value" in text and _descendants(node, "table"):
+        if (
+            (
+                node.tag == "article"
+                or "contract" in classes
+                or "contract-block" in classes
+            )
+            and "Total Value" in text
+            and _descendants(node, "table")
+        ):
             candidates.append(node)
-    blocks = [node for node in candidates if not any(parent in candidates for parent in _parents(node))]
+    blocks = [
+        node
+        for node in candidates
+        if not any(parent in candidates for parent in _parents(node))
+    ]
     result: list[ParsedContract] = []
     for block in blocks:
         text = block.text()
@@ -483,13 +539,25 @@ def _document_contracts(document: _SourceDocument) -> list[ParsedContract]:
                 continue
         if not seasons:
             continue
-        value_match = re.search(r"Total Value\s*:\s*(\$?[0-9][0-9,]*(?:\.[0-9]+)?)", text, re.I)
+        value_match = re.search(
+            r"Total Value\s*:\s*(\$?[0-9][0-9,]*(?:\.[0-9]+)?)", text, re.I
+        )
         term_match = re.search(r"Seasons?\s*:\s*(\d+)", text, re.I)
-        date_match = re.search(r"Signing Date\s*:\s*(\d{4}-\d{1,2}-\d{1,2})", text, re.I)
+        date_match = re.search(
+            r"Signing Date\s*:\s*(\d{4}-\d{1,2}-\d{1,2})", text, re.I
+        )
         expiry_match = re.search(r"Expiration Status\s*:\s*(RFA|UFA)", text, re.I)
-        team_match = re.search(r"Signing Team\s*:\s*(.+?)(?=\s*\|?\s*Season\s+|\s*Cap Hit\b|$)", text, re.I)
-        headings = [_clean_text(node.text()) for node in _descendants(block) if node.tag in {"h2", "h3", "h4"}]
-        contract_type = next((heading for heading in headings if "contract" in heading.lower()), None)
+        team_match = re.search(
+            r"Signing Team\s*:\s*(.+?)(?=\s*\|?\s*Season\s+|\s*Cap Hit\b|$)", text, re.I
+        )
+        headings = [
+            _clean_text(node.text())
+            for node in _descendants(block)
+            if node.tag in {"h2", "h3", "h4"}
+        ]
+        contract_type = next(
+            (heading for heading in headings if "contract" in heading.lower()), None
+        )
         parsed_type = _contract_type(contract_type)
         signed_on = None
         if date_match:
@@ -510,10 +578,14 @@ def _document_contracts(document: _SourceDocument) -> list[ParsedContract]:
                 total_value_cents=total_value,
                 term_years=int(term_match.group(1)) if term_match else len(seasons),
                 signed_on=signed_on,
-                signing_team=_clean_text(team_match.group(1)) or None if team_match else None,
+                signing_team=_clean_text(team_match.group(1)) or None
+                if team_match
+                else None,
                 expiry_status=_expiry(expiry_match.group(1)) if expiry_match else None,
                 seasons=tuple(seasons),
-                external_id=block.attrs.get("data-contract-id") or block.attrs.get("data-external-id") or None,
+                external_id=block.attrs.get("data-contract-id")
+                or block.attrs.get("data-external-id")
+                or None,
                 source_payload={"text": text, "rows": rows},
             )
         )
@@ -547,7 +619,9 @@ def _parse_contract_document(
             return ()
         raise CapSpaceParseError("CapSpace contract markup was not recognised")
     for contract in contracts:
-        if contract.term_years <= 0 or len({row.season_start_year for row in contract.seasons}) != len(contract.seasons):
+        if contract.term_years <= 0 or len(
+            {row.season_start_year for row in contract.seasons}
+        ) != len(contract.seasons):
             raise CapSpaceParseError("duplicate or invalid contract seasons")
     return tuple(contracts)
 
@@ -577,7 +651,9 @@ def normalize_contracts(
     for index, contract in enumerate(contracts):
         first = min(row.season_start_year for row in contract.seasons)
         last = max(row.season_start_year for row in contract.seasons)
-        external_id = contract.external_id or f"{source_code}:{nhl_id}:{first}:{last}:{index}"
+        external_id = (
+            contract.external_id or f"{source_code}:{nhl_id}:{first}:{last}:{index}"
+        )
         normalized.append(replace(contract, external_id=external_id))
     return tuple(normalized)
 
@@ -626,7 +702,9 @@ def select_candidates(
         params,
     )
     return [
-        Candidate(int(row[0]), row[1], row[2], str(row[3]) if row[3] else None, tuple(row[4]))
+        Candidate(
+            int(row[0]), row[1], row[2], str(row[3]) if row[3] else None, tuple(row[4])
+        )
         for row in cursor.fetchall()
     ]
 
@@ -675,10 +753,7 @@ def _player_stint_teams(cursor, player_id: int) -> dict[int, tuple[int, ...]]:
     teams_by_season: dict[int, list[int]] = {}
     for season, team_id in cursor.fetchall():
         teams_by_season.setdefault(int(season), []).append(int(team_id))
-    return {
-        season: tuple(team_ids)
-        for season, team_ids in teams_by_season.items()
-    }
+    return {season: tuple(team_ids) for season, team_ids in teams_by_season.items()}
 
 
 def _resolve_team_id(
@@ -694,7 +769,9 @@ def _resolve_team_id(
     return teams[0] if len(teams) == 1 else None
 
 
-def _compatible(existing: tuple[Any, ...], incoming: ParsedContract, team_id: int | None) -> bool:
+def _compatible(
+    existing: tuple[Any, ...], incoming: ParsedContract, team_id: int | None
+) -> bool:
     _, existing_team, _, _, _, _, _, _, total_value, _, _ = existing
     if existing_team and team_id and existing_team != team_id:
         return False
@@ -935,9 +1012,7 @@ def _persist_contracts(
             continue
         start = min(row.season_start_year for row in seasons)
         end = max(row.season_start_year for row in seasons)
-        signing_team_id = team_lookup.get(
-            _clean_text(contract.signing_team).casefold()
-        )
+        signing_team_id = team_lookup.get(_clean_text(contract.signing_team).casefold())
         resolved = _resolve_contract(
             cursor,
             player_id=player_id,
@@ -956,8 +1031,7 @@ def _persist_contracts(
         existing_seasons = resolved.existing_seasons
         if preview:
             summary["contract_seasons_updated"] += sum(
-                row.season_start_year in existing_seasons
-                for row in seasons_to_write
+                row.season_start_year in existing_seasons for row in seasons_to_write
             )
             summary["contract_seasons_created"] += sum(
                 row.season_start_year not in existing_seasons
@@ -972,7 +1046,11 @@ def _persist_contracts(
                 row.owning_team,
             )
             base = row.base_salary_cents
-            total_cash = base + row.signing_bonus_cents if base is not None and row.signing_bonus_cents is not None else base
+            total_cash = (
+                base + row.signing_bonus_cents
+                if base is not None and row.signing_bonus_cents is not None
+                else base
+            )
             cap = season_caps[row.season_start_year]
             cap_pct = Decimal(row.cap_hit_cents) / Decimal(cap) if cap else None
             existing_season = existing_seasons.get(row.season_start_year)
@@ -981,31 +1059,98 @@ def _persist_contracts(
                 if existing_cap_hit != row.cap_hit_cents:
                     summary["reconciliation_conflicts"] += 1
                     continue
-                cursor.execute("""UPDATE contract_seasons SET owning_team_id=COALESCE(owning_team_id,%s), base_salary_cents=COALESCE(base_salary_cents,%s), signing_bonus_cents=COALESCE(signing_bonus_cents,%s), performance_bonus_cents=COALESCE(performance_bonus_cents,%s), total_cash_cents=COALESCE(total_cash_cents,%s), cap_percentage=COALESCE(cap_percentage,%s), clauses=CASE WHEN clauses='{}'::jsonb THEN %s ELSE clauses END, is_slide=is_slide OR %s, updated_at=CURRENT_TIMESTAMP WHERE id=%s""", (owning_team_id, base, row.signing_bonus_cents, row.performance_bonus_cents, total_cash, cap_pct, Json({"clause": row.clause, "minors_salary_cents": row.minors_salary_cents, "source": source_code}), row.is_slide, existing_season_id))
+                cursor.execute(
+                    """UPDATE contract_seasons SET owning_team_id=COALESCE(owning_team_id,%s), base_salary_cents=COALESCE(base_salary_cents,%s), signing_bonus_cents=COALESCE(signing_bonus_cents,%s), performance_bonus_cents=COALESCE(performance_bonus_cents,%s), total_cash_cents=COALESCE(total_cash_cents,%s), cap_percentage=COALESCE(cap_percentage,%s), clauses=CASE WHEN clauses='{}'::jsonb THEN %s ELSE clauses END, is_slide=is_slide OR %s, updated_at=CURRENT_TIMESTAMP WHERE id=%s""",
+                    (
+                        owning_team_id,
+                        base,
+                        row.signing_bonus_cents,
+                        row.performance_bonus_cents,
+                        total_cash,
+                        cap_pct,
+                        Json(
+                            {
+                                "clause": row.clause,
+                                "minors_salary_cents": row.minors_salary_cents,
+                                "source": source_code,
+                            }
+                        ),
+                        row.is_slide,
+                        existing_season_id,
+                    ),
+                )
                 summary["contract_seasons_updated"] += 1
             else:
-                pending_seasons.append((contract_id, row.season_start_year, owning_team_id, base, row.signing_bonus_cents, row.performance_bonus_cents, total_cash, row.cap_hit_cents, cap_pct, row.is_slide, Json({"clause": row.clause, "minors_salary_cents": row.minors_salary_cents, "source": source_code})))
+                pending_seasons.append(
+                    (
+                        contract_id,
+                        row.season_start_year,
+                        owning_team_id,
+                        base,
+                        row.signing_bonus_cents,
+                        row.performance_bonus_cents,
+                        total_cash,
+                        row.cap_hit_cents,
+                        cap_pct,
+                        row.is_slide,
+                        Json(
+                            {
+                                "clause": row.clause,
+                                "minors_salary_cents": row.minors_salary_cents,
+                                "source": source_code,
+                            }
+                        ),
+                    )
+                )
     if pending_seasons:
-        execute_values(cursor, """INSERT INTO contract_seasons (contract_id,season_start_year,owning_team_id,base_salary_cents,signing_bonus_cents,performance_bonus_cents,total_cash_cents,cap_hit_cents,cap_percentage,is_slide,clauses)
-            VALUES %s""", pending_seasons, page_size=500)
+        execute_values(
+            cursor,
+            """INSERT INTO contract_seasons (contract_id,season_start_year,owning_team_id,base_salary_cents,signing_bonus_cents,performance_bonus_cents,total_cash_cents,cap_hit_cents,cap_percentage,is_slide,clauses)
+            VALUES %s""",
+            pending_seasons,
+            page_size=500,
+        )
         summary["contract_seasons_created"] += len(pending_seasons)
 
 
-def _source_record_values(source_id: int, source_code: str, candidate: Candidate, payload: dict[str, Any]) -> tuple[Any, ...]:
+def _source_record_values(
+    source_id: int, source_code: str, candidate: Candidate, payload: dict[str, Any]
+) -> tuple[Any, ...]:
     encoded = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
     safe_payload = json.loads(encoded)
-    return (source_id, f"{source_code}_player_profile", candidate.nhl_id or str(candidate.player_id), hashlib.sha256(encoded.encode()).hexdigest(), Json(safe_payload))
+    return (
+        source_id,
+        f"{source_code}_player_profile",
+        candidate.nhl_id or str(candidate.player_id),
+        hashlib.sha256(encoded.encode()).hexdigest(),
+        Json(safe_payload),
+    )
 
 
-def _source_records_bulk(cursor, source_id: int, source_code: str, records: Iterable[tuple[Candidate, dict[str, Any]]]) -> None:
-    values = [_source_record_values(source_id, source_code, candidate, payload) for candidate, payload in records]
+def _source_records_bulk(
+    cursor,
+    source_id: int,
+    source_code: str,
+    records: Iterable[tuple[Candidate, dict[str, Any]]],
+) -> None:
+    values = [
+        _source_record_values(source_id, source_code, candidate, payload)
+        for candidate, payload in records
+    ]
     if not values:
         return
-    execute_values(cursor, """INSERT INTO source_records (source_id,entity_type,external_key,payload_hash,payload)
-        VALUES %s ON CONFLICT (source_id,entity_type,external_key,payload_hash) DO NOTHING""", values, page_size=500)
+    execute_values(
+        cursor,
+        """INSERT INTO source_records (source_id,entity_type,external_key,payload_hash,payload)
+        VALUES %s ON CONFLICT (source_id,entity_type,external_key,payload_hash) DO NOTHING""",
+        values,
+        page_size=500,
+    )
 
 
-def _fetch_profile(session: requests.Session, candidate: Candidate, *, max_attempts: int = 4) -> ProfileResult:
+def _fetch_profile(
+    session: requests.Session, candidate: Candidate, *, max_attempts: int = 4
+) -> ProfileResult:
     if not candidate.nhl_id:
         return ProfileResult(candidate, "", STATUS_NO_NHL_ID)
     url = f"{CAPSPACE_BASE_URL}/person/nhl:{candidate.nhl_id}"
@@ -1090,9 +1235,7 @@ def _capwages_document_matches(
         player = _page_player(payload)
         if player.get("nhlId") is not None:
             return str(player["nhlId"]) == str(candidate.nhl_id)
-        expected_slug = _slug_from_name(
-            f"{candidate.first_name} {candidate.last_name}"
-        )
+        expected_slug = _slug_from_name(f"{candidate.first_name} {candidate.last_name}")
         page_slug = _clean_text(player.get("slug")).lower()
         page_name_slug = _slug_from_name(_clean_text(player.get("name")))
         url_slug = url.rstrip("/").rsplit("/", 1)[-1].lower()
@@ -1100,12 +1243,17 @@ def _capwages_document_matches(
             not expected_slug
             or page_name_slug != expected_slug
             or page_slug != url_slug
-            or not (url_slug == expected_slug or url_slug.startswith(f"{expected_slug}-"))
+            or not (
+                url_slug == expected_slug or url_slug.startswith(f"{expected_slug}-")
+            )
         ):
             return False
         stats_seasons = set()
         for row in player.get("stats") or []:
-            if not isinstance(row, dict) or _clean_text(row.get("league")).upper() != "NHL":
+            if (
+                not isinstance(row, dict)
+                or _clean_text(row.get("league")).upper() != "NHL"
+            ):
                 continue
             match = re.match(
                 r"(\d{4})",
@@ -1253,12 +1401,21 @@ def _candidate_snapshot(**kwargs: Any) -> tuple[list[Candidate], dict[str, Any]]
         cursor = connection.cursor()
         candidates = select_candidates(cursor, **kwargs)
         cursor.close()
-    return candidates, {"candidate_player_seasons": sum(len(item.missing_seasons) for item in candidates), "candidate_players": len(candidates)}
+    return candidates, {
+        "candidate_player_seasons": sum(
+            len(item.missing_seasons) for item in candidates
+        ),
+        "candidate_players": len(candidates),
+    }
 
 
-def _fetch_profiles(session: requests.Session, candidates: list[Candidate], workers: int) -> list[ProfileResult]:
+def _fetch_profiles(
+    session: requests.Session, candidates: list[Candidate], workers: int
+) -> list[ProfileResult]:
     results: list[ProfileResult] = []
-    with ThreadPoolExecutor(max_workers=min(workers, max(1, len(candidates)))) as executor:
+    with ThreadPoolExecutor(
+        max_workers=min(workers, max(1, len(candidates)))
+    ) as executor:
         futures = {
             executor.submit(_fetch_profile_with_fallback, session, candidate): candidate
             for candidate in candidates
@@ -1356,9 +1513,7 @@ def _persist_batch(
             result for result in results if result.status == STATUS_SUCCEEDED
         ]
         if successful_results:
-            context = _load_persistence_context(
-                cursor, first_season, last_season
-            )
+            context = _load_persistence_context(cursor, first_season, last_season)
             _persist_successful_results(
                 cursor,
                 successful_results,
@@ -1393,8 +1548,7 @@ def _profile_metrics(results: Iterable[ProfileResult]) -> Counter[str]:
                 result.status == STATUS_NO_CONTRACTS for result in materialized
             ),
             "profiles_no_matching_contracts": sum(
-                result.status == STATUS_NO_MATCHING_CONTRACTS
-                for result in materialized
+                result.status == STATUS_NO_MATCHING_CONTRACTS for result in materialized
             ),
             "capspace_profiles_succeeded": sum(
                 result.status == STATUS_SUCCEEDED
@@ -1410,16 +1564,12 @@ def _profile_metrics(results: Iterable[ProfileResult]) -> Counter[str]:
                 result.fallback_attempted for result in materialized
             ),
             "capwages_fallbacks_failed": sum(
-                result.fallback_status in FAILURE_STATUSES
-                for result in materialized
+                result.fallback_status in FAILURE_STATUSES for result in materialized
             ),
             "capwages_fallbacks_not_found": sum(
-                result.fallback_status == STATUS_NOT_FOUND
-                for result in materialized
+                result.fallback_status == STATUS_NOT_FOUND for result in materialized
             ),
-            "contracts_parsed": sum(
-                len(result.contracts) for result in materialized
-            ),
+            "contracts_parsed": sum(len(result.contracts) for result in materialized),
         }
     )
 
@@ -1460,12 +1610,8 @@ def _run(
     )
     summary.update(
         {
-            "players_without_nhl_ids": sum(
-                item.nhl_id is None for item in candidates
-            ),
-            "profiles_requested": sum(
-                item.nhl_id is not None for item in candidates
-            ),
+            "players_without_nhl_ids": sum(item.nhl_id is None for item in candidates),
+            "profiles_requested": sum(item.nhl_id is not None for item in candidates),
         }
     )
     if not candidates:
@@ -1480,7 +1626,7 @@ def _run(
     aggregate = Counter()
     total_results = 0
     for offset in range(0, len(candidates), batch_size):
-        batch = candidates[offset:offset + batch_size]
+        batch = candidates[offset : offset + batch_size]
         results = _fetch_profiles(session, batch, workers)
         total_results += len(results)
         aggregate.update(_profile_metrics(results))
@@ -1507,13 +1653,15 @@ def _run(
         )
         summary["records_skipped"] = _unprocessed_count(summary)
         return summary
-    summary["records_read"] = summary["candidate_player_seasons"] + summary["contracts_parsed"]
-    summary["records_created"] = summary.get(
-        "contracts_created", 0
-    ) + summary.get("contract_seasons_created", 0)
-    summary["records_updated"] = summary.get(
-        "contracts_matched", 0
-    ) + summary.get("contract_seasons_updated", 0)
+    summary["records_read"] = (
+        summary["candidate_player_seasons"] + summary["contracts_parsed"]
+    )
+    summary["records_created"] = summary.get("contracts_created", 0) + summary.get(
+        "contract_seasons_created", 0
+    )
+    summary["records_updated"] = summary.get("contracts_matched", 0) + summary.get(
+        "contract_seasons_updated", 0
+    )
     summary["records_skipped"] = _unprocessed_count(summary)
     with database_transaction() as connection:
         cursor = connection.cursor()
@@ -1544,10 +1692,17 @@ def _coverage_counts(cursor, first_season: int, last_season: int) -> dict[str, A
         (first_season, last_season, first_season, last_season),
     )
     total, covered = cursor.fetchone()
-    return {"total_player_seasons": total, "covered_player_seasons": covered, "missing_player_seasons": total - covered, "coverage_pct": round(covered * 100 / total, 2) if total else None}
+    return {
+        "total_player_seasons": total,
+        "covered_player_seasons": covered,
+        "missing_player_seasons": total - covered,
+        "coverage_pct": round(covered * 100 / total, 2) if total else None,
+    }
 
 
-def coverage_report(*, first_season: int = DEFAULT_FIRST_SEASON, last_season: int = DEFAULT_LAST_SEASON) -> dict[str, Any]:
+def coverage_report(
+    *, first_season: int = DEFAULT_FIRST_SEASON, last_season: int = DEFAULT_LAST_SEASON
+) -> dict[str, Any]:
     with database_transaction() as connection:
         cursor = connection.cursor()
         report = _coverage_counts(cursor, first_season, last_season)
@@ -1572,7 +1727,10 @@ def coverage_report(*, first_season: int = DEFAULT_FIRST_SEASON, last_season: in
                  ORDER BY count(*) DESC,p.id""",
             range_params,
         )
-        report["missing_by_player"] = [{"player_id": row[0], "player": row[1], "count": row[2]} for row in cursor.fetchall()]
+        report["missing_by_player"] = [
+            {"player_id": row[0], "player": row[1], "count": row[2]}
+            for row in cursor.fetchall()
+        ]
         cursor.execute("""SELECT ds.code,payload->>'status',count(*)
             FROM source_records sr JOIN data_sources ds ON ds.id=sr.source_id
             WHERE (ds.code='capspace' AND sr.entity_type='capspace_player_profile')
@@ -1587,17 +1745,29 @@ def coverage_report(*, first_season: int = DEFAULT_FIRST_SEASON, last_season: in
 
 
 @tracked_ingestion(CAPSPACE_SOURCE, "populate_historical_contracts")
-def ingest_historical_contracts(session: requests.Session, **kwargs: Any) -> dict[str, Any]:
+def ingest_historical_contracts(
+    session: requests.Session, **kwargs: Any
+) -> dict[str, Any]:
     return _run(session, dry_run=False, **kwargs)
 
 
-def preview_historical_contracts(session: requests.Session, **kwargs: Any) -> dict[str, Any]:
+def preview_historical_contracts(
+    session: requests.Session, **kwargs: Any
+) -> dict[str, Any]:
     return _run(session, dry_run=True, **kwargs)
 
 
 def existing_historical_contract_summary() -> dict[str, Any]:
     report = coverage_report()
-    report.update({"cached": 1, "records_read": report["total_player_seasons"], "records_created": 0, "records_updated": 0, "records_skipped": 0})
+    report.update(
+        {
+            "cached": 1,
+            "records_read": report["total_player_seasons"],
+            "records_created": 0,
+            "records_updated": 0,
+            "records_skipped": 0,
+        }
+    )
     return report
 
 
@@ -1606,25 +1776,60 @@ def main() -> int:
         description="Gap-fill historical NHL contracts from CapSpace and CapWages"
     )
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--dry-run", action="store_true", help="preview without contract/source-record mutations")
+    mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="preview without contract/source-record mutations",
+    )
     mode.add_argument("--apply", action="store_true", help="persist the backfill")
-    mode.add_argument("--coverage", action="store_true", help="print current historical contract coverage and exit")
+    mode.add_argument(
+        "--coverage",
+        action="store_true",
+        help="print current historical contract coverage and exit",
+    )
     parser.add_argument("--nhl-id")
     parser.add_argument("--player-id", type=int)
     parser.add_argument("--first-season", type=int, default=DEFAULT_FIRST_SEASON)
     parser.add_argument("--last-season", type=int, default=DEFAULT_LAST_SEASON)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help=f"players fetched and committed per batch (1-{MAX_BATCH_SIZE})")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help=f"players fetched and committed per batch (1-{MAX_BATCH_SIZE})",
+    )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
     init_db()
     if args.coverage:
-        print(json.dumps(coverage_report(first_season=args.first_season, last_season=args.last_season), indent=2, sort_keys=True, default=str))
+        print(
+            json.dumps(
+                coverage_report(
+                    first_season=args.first_season, last_season=args.last_season
+                ),
+                indent=2,
+                sort_keys=True,
+                default=str,
+            )
+        )
         return 0
     session = http_session()
-    options = {"first_season": args.first_season, "last_season": args.last_season, "limit": args.limit, "workers": args.workers, "batch_size": args.batch_size, "player_id": args.player_id, "nhl_id": args.nhl_id, "force": args.force}
-    summary = ingest_historical_contracts(session, **options) if args.apply else preview_historical_contracts(session, **options)
+    options = {
+        "first_season": args.first_season,
+        "last_season": args.last_season,
+        "limit": args.limit,
+        "workers": args.workers,
+        "batch_size": args.batch_size,
+        "player_id": args.player_id,
+        "nhl_id": args.nhl_id,
+        "force": args.force,
+    }
+    summary = (
+        ingest_historical_contracts(session, **options)
+        if args.apply
+        else preview_historical_contracts(session, **options)
+    )
     print(json.dumps(summary, indent=2, sort_keys=True, default=str))
     return 0
 

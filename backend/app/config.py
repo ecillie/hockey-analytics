@@ -62,7 +62,9 @@ def get_api_settings() -> ApiSettings:
     raw_origins = os.getenv(
         "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     )
-    origins = tuple(origin.strip() for origin in raw_origins.split(",") if origin.strip())
+    origins = tuple(
+        origin.strip() for origin in raw_origins.split(",") if origin.strip()
+    )
     if not origins:
         raise ConfigurationError("CORS_ORIGINS must contain at least one origin")
     origin_regex = os.getenv("CORS_ORIGIN_REGEX", "").strip() or None

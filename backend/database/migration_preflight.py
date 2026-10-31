@@ -15,15 +15,19 @@ def database_url() -> str:
 
 
 def inspect_database(connection) -> tuple[list[str], list[str]]:
-    tables = connection.execute(
-        text(
-            """SELECT table_name FROM information_schema.tables
+    tables = (
+        connection.execute(
+            text(
+                """SELECT table_name FROM information_schema.tables
                WHERE table_schema = 'public'
                  AND table_type = 'BASE TABLE'
                  AND table_name <> 'alembic_version'
                ORDER BY table_name"""
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     version_table = connection.execute(
         text("SELECT to_regclass('public.alembic_version') IS NOT NULL")
     ).scalar_one()

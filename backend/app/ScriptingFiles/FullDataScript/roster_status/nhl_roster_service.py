@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 
-from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import JsonHttpClient
+from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import (
+    JsonHttpClient,
+)
 from app.ScriptingFiles.FullDataScript.roster_status.roster_models import (
     ExternalRosterPlayer,
     FetchResult,

@@ -13,19 +13,39 @@ from app.main import create_app  # noqa: E402
 
 
 TEAM = {
-    "id": 1, "nhlTeamId": 10, "abbreviation": "TOR",
-    "name": "Toronto Maple Leafs", "city": "Toronto", "active": True,
+    "id": 1,
+    "nhlTeamId": 10,
+    "abbreviation": "TOR",
+    "name": "Toronto Maple Leafs",
+    "city": "Toronto",
+    "active": True,
 }
 PLAYER = {
-    "id": 7, "firstName": "Test", "lastName": "Player", "fullName": "Test Player",
-    "birthDate": "2000-01-01", "age": 26, "primaryPosition": "C",
-    "shootsCatches": "L", "nationality": "CAN", "active": True,
-    "rosterStatus": "ACTIVE", "team": TEAM,
+    "id": 7,
+    "firstName": "Test",
+    "lastName": "Player",
+    "fullName": "Test Player",
+    "birthDate": "2000-01-01",
+    "age": 26,
+    "primaryPosition": "C",
+    "shootsCatches": "L",
+    "nationality": "CAN",
+    "active": True,
+    "rosterStatus": "ACTIVE",
+    "team": TEAM,
 }
 SUMMARY = {
-    **PLAYER, "season": 2025, "gamesPlayed": 82, "goals": 30, "assists": 50,
-    "points": 80, "toiSeconds": 90000, "gameScore": 50.0, "gameScorePer60": 2.0,
-    "hockeyValue": 22.0, "projectedNextSeasonHockeyValue": None,
+    **PLAYER,
+    "season": 2025,
+    "gamesPlayed": 82,
+    "goals": 30,
+    "assists": 50,
+    "points": 80,
+    "toiSeconds": 90000,
+    "gameScore": 50.0,
+    "gameScorePer60": 2.0,
+    "hockeyValue": 22.0,
+    "projectedNextSeasonHockeyValue": None,
     "capHitCents": 800000000,
 }
 
@@ -38,10 +58,23 @@ class StubService:
         return 2025
 
     def seasons(self):
-        return {"currentSeason": 2025, "availableSeasons": [{"startYear": 2025, "endYear": 2026, "label": "2025-26", "salaryCapCents": 9550000000}]}
+        return {
+            "currentSeason": 2025,
+            "availableSeasons": [
+                {
+                    "startYear": 2025,
+                    "endYear": 2026,
+                    "label": "2025-26",
+                    "salaryCapCents": 9550000000,
+                }
+            ],
+        }
 
     def players(self, *_args):
-        return {"data": [SUMMARY], "pagination": {"page": 1, "pageSize": 25, "totalItems": 1, "totalPages": 1}}
+        return {
+            "data": [SUMMARY],
+            "pagination": {"page": 1, "pageSize": 25, "totalItems": 1, "totalPages": 1},
+        }
 
     def player_identity(self, _player_id):
         return PLAYER
@@ -66,15 +99,29 @@ class ApiContractTests(unittest.TestCase):
 
     def test_all_documented_routes_are_exposed(self):
         paths = set(self.app.openapi()["paths"])
-        self.assertEqual(paths, {
-            "/api/health", "/api/seasons", "/api/players", "/api/players/compare",
-            "/api/players/{player_id}", "/api/players/{player_id}/stats",
-            "/api/players/{player_id}/seasons", "/api/players/{player_id}/value",
-            "/api/players/{player_id}/value/history", "/api/players/{player_id}/contract",
-            "/api/rankings/hockey-value", "/api/teams", "/api/teams/{team_id}",
-            "/api/teams/{team_id}/roster", "/api/teams/{team_id}/contracts",
-            "/api/teams/{team_id}/cap", "/api/search", "/api/overview",
-        })
+        self.assertEqual(
+            paths,
+            {
+                "/api/health",
+                "/api/seasons",
+                "/api/players",
+                "/api/players/compare",
+                "/api/players/{player_id}",
+                "/api/players/{player_id}/stats",
+                "/api/players/{player_id}/seasons",
+                "/api/players/{player_id}/value",
+                "/api/players/{player_id}/value/history",
+                "/api/players/{player_id}/contract",
+                "/api/rankings/hockey-value",
+                "/api/teams",
+                "/api/teams/{team_id}",
+                "/api/teams/{team_id}/roster",
+                "/api/teams/{team_id}/contracts",
+                "/api/teams/{team_id}/cap",
+                "/api/search",
+                "/api/overview",
+            },
+        )
 
     def test_health_checks_database_and_returns_contract_shape(self):
         response = self.client.get("/api/health")
@@ -123,10 +170,15 @@ class ApiContractTests(unittest.TestCase):
     def test_cors_allows_local_frontend(self):
         response = self.client.options(
             "/api/players",
-            headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "GET"},
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "GET",
+            },
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers["access-control-allow-origin"], "http://localhost:5173")
+        self.assertEqual(
+            response.headers["access-control-allow-origin"], "http://localhost:5173"
+        )
 
 
 if __name__ == "__main__":

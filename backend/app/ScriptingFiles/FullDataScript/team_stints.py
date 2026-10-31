@@ -79,14 +79,19 @@ missing AS (
 """
 
 
-_PLAN_SQL = _CANDIDATES_SQL + r"""
+_PLAN_SQL = (
+    _CANDIDATES_SQL
+    + r"""
 SELECT
     (SELECT count(*) FROM canonical) AS canonical_assignments,
     (SELECT count(*) FROM missing) AS missing_assignments
 """
+)
 
 
-_APPLY_SQL = _CANDIDATES_SQL + r"""
+_APPLY_SQL = (
+    _CANDIDATES_SQL
+    + r"""
 ,
 inserted AS (
     INSERT INTO player_team_stints
@@ -102,10 +107,15 @@ SELECT
     (SELECT count(*) FROM missing) AS missing_assignments,
     (SELECT count(*) FROM inserted) AS inserted_assignments
 """
+)
 
 
 def _params(first_season: int | None, last_season: int | None) -> dict[str, int | None]:
-    if first_season is not None and last_season is not None and first_season > last_season:
+    if (
+        first_season is not None
+        and last_season is not None
+        and first_season > last_season
+    ):
         raise ValueError("first_season cannot be greater than last_season")
     return {"first_season": first_season, "last_season": last_season}
 

@@ -36,9 +36,7 @@ def init_db() -> None:
             text("SELECT to_regclass('public.players')")
         ).scalar_one()
     if players_table is None:
-        raise RuntimeError(
-            "Database schema is missing; run Alembic upgrade head first"
-        )
+        raise RuntimeError("Database schema is missing; run Alembic upgrade head first")
 
 
 def connect_database():

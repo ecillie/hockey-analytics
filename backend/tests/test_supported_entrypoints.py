@@ -36,11 +36,7 @@ QUARANTINED_LOADERS = {
 
 
 def supported_python_files() -> list[Path]:
-    return sorted(
-        path
-        for path in APP.rglob("*.py")
-        if "__pycache__" not in path.parts
-    )
+    return sorted(path for path in APP.rglob("*.py") if "__pycache__" not in path.parts)
 
 
 def full_data_modules() -> list[str]:
@@ -94,9 +90,7 @@ def test_supported_tree_does_not_reference_removed_orm_or_legacy_loaders():
     for source in supported_python_files():
         imports = imported_modules(source)
         forbidden = sorted(
-            name
-            for name in imports
-            if name == "app.models" or ".save_" in name
+            name for name in imports if name == "app.models" or ".save_" in name
         )
         if forbidden:
             failures.append(f"{source.relative_to(ROOT)}: {', '.join(forbidden)}")

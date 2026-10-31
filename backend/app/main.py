@@ -48,12 +48,16 @@ def create_app() -> FastAPI:
         for issue in exc.errors():
             field = str(issue["loc"][-1])
             details.setdefault(field, []).append(issue["msg"])
-        return _error(400, "INVALID_REQUEST", "The request parameters are invalid.", details)
+        return _error(
+            400, "INVALID_REQUEST", "The request parameters are invalid.", details
+        )
 
     @application.exception_handler(SQLAlchemyError)
     async def database_handler(_request: Request, exc: SQLAlchemyError):
         logger.exception("Database request failed", exc_info=exc)
-        return _error(503, "DATABASE_UNAVAILABLE", "The data service is temporarily unavailable.")
+        return _error(
+            503, "DATABASE_UNAVAILABLE", "The data service is temporarily unavailable."
+        )
 
     @application.exception_handler(Exception)
     async def unhandled_handler(_request: Request, exc: Exception):

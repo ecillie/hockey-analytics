@@ -19,17 +19,15 @@ from backend.database import migration_preflight, schema_snapshot, verify_migrat
 ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_CONFIG = ROOT / "backend" / "alembic.ini"
 INITIAL_REVISION = (
-    ROOT
-    / "backend"
-    / "migrations"
-    / "versions"
-    / "20260910_0001_initial_schema.py"
+    ROOT / "backend" / "migrations" / "versions" / "20260910_0001_initial_schema.py"
 )
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
 
 def load_initial_revision():
-    spec = importlib.util.spec_from_file_location("tradevalue_initial_revision", INITIAL_REVISION)
+    spec = importlib.util.spec_from_file_location(
+        "tradevalue_initial_revision", INITIAL_REVISION
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -97,7 +95,9 @@ def revision(name="revision", *, doc="description", merge=False):
 def test_migration_history_accepts_one_documented_linear_head():
     scripts = migration_scripts(revision("one"))
 
-    with patch.object(verify_migrations.ScriptDirectory, "from_config", return_value=scripts):
+    with patch.object(
+        verify_migrations.ScriptDirectory, "from_config", return_value=scripts
+    ):
         assert verify_migrations.validate(ALEMBIC_CONFIG) == []
 
 
@@ -105,21 +105,31 @@ def test_migration_history_accepts_one_documented_linear_head():
     ("scripts", "message"),
     [
         (migration_scripts(revision(), heads=()), "exactly one migration head"),
-        (migration_scripts(revision(), heads=("one", "two")), "exactly one migration head"),
+        (
+            migration_scripts(revision(), heads=("one", "two")),
+            "exactly one migration head",
+        ),
         (migration_scripts(heads=("one",)), "migration history is empty"),
         (migration_scripts(revision(doc="")), "has no description"),
         (migration_scripts(revision(merge=True)), "unapproved merge point"),
     ],
 )
 def test_migration_history_rejects_invalid_graphs(scripts, message):
-    with patch.object(verify_migrations.ScriptDirectory, "from_config", return_value=scripts):
-        assert any(message in error for error in verify_migrations.validate(ALEMBIC_CONFIG))
+    with patch.object(
+        verify_migrations.ScriptDirectory, "from_config", return_value=scripts
+    ):
+        assert any(
+            message in error for error in verify_migrations.validate(ALEMBIC_CONFIG)
+        )
 
 
 def test_database_url_prefers_primary_url():
     with patch.dict(
         os.environ,
-        {"DATABASE_URL": "postgresql://primary/db", "TEST_DATABASE_URL": "postgresql://test/db"},
+        {
+            "DATABASE_URL": "postgresql://primary/db",
+            "TEST_DATABASE_URL": "postgresql://test/db",
+        },
         clear=True,
     ):
         assert schema_snapshot.database_url() == "postgresql://primary/db"
@@ -127,7 +137,9 @@ def test_database_url_prefers_primary_url():
 
 
 def test_database_url_falls_back_to_test_url_and_requires_one():
-    with patch.dict(os.environ, {"TEST_DATABASE_URL": "postgresql://test/db"}, clear=True):
+    with patch.dict(
+        os.environ, {"TEST_DATABASE_URL": "postgresql://test/db"}, clear=True
+    ):
         assert schema_snapshot.database_url() == "postgresql://test/db"
         assert migration_preflight.database_url() == "postgresql://test/db"
 
@@ -141,7 +153,10 @@ def test_database_url_falls_back_to_test_url_and_requires_one():
 def test_schema_snapshot_render_is_deterministic():
     rendered = schema_snapshot.render({"tables": [{"table_name": "players"}]})
 
-    assert rendered == '{\n  "tables": [\n    {\n      "table_name": "players"\n    }\n  ]\n}\n'
+    assert (
+        rendered
+        == '{\n  "tables": [\n    {\n      "table_name": "players"\n    }\n  ]\n}\n'
+    )
 
 
 def run_snapshot_main(*arguments):
@@ -238,7 +253,12 @@ def test_reference_data_smoke_accepts_complete_baseline():
     migration_smoke = import_migration_smoke()
     session = Mock()
     sources = Mock()
-    sources.scalars.return_value.all.return_value = ["capspace", "capwages", "moneypuck", "nhl"]
+    sources.scalars.return_value.all.return_value = [
+        "capspace",
+        "capwages",
+        "moneypuck",
+        "nhl",
+    ]
     seasons = Mock()
     seasons.scalar_one.return_value = 22
     session.execute.side_effect = [sources, seasons]
@@ -292,7 +312,10 @@ def test_api_smoke_accepts_expected_empty_database_responses():
     [
         [response(503, {"error": "down"})],
         [response(200, {"status": "wrong"})],
-        [response(200, {"status": "ok"}), response(200, {"availableSeasons": [], "currentSeason": 2026})],
+        [
+            response(200, {"status": "ok"}),
+            response(200, {"availableSeasons": [], "currentSeason": 2026}),
+        ],
         [
             response(200, {"status": "ok"}),
             response(200, {"availableSeasons": [{}], "currentSeason": 2026}),
@@ -338,7 +361,9 @@ def run_command(database_url: str, *arguments: str, success=True):
         timeout=120,
     )
     if success and result.returncode != 0:
-        pytest.fail(f"command failed: {arguments}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
+        pytest.fail(
+            f"command failed: {arguments}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
     if not success and result.returncode == 0:
         pytest.fail(f"command unexpectedly passed: {arguments}")
     return result
@@ -367,7 +392,9 @@ def test_alembic_environment_rejects_non_postgresql_database(tmp_path):
 def test_complete_migration_lifecycle_on_isolated_database(tmp_path):
     source_url = make_url(TEST_DATABASE_URL)
     database_name = f"tradevalue_migration_{uuid4().hex[:12]}"
-    database_url = source_url.set(database=database_name).render_as_string(hide_password=False)
+    database_url = source_url.set(database=database_name).render_as_string(
+        hide_password=False
+    )
     admin_url = source_url.set(database="postgres")
     admin = create_engine(admin_url, isolation_level="AUTOCOMMIT", pool_pre_ping=True)
     quoted_name = admin.dialect.identifier_preparer.quote(database_name)
@@ -425,9 +452,22 @@ def test_complete_migration_lifecycle_on_isolated_database(tmp_path):
 
         isolated = create_engine(database_url)
         with isolated.connect() as connection:
-            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "20260920_0002"
-            assert connection.execute(text("SELECT COUNT(*) FROM seasons")).scalar_one() == 22
-            assert connection.execute(text("SELECT COUNT(*) FROM data_sources")).scalar_one() == 4
+            assert (
+                connection.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar_one()
+                == "20260920_0002"
+            )
+            assert (
+                connection.execute(text("SELECT COUNT(*) FROM seasons")).scalar_one()
+                == 22
+            )
+            assert (
+                connection.execute(
+                    text("SELECT COUNT(*) FROM data_sources")
+                ).scalar_one()
+                == 4
+            )
         isolated.dispose()
     finally:
         with admin.connect() as connection:

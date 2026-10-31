@@ -19,33 +19,21 @@ def run_pipeline(
 
     print("\n[1/3] Loading player stats...")
 
-    players = load_player_stats(
-        min_games=min_games
-    )
+    players = load_player_stats(min_games=min_games)
 
-    print(
-        f"      {len(players):,} "
-        "player-seasons"
-    )
+    print(f"      {len(players):,} player-seasons")
 
     print("\n[2/3] Loading salary caps...")
 
     salary_caps = load_salary_cap()
 
-    print(
-        f"      {len(salary_caps):,} "
-        "salary-cap seasons"
-    )
+    print(f"      {len(salary_caps):,} salary-cap seasons")
 
     print("\n[3/3] Building model dataset...")
 
-    dataset = build_model_dataset(
-        min_games=min_games
-    )
+    dataset = build_model_dataset(min_games=min_games)
 
-    print_model_dataset_diagnostics(
-        dataset
-    )
+    print_model_dataset_diagnostics(dataset)
 
     print("\n========================================")
     print(" PIPELINE COMPLETE")
@@ -56,27 +44,19 @@ def run_pipeline(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=(
-            "Build the Hockey Analytics "
-            "skater ML dataset."
-        )
+        description=("Build the Hockey Analytics skater ML dataset.")
     )
 
     parser.add_argument(
         "--min-games",
         type=int,
         default=1,
-        help=(
-            "Minimum games played required "
-            "for a player-season."
-        ),
+        help=("Minimum games played required for a player-season."),
     )
 
     args = parser.parse_args()
 
-    run_pipeline(
-        min_games=args.min_games
-    )
+    run_pipeline(min_games=args.min_games)
 
 
 if __name__ == "__main__":

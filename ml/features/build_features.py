@@ -44,15 +44,9 @@ def _per_60(
 
     Returns NaN when ice time is missing or zero.
     """
-    valid_toi = ice_time_seconds.where(
-        ice_time_seconds > 0
-    )
+    valid_toi = ice_time_seconds.where(ice_time_seconds > 0)
 
-    return (
-        values.astype(float)
-        * 3600.0
-        / valid_toi
-    )
+    return values.astype(float) * 3600.0 / valid_toi
 
 
 def build_features(
@@ -74,20 +68,22 @@ def build_features(
 
     if "position_group" not in features.columns and "position" in features.columns:
         features["position_group"] = features["position"].map(
-            {"C": "forward", "LW": "forward", "RW": "forward", "F": "forward", "D": "defense"}
+            {
+                "C": "forward",
+                "LW": "forward",
+                "RW": "forward",
+                "F": "forward",
+                "D": "defense",
+            }
         )
 
     # ---------------------------------------------------------
     # Ice-time / usage
     # ---------------------------------------------------------
 
-    features["toi_minutes"] = (
-        features["ice_time_seconds"] / 60.0
-    )
+    features["toi_minutes"] = features["ice_time_seconds"] / 60.0
 
-    features["toi_hours"] = (
-        features["ice_time_seconds"] / 3600.0
-    )
+    features["toi_hours"] = features["ice_time_seconds"] / 3600.0
 
     # ---------------------------------------------------------
     # Offensive production
@@ -153,8 +149,7 @@ def build_features(
     )
 
     features["net_takeaways_per_60"] = (
-        features["takeaways_per_60"]
-        - features["giveaways_per_60"]
+        features["takeaways_per_60"] - features["giveaways_per_60"]
     )
 
     features["blocks_per_60"] = _per_60(
@@ -177,8 +172,7 @@ def build_features(
     )
 
     features["penalty_differential_per_60"] = (
-        features["penalties_drawn_per_60"]
-        - features["penalties_per_60"]
+        features["penalties_drawn_per_60"] - features["penalties_per_60"]
     )
 
     # ---------------------------------------------------------
@@ -186,8 +180,7 @@ def build_features(
     # ---------------------------------------------------------
 
     features["goals_above_expected"] = (
-        features["goals"]
-        - features["individual_expected_goals"]
+        features["goals"] - features["individual_expected_goals"]
     )
 
     features["goals_above_expected_per_60"] = _per_60(
@@ -205,23 +198,18 @@ def build_features(
         + features["neutral_zone_shift_starts"].fillna(0)
     )
 
-    valid_zone_starts = zone_start_total.where(
-        zone_start_total > 0
-    )
+    valid_zone_starts = zone_start_total.where(zone_start_total > 0)
 
     features["offensive_zone_start_pct"] = (
-        features["offensive_zone_shift_starts"]
-        / valid_zone_starts
+        features["offensive_zone_shift_starts"] / valid_zone_starts
     )
 
     features["defensive_zone_start_pct"] = (
-        features["defensive_zone_shift_starts"]
-        / valid_zone_starts
+        features["defensive_zone_shift_starts"] / valid_zone_starts
     )
 
     features["neutral_zone_start_pct"] = (
-        features["neutral_zone_shift_starts"]
-        / valid_zone_starts
+        features["neutral_zone_shift_starts"] / valid_zone_starts
     )
 
     # ---------------------------------------------------------
@@ -230,9 +218,7 @@ def build_features(
 
     # We still calculate features for everyone, but tiny samples
     # should not define the model during training.
-    features["eligible_for_training"] = (
-        features["games_played"].fillna(0) >= 20
-    ) & (
+    features["eligible_for_training"] = (features["games_played"].fillna(0) >= 20) & (
         features["ice_time_seconds"].fillna(0) > 0
     )
 
@@ -255,9 +241,7 @@ def get_training_dataset(
 
     features = build_features(df)
 
-    return features[
-        features["eligible_for_training"]
-    ].reset_index(drop=True)
+    return features[features["eligible_for_training"]].reset_index(drop=True)
 
 
 def print_feature_diagnostics(
@@ -270,28 +254,15 @@ def print_feature_diagnostics(
         print("No feature rows found.")
         return
 
-    eligible = int(
-        df["eligible_for_training"].sum()
-    )
+    eligible = int(df["eligible_for_training"].sum())
 
-    print(
-        f"Training-eligible rows: "
-        f"{eligible:,} / {len(df):,}"
-    )
+    print(f"Training-eligible rows: {eligible:,} / {len(df):,}")
 
-    print(
-        f"Feature columns: "
-        f"{len(MODEL_FEATURE_COLUMNS)}"
-    )
+    print(f"Feature columns: {len(MODEL_FEATURE_COLUMNS)}")
 
     print("\nMissing values by model feature:")
 
-    missing = (
-        df[MODEL_FEATURE_COLUMNS]
-        .isna()
-        .sum()
-        .sort_values(ascending=False)
-    )
+    missing = df[MODEL_FEATURE_COLUMNS].isna().sum().sort_values(ascending=False)
 
     print(missing.to_string())
 
@@ -312,11 +283,7 @@ def print_feature_diagnostics(
         "eligible_for_training",
     ]
 
-    print(
-        df[sample_columns]
-        .head(15)
-        .to_string(index=False)
-    )
+    print(df[sample_columns].head(15).to_string(index=False))
 
 
 if __name__ == "__main__":

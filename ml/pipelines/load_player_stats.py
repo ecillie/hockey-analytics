@@ -304,9 +304,7 @@ def load_player_stats(
         )
 
     if min_games > 1:
-        df = df[
-            df["games_played"].fillna(0) >= min_games
-        ].copy()
+        df = df[df["games_played"].fillna(0) >= min_games].copy()
 
     return df.reset_index(drop=True)
 
@@ -321,16 +319,9 @@ def print_diagnostics(
         print("No player-season rows found.")
         return
 
-    print(
-        f"Players: "
-        f"{df['player_id'].nunique():,}"
-    )
+    print(f"Players: {df['player_id'].nunique():,}")
 
-    print(
-        f"Seasons: "
-        f"{df['season'].min()} - "
-        f"{df['season'].max()}"
-    )
+    print(f"Seasons: {df['season'].min()} - {df['season'].max()}")
 
     print(f"Columns: {len(df.columns)}")
 
@@ -341,31 +332,15 @@ def print_diagnostics(
         ]
     ).sum()
 
-    print(
-        f"Duplicate player-seasons: "
-        f"{duplicate_count:,}"
-    )
+    print(f"Duplicate player-seasons: {duplicate_count:,}")
 
-    advanced_available = (
-        df["ice_time_seconds"]
-        .notna()
-        .sum()
-    )
+    advanced_available = df["ice_time_seconds"].notna().sum()
 
-    print(
-        "Rows with advanced stats: "
-        f"{advanced_available:,} / "
-        f"{len(df):,}"
-    )
+    print(f"Rows with advanced stats: {advanced_available:,} / {len(df):,}")
 
     print("\nRows by season:")
 
-    print(
-        df.groupby("season")
-        .size()
-        .sort_index()
-        .to_string()
-    )
+    print(df.groupby("season").size().sort_index().to_string())
 
     print("\nSample:")
 
@@ -384,11 +359,7 @@ def print_diagnostics(
         "game_score",
     ]
 
-    print(
-        df[sample_columns]
-        .head(15)
-        .to_string(index=False)
-    )
+    print(df[sample_columns].head(15).to_string(index=False))
 
 
 if __name__ == "__main__":

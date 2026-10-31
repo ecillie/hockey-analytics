@@ -7,8 +7,12 @@ from datetime import date
 import logging
 import unicodedata
 
-from app.ScriptingFiles.FullDataScript.roster_status.ahl_roster_service import AhlRosterService
-from app.ScriptingFiles.FullDataScript.roster_status.nhl_roster_service import NhlRosterService
+from app.ScriptingFiles.FullDataScript.roster_status.ahl_roster_service import (
+    AhlRosterService,
+)
+from app.ScriptingFiles.FullDataScript.roster_status.nhl_roster_service import (
+    NhlRosterService,
+)
 from app.ScriptingFiles.FullDataScript.roster_status.roster_models import (
     ExternalRosterPlayer,
     FetchResult,
@@ -29,7 +33,9 @@ def normalize_name(value: str) -> str:
     without_accents = "".join(
         character for character in decomposed if not unicodedata.combining(character)
     )
-    return "".join(character for character in without_accents.casefold() if character.isalnum())
+    return "".join(
+        character for character in without_accents.casefold() if character.isalnum()
+    )
 
 
 class RosterStatusService:
@@ -138,11 +144,15 @@ class RosterStatusService:
                 matches[player.id] = ahl_by_id[player.ahl_external_id]
 
         db_by_identity: dict[tuple[str, date], list[StoredPlayer]] = defaultdict(list)
-        ahl_by_identity: dict[tuple[str, date], list[ExternalRosterPlayer]] = defaultdict(list)
+        ahl_by_identity: dict[tuple[str, date], list[ExternalRosterPlayer]] = (
+            defaultdict(list)
+        )
 
         for player in players:
             if player.id not in matches and player.birth_date is not None:
-                db_by_identity[(normalize_name(player.full_name), player.birth_date)].append(player)
+                db_by_identity[
+                    (normalize_name(player.full_name), player.birth_date)
+                ].append(player)
 
         for ahl_player in ahl_players:
             if ahl_player.birth_date is not None:

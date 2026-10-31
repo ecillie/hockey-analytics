@@ -69,7 +69,9 @@ def tracked_ingestion(source_code: str, job_name: str | None = None):
                         "running" if locked else "cancelled",
                         Json({"started_by": "schema-native-loader"}),
                         None if locked else datetime.now(timezone.utc),
-                        None if locked else "Another run already holds the ingestion lock",
+                        None
+                        if locked
+                        else "Another run already holds the ingestion lock",
                     ),
                 )
                 run_id = cursor.fetchone()[0]

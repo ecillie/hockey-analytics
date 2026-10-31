@@ -32,10 +32,7 @@ LOWER_IS_BETTER = [
     "penalties_per_60",
 ]
 
-REPLACEMENT_FEATURES = (
-    HIGHER_IS_BETTER
-    + LOWER_IS_BETTER
-)
+REPLACEMENT_FEATURES = HIGHER_IS_BETTER + LOWER_IS_BETTER
 
 
 def calculate_replacement_level(
@@ -60,14 +57,9 @@ def calculate_replacement_level(
     # TOI per game
     # ---------------------------------------------------------
 
-    valid_games = result["games_played"].where(
-        result["games_played"] > 0
-    )
+    valid_games = result["games_played"].where(result["games_played"] > 0)
 
-    result["toi_per_game"] = (
-        result["toi_minutes"]
-        / valid_games
-    )
+    result["toi_per_game"] = result["toi_minutes"] / valid_games
 
     # Only established NHL samples should define replacement level.
     eligible = result[
@@ -81,14 +73,9 @@ def calculate_replacement_level(
     # ---------------------------------------------------------
 
     thresholds = (
-        eligible
-        .groupby(
-            ["season", "position_group"]
-        )["toi_per_game"]
+        eligible.groupby(["season", "position_group"])["toi_per_game"]
         .quantile(replacement_percentile)
-        .rename(
-            "replacement_toi_per_game_threshold"
-        )
+        .rename("replacement_toi_per_game_threshold")
         .reset_index()
     )
 
@@ -101,10 +88,7 @@ def calculate_replacement_level(
 
     # Bottom 20% by TOI/game becomes the replacement pool.
     replacement_pool = eligible[
-        eligible["toi_per_game"]
-        <= eligible[
-            "replacement_toi_per_game_threshold"
-        ]
+        eligible["toi_per_game"] <= eligible["replacement_toi_per_game_threshold"]
     ].copy()
 
     # ---------------------------------------------------------
@@ -112,19 +96,13 @@ def calculate_replacement_level(
     # ---------------------------------------------------------
 
     baselines = (
-        replacement_pool
-        .groupby(
-            ["season", "position_group"]
-        )[REPLACEMENT_FEATURES]
+        replacement_pool.groupby(["season", "position_group"])[REPLACEMENT_FEATURES]
         .median()
         .reset_index()
     )
 
     baselines = baselines.rename(
-        columns={
-            feature: f"replacement_{feature}"
-            for feature in REPLACEMENT_FEATURES
-        }
+        columns={feature: f"replacement_{feature}" for feature in REPLACEMENT_FEATURES}
     )
 
     result = result.merge(
@@ -153,10 +131,8 @@ def calculate_replacement_level(
     )
 
     result["is_replacement_pool"] = [
-        (player_id, season)
-        in replacement_keys
-        for player_id, season
-        in zip(
+        (player_id, season) in replacement_keys
+        for player_id, season in zip(
             result["player_id"],
             result["season"],
         )
@@ -170,14 +146,12 @@ def calculate_replacement_level(
 
     for feature in HIGHER_IS_BETTER:
         result[f"{feature}_above_replacement"] = (
-            result[feature]
-            - result[f"replacement_{feature}"]
+            result[feature] - result[f"replacement_{feature}"]
         )
 
     for feature in LOWER_IS_BETTER:
         result[f"{feature}_above_replacement"] = (
-            result[f"replacement_{feature}"]
-            - result[feature]
+            result[f"replacement_{feature}"] - result[feature]
         )
 
     return result.reset_index(drop=True)
@@ -190,19 +164,11 @@ def print_replacement_diagnostics(
 
     print(f"Player-season rows: {len(df):,}")
 
-    replacement_count = int(
-        df["is_replacement_pool"].sum()
-    )
+    replacement_count = int(df["is_replacement_pool"].sum())
 
-    print(
-        f"Replacement-pool rows: "
-        f"{replacement_count:,}"
-    )
+    print(f"Replacement-pool rows: {replacement_count:,}")
 
-    print(
-        f"Replacement percentile: "
-        f"{REPLACEMENT_PERCENTILE:.0%}"
-    )
+    print(f"Replacement percentile: {REPLACEMENT_PERCENTILE:.0%}")
 
     print("\nReplacement players by position:")
 
@@ -226,16 +192,10 @@ def print_replacement_diagnostics(
             ]
         ]
         .drop_duplicates()
-        .sort_values(
-            ["season", "position_group"]
-        )
+        .sort_values(["season", "position_group"])
     )
 
-    print(
-        thresholds.tail(12).to_string(
-            index=False
-        )
-    )
+    print(thresholds.tail(12).to_string(index=False))
 
     print("\nSample above-replacement values:")
 
@@ -257,9 +217,7 @@ def print_replacement_diagnostics(
     ]
 
     sample = (
-        df[
-            df["eligible_for_training"]
-        ][sample_columns]
+        df[df["eligible_for_training"]][sample_columns]
         .sort_values(
             "game_score_per_60_above_replacement",
             ascending=False,
@@ -267,13 +225,9 @@ def print_replacement_diagnostics(
         .head(15)
     )
 
-    print(
-        sample.to_string(index=False)
-    )
+    print(sample.to_string(index=False))
 
 
 if __name__ == "__main__":
     replacement_data = calculate_replacement_level()
-    print_replacement_diagnostics(
-        replacement_data
-    )
+    print_replacement_diagnostics(replacement_data)

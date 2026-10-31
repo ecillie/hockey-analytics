@@ -6,7 +6,9 @@ from datetime import date
 import logging
 import os
 
-from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import JsonHttpClient
+from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import (
+    JsonHttpClient,
+)
 from app.ScriptingFiles.FullDataScript.roster_status.roster_models import (
     ExternalRosterPlayer,
     FetchResult,

@@ -31,9 +31,7 @@ def metrics(
     predicted: pd.Series,
 ) -> dict[str, float]:
     return {
-        "mae": float(
-            mean_absolute_error(actual, predicted)
-        ),
+        "mae": float(mean_absolute_error(actual, predicted)),
         "rmse": float(
             np.sqrt(
                 mean_squared_error(
@@ -68,14 +66,10 @@ def evaluate_model() -> pd.DataFrame:
     print("========================================")
 
     if not MODEL_PATH.exists():
-        raise FileNotFoundError(
-            f"Model not found: {MODEL_PATH}"
-        )
+        raise FileNotFoundError(f"Model not found: {MODEL_PATH}")
 
     if not METADATA_PATH.exists():
-        raise FileNotFoundError(
-            f"Metadata not found: {METADATA_PATH}"
-        )
+        raise FileNotFoundError(f"Metadata not found: {METADATA_PATH}")
 
     with open(
         METADATA_PATH,
@@ -84,37 +78,22 @@ def evaluate_model() -> pd.DataFrame:
     ) as f:
         metadata = json.load(f)
 
-    test_season = int(
-        metadata["test_target_season"]
-    )
+    test_season = int(metadata["test_target_season"])
 
-    print(
-        f"\nEvaluating target season: "
-        f"{test_season}"
-    )
+    print(f"\nEvaluating target season: {test_season}")
 
     model = joblib.load(MODEL_PATH)
 
     df = build_training_data()
 
-    test_df = df[
-        df["target_season"] == test_season
-    ].copy()
+    test_df = df[df["target_season"] == test_season].copy()
 
     if test_df.empty:
-        raise RuntimeError(
-            f"No rows found for test season "
-            f"{test_season}."
-        )
+        raise RuntimeError(f"No rows found for test season {test_season}.")
 
-    feature_columns = (
-        NUMERIC_FEATURES
-        + CATEGORICAL_FEATURES
-    )
+    feature_columns = NUMERIC_FEATURES + CATEGORICAL_FEATURES
 
-    test_df["ml_prediction"] = model.predict(
-        test_df[feature_columns]
-    )
+    test_df["ml_prediction"] = model.predict(test_df[feature_columns])
 
     # ---------------------------------------------------------
     # Naive benchmark
@@ -122,13 +101,9 @@ def evaluate_model() -> pd.DataFrame:
     # Assume next season looks exactly like this season.
     # ---------------------------------------------------------
 
-    test_df["naive_prediction"] = (
-        test_df["current_hockey_value"]
-    )
+    test_df["naive_prediction"] = test_df["current_hockey_value"]
 
-    actual = test_df[
-        "next_season_hockey_value"
-    ]
+    actual = test_df["next_season_hockey_value"]
 
     ml_metrics = metrics(
         actual,
@@ -154,28 +129,18 @@ def evaluate_model() -> pd.DataFrame:
     # Improvement over naive benchmark
     # ---------------------------------------------------------
 
-    mae_improvement = (
-        naive_metrics["mae"]
-        - ml_metrics["mae"]
-    ) / naive_metrics["mae"]
+    mae_improvement = (naive_metrics["mae"] - ml_metrics["mae"]) / naive_metrics["mae"]
 
-    rmse_improvement = (
-        naive_metrics["rmse"]
-        - ml_metrics["rmse"]
-    ) / naive_metrics["rmse"]
+    rmse_improvement = (naive_metrics["rmse"] - ml_metrics["rmse"]) / naive_metrics[
+        "rmse"
+    ]
 
     print("\nBENCHMARK IMPROVEMENT")
     print("---------------------")
 
-    print(
-        f"MAE improvement:  "
-        f"{mae_improvement:.2%}"
-    )
+    print(f"MAE improvement:  {mae_improvement:.2%}")
 
-    print(
-        f"RMSE improvement: "
-        f"{rmse_improvement:.2%}"
-    )
+    print(f"RMSE improvement: {rmse_improvement:.2%}")
 
     # ---------------------------------------------------------
     # Position breakdown
@@ -184,33 +149,19 @@ def evaluate_model() -> pd.DataFrame:
     print("\nPERFORMANCE BY POSITION GROUP")
     print("-----------------------------")
 
-    for position_group, group in test_df.groupby(
-        "position_group"
-    ):
+    for position_group, group in test_df.groupby("position_group"):
         group_metrics = metrics(
             group["next_season_hockey_value"],
             group["ml_prediction"],
         )
 
-        print(
-            f"\n{position_group.upper()} "
-            f"({len(group):,} rows)"
-        )
+        print(f"\n{position_group.upper()} ({len(group):,} rows)")
 
-        print(
-            f"MAE:  "
-            f"{group_metrics['mae']:.4f}"
-        )
+        print(f"MAE:  {group_metrics['mae']:.4f}")
 
-        print(
-            f"RMSE: "
-            f"{group_metrics['rmse']:.4f}"
-        )
+        print(f"RMSE: {group_metrics['rmse']:.4f}")
 
-        print(
-            f"R²:   "
-            f"{group_metrics['r2']:.4f}"
-        )
+        print(f"R²:   {group_metrics['r2']:.4f}")
 
     # ---------------------------------------------------------
     # Calibration
@@ -233,8 +184,7 @@ def evaluate_model() -> pd.DataFrame:
     )
 
     calibration = (
-        test_df
-        .groupby(
+        test_df.groupby(
             "prediction_tier",
             observed=True,
         )
@@ -252,10 +202,7 @@ def evaluate_model() -> pd.DataFrame:
         .reset_index()
     )
 
-    calibration["bias"] = (
-        calibration["avg_prediction"]
-        - calibration["avg_actual"]
-    )
+    calibration["bias"] = calibration["avg_prediction"] - calibration["avg_actual"]
 
     print("\nCALIBRATION BY PREDICTED VALUE")
     print("------------------------------")
@@ -272,13 +219,10 @@ def evaluate_model() -> pd.DataFrame:
     # ---------------------------------------------------------
 
     test_df["prediction_error"] = (
-        test_df["ml_prediction"]
-        - test_df["next_season_hockey_value"]
+        test_df["ml_prediction"] - test_df["next_season_hockey_value"]
     )
 
-    test_df["absolute_error"] = (
-        test_df["prediction_error"].abs()
-    )
+    test_df["absolute_error"] = test_df["prediction_error"].abs()
 
     display_columns = [
         "player_name",
@@ -296,15 +240,10 @@ def evaluate_model() -> pd.DataFrame:
     print("\nBIGGEST MISSES")
     print("--------------")
 
-    biggest_misses = (
-        test_df
-        .sort_values(
-            "absolute_error",
-            ascending=False,
-        )
-        [display_columns]
-        .head(20)
-    )
+    biggest_misses = test_df.sort_values(
+        "absolute_error",
+        ascending=False,
+    )[display_columns].head(20)
 
     print(
         biggest_misses.to_string(
@@ -318,18 +257,15 @@ def evaluate_model() -> pd.DataFrame:
     # ---------------------------------------------------------
 
     test_df["ml_absolute_error"] = (
-        test_df["ml_prediction"]
-        - test_df["next_season_hockey_value"]
+        test_df["ml_prediction"] - test_df["next_season_hockey_value"]
     ).abs()
 
     test_df["naive_absolute_error"] = (
-        test_df["naive_prediction"]
-        - test_df["next_season_hockey_value"]
+        test_df["naive_prediction"] - test_df["next_season_hockey_value"]
     ).abs()
 
     test_df["improvement_vs_naive"] = (
-        test_df["naive_absolute_error"]
-        - test_df["ml_absolute_error"]
+        test_df["naive_absolute_error"] - test_df["ml_absolute_error"]
     )
 
     print("\nBIGGEST IMPROVEMENTS OVER NAIVE")
@@ -347,12 +283,10 @@ def evaluate_model() -> pd.DataFrame:
     ]
 
     print(
-        test_df
-        .sort_values(
+        test_df.sort_values(
             "improvement_vs_naive",
             ascending=False,
-        )
-        [improvement_columns]
+        )[improvement_columns]
         .head(20)
         .to_string(
             index=False,
@@ -378,10 +312,7 @@ def evaluate_model() -> pd.DataFrame:
     print(" EVALUATION COMPLETE")
     print("========================================")
 
-    print(
-        f"\nPredictions saved to:\n"
-        f"{OUTPUT_PATH}"
-    )
+    print(f"\nPredictions saved to:\n{OUTPUT_PATH}")
 
     return test_df
 

@@ -16,7 +16,9 @@ def validate(config_path: Path) -> list[str]:
 
     heads = scripts.get_heads()
     if len(heads) != 1:
-        errors.append(f"expected exactly one migration head, found {len(heads)}: {heads}")
+        errors.append(
+            f"expected exactly one migration head, found {len(heads)}: {heads}"
+        )
 
     revisions = list(scripts.walk_revisions(base="base", head="heads"))
     if not revisions:
