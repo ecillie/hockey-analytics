@@ -13,13 +13,10 @@ from contextlib import AbstractContextManager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 from dataclasses import dataclass
-from datetime import date
-from decimal import Decimal, InvalidOperation
-import json
+from decimal import Decimal, ROUND_HALF_EVEN
 import logging
 from pathlib import Path
-import re
-from typing import Any, Iterable
+from typing import Iterable
 
 from psycopg2.extras import Json
 import requests
@@ -28,6 +25,13 @@ from app.database import database_transaction, init_db
 from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingestion
 from contextlib import nullcontext
 from app.ScriptingFiles.FullDataScript import capspace
+from app.ScriptingFiles.FullDataScript.contracts.schemas.active import (
+    parse_active_index,
+    parse_active_players as _parse_capwages_players,
+    parse_active_profile,
+)
+from app.ScriptingFiles.FullDataScript.contracts.domain import ParsedContract
+from app.ScriptingFiles.FullDataScript.contracts.util import money_to_cents
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     DataQualityReport as DataQualityReport,
     Player,
@@ -62,7 +66,6 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
     normalize_position as _position,
     normalize_nationality as _nationality,
     split_name as _split_name,
-    slug_from_name as _slug_from_name,
     season_start_year as _season_start_year,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import (
@@ -108,102 +111,24 @@ LOGGER = logging.getLogger(__name__)
 RECONCILIATION_POLICY = "retain_missing"
 
 
-def _money_cents(value: Any) -> int | None:
-    if value in (None, ""):
-        return None
-    cleaned = re.sub(r"[^0-9.-]", "", str(value))
-    if not cleaned:
-        return None
-    try:
-        return int((Decimal(cleaned) * 100).quantize(Decimal("1")))
-    except InvalidOperation:
-        return None
-
-
-def _capwages_birth_date(value: Any) -> str | None:
-    match = re.fullmatch(r"(\d{2})-(\d{1,2})-(\d{1,2})", str(value or ""))
-    if not match:
-        return None
-    year, month, day = (int(part) for part in match.groups())
-    year += 1900 if year >= 30 else 2000
-    try:
-        return date(year, month, day).isoformat()
-    except ValueError:
-        return None
+def _money_cents(value: object) -> int | None:
+    return money_to_cents(value, rounding=ROUND_HALF_EVEN)
 
 
 def _capwages_active(
     session: requests.Session, *, minimum_rows: int = 500
-) -> list[list[Any]]:
+) -> list[list[object]]:
     response = session.get("https://capwages.com/players/active", timeout=60)
     response.raise_for_status()
-    match = re.search(
-        r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
-        response.text,
-        re.DOTALL,
-    )
-    if not match:
-        raise RuntimeError(
-            "CapWages active-player page no longer contains __NEXT_DATA__"
-        )
-    players = (
-        json.loads(match.group(1))
-        .get("props", {})
-        .get("pageProps", {})
-        .get("playersArray", [])
-    )
-    if len(players) < minimum_rows:
-        raise RuntimeError(
-            f"CapWages returned an unexpectedly partial active-player list ({len(players)} rows)"
-        )
-    return players
+    return parse_active_index(response.text, minimum_rows=minimum_rows)
 
 
-def _capwages_contracts(session: requests.Session, slug: str) -> list[dict]:
+def _capwages_contracts(
+    session: requests.Session, slug: str
+) -> tuple[ParsedContract, ...]:
     response = session.get(f"https://capwages.com/players/{slug}", timeout=30)
     response.raise_for_status()
-    match = re.search(
-        r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
-        response.text,
-        re.DOTALL,
-    )
-    if not match:
-        return []
-    return (
-        json.loads(match.group(1))
-        .get("props", {})
-        .get("pageProps", {})
-        .get("player", {})
-        .get("contracts", [])
-    )
-
-
-def _parse_capwages_players(
-    rows: Iterable[list[Any]], *, minimum_rows: int = 500
-) -> list[dict[str, Any]]:
-    players = []
-    for row in rows:
-        if not isinstance(row, list) or len(row) < 4 or not str(row[0] or "").strip():
-            continue
-        slug = row[1] or _slug_from_name(row[0])
-        if not slug:
-            continue
-        players.append(
-            {
-                "name": row[0],
-                "slug": slug,
-                "team": row[2],
-                "position": row[3],
-                "nationality": row[7] if len(row) > 7 else None,
-                "birth_date": _capwages_birth_date(row[30] if len(row) > 30 else None),
-            }
-        )
-    if len(players) < minimum_rows:
-        raise IngestionValidationError(
-            f"Only {len(players)} CapWages player rows could be assigned profile slugs; "
-            f"minimum is {minimum_rows}"
-        )
-    return players
+    return parse_active_profile(response.text, slug=slug)
 
 
 @tracked_ingestion("capwages")
@@ -219,7 +144,7 @@ def ingest_capwages(
     profile_failures = []
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = {
-            executor.submit(_capwages_contracts, session, item["slug"]): item["slug"]
+            executor.submit(_capwages_contracts, session, item.slug): item.slug
             for item in players
         }
         for future in as_completed(futures):
@@ -241,20 +166,19 @@ def ingest_capwages(
         sources = _source_ids(cursor)
         capwages_id = sources["capwages"]
         contract_teams = [
-            contract.get("signingTeam")
+            contract.signing_team
             for contracts in contracts_by_slug.values()
             for contract in contracts
         ]
         team_ids = _ensure_teams(
-            cursor, [item["team"] for item in players] + contract_teams
+            cursor, [item.team for item in players] + contract_teams
         )
-        contract_years = []
-        for contracts in contracts_by_slug.values():
-            for contract in contracts:
-                for detail in contract.get("details") or []:
-                    match = re.match(r"(\d{4})", str(detail.get("season") or ""))
-                    if match:
-                        contract_years.append(int(match.group(1)))
+        contract_years = [
+            season.season_start_year
+            for contracts in contracts_by_slug.values()
+            for contract in contracts
+            for season in contract.seasons
+        ]
         _ensure_seasons(cursor, contract_years)
         cursor.execute(
             """SELECT p.id, lower(p.first_name), lower(p.last_name) FROM players p"""
@@ -265,7 +189,7 @@ def ingest_capwages(
         contract_count = season_count = 0
         contract_created_count = season_created_count = 0
         for item in players:
-            first, last = _split_name(item["name"])
+            first, last = _split_name(item.name)
             matches = by_name.get((first.lower(), last.lower()), [])
             if len(matches) == 1:
                 player_id = matches[0]
@@ -273,56 +197,38 @@ def ingest_capwages(
                     cursor,
                     player_id,
                     capwages_id,
-                    item["slug"],
-                    item["name"],
-                    item["slug"],
+                    item.slug,
+                    item.name,
+                    item.slug,
                 )
             else:
                 player_id = upsert_player(
                     cursor,
                     capwages_id,
                     Player(
-                        external_id=item["slug"],
-                        name=item["name"],
-                        source_slug=item["slug"],
-                        birth_date=item["birth_date"],
-                        position=_position(item["position"]),
-                        nationality=_nationality(item["nationality"]),
+                        external_id=item.slug,
+                        name=item.name,
+                        source_slug=item.slug,
+                        birth_date=item.birth_date,
+                        position=_position(item.position),
+                        nationality=_nationality(item.nationality),
                     ),
                 )
                 by_name[(first.lower(), last.lower())].append(player_id)
-            for index, contract in enumerate(contracts_by_slug.get(item["slug"], [])):
-                details = contract.get("details") or []
-                if not details:
-                    continue
-                years = []
-                for detail in details:
-                    match = re.match(r"(\d{4})", str(detail.get("season") or ""))
-                    if match:
-                        years.append(int(match.group(1)))
-                if not years:
-                    continue
-                unique_years = sorted(set(years))
-                if len(unique_years) != len(years) or unique_years != list(
-                    range(unique_years[0], unique_years[-1] + 1)
-                ):
-                    raise IngestionValidationError(
-                        f"CapWages contract {item['slug']} has duplicate or non-contiguous seasons"
-                    )
+            for index, contract in enumerate(contracts_by_slug.get(item.slug, [])):
+                details = contract.seasons
+                years = [season.season_start_year for season in details]
                 start, end = min(years), max(years)
-                external_id = f"{item['slug']}:{start}:{end}:{index}"
+                external_id = f"{item.slug}:{start}:{end}:{index}"
                 cursor.execute(
                     "SELECT 1 FROM contracts WHERE source_id=%s AND external_id=%s",
                     (capwages_id, external_id),
                 )
                 contract_existed = cursor.fetchone() is not None
-                total_cents = _money_cents(contract.get("value"))
-                average_cents = _money_cents(details[0].get("capHit"))
-                expiry = str(contract.get("expiryStatus") or "").upper()
-                expiry = (
-                    "RFA" if "RFA" in expiry else "UFA" if "UFA" in expiry else None
-                )
-                contract_type = str(contract.get("type") or "")[:32] or None
+                total_cents = contract.total_value_cents
+                average_cents = details[0].cap_hit_cents
+                expiry = contract.expiry_status
+                contract_type = contract.contract_type
                 cursor.execute(
                     """INSERT INTO contracts (player_id,signing_team_id,source_id,external_id,start_season,end_season,
                            term_years,contract_type,expiry_status,total_value_cents,average_value_cents,is_entry_level,source_payload)
@@ -336,9 +242,7 @@ def ingest_capwages(
                            source_payload=EXCLUDED.source_payload,updated_at=CURRENT_TIMESTAMP RETURNING id""",
                     (
                         player_id,
-                        team_ids.get(
-                            str(contract.get("signingTeam") or item["team"]).upper()
-                        ),
+                        team_ids.get(str(contract.signing_team or item.team).upper()),
                         capwages_id,
                         external_id,
                         start,
@@ -350,22 +254,15 @@ def ingest_capwages(
                         average_cents,
                         "ENTRY" in (contract_type or "").upper()
                         or "ELC" in (contract_type or "").upper(),
-                        Json(contract),
+                        Json(contract.source_payload),
                     ),
                 )
                 contract_id = cursor.fetchone()[0]
                 contract_count += 1
                 contract_created_count += int(not contract_existed)
                 for detail in details:
-                    match = re.match(r"(\d{4})", str(detail.get("season") or ""))
-                    if not match:
-                        continue
-                    year = int(match.group(1))
-                    cap_hit = _money_cents(detail.get("capHit"))
-                    if cap_hit is None or cap_hit < 0:
-                        raise IngestionValidationError(
-                            f"CapWages contract {external_id} has an invalid cap hit"
-                        )
+                    year = detail.season_start_year
+                    cap_hit = detail.cap_hit_cents
                     cursor.execute(
                         "SELECT salary_cap_cents FROM seasons WHERE start_year=%s",
                         (year,),
@@ -395,10 +292,10 @@ def ingest_capwages(
                         (
                             contract_id,
                             year,
-                            team_ids.get(item["team"]),
+                            team_ids.get(item.team),
                             cap_hit,
                             cap_pct,
-                            "slide" in str(detail.get("type") or "").lower(),
+                            detail.is_slide,
                         ),
                     )
                     season_count += 1
