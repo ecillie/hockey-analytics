@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum, auto
+
 from app.ScriptingFiles.FullDataScript.contracts.util import decode_snapshot
 
 
@@ -49,6 +50,14 @@ class Candidate:
     last_name: str
     nhl_id: str | None
     missing_seasons: tuple[int, ...]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class StoredContract:
+    contract_id: int
+    player_id: int
+    signing_team_id: int | None
+    total_value_cents: int | None
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -188,3 +197,15 @@ def parsed_profile(
         primary_status=primary_status,
         fallback_status=fallback_status,
     )
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ActiveContractProfile:
+    player: ActivePlayer
+    contracts: tuple[ParsedContract, ...]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ActiveContractSnapshot:
+    profiles: tuple[ActiveContractProfile, ...]
+    failed_slugs: tuple[str, ...]

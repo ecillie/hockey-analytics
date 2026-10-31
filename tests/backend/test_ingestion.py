@@ -1,32 +1,32 @@
 from __future__ import annotations
 
+import json
 import os
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import date
-import json
 from pathlib import Path
+from typing import TypedDict
 from unittest.mock import Mock, patch
 
 import pytest
 import requests
-
-from app.ScriptingFiles.FullDataScript.contracts.domain import ActivePlayer
-from app.ScriptingFiles.FullDataScript.contracts.schemas.active import (
-    capwages_birth_date,
-)
-from app.ScriptingFiles.FullDataScript.contracts.errors import MoneyParseError
 from app.ScriptingFiles.FullDataScript import (
     ingestion,
-    team_stints,
     populate_roster_status,
+    team_stints,
+)
+from app.ScriptingFiles.FullDataScript.contracts.domain import ActivePlayer
+from app.ScriptingFiles.FullDataScript.contracts.errors import MoneyParseError
+from app.ScriptingFiles.FullDataScript.contracts.schemas.active import (
+    capwages_birth_date,
+    parse_active_players,
 )
 from app.ScriptingFiles.FullDataScript.roster_status.domain import (
     ExternalRosterPlayer,
     FetchResult,
 )
 from app.ScriptingFiles.FullDataScript.roster_status.tests.fakes import FixedRosterFeed
-from sqlalchemy import text
 from app.ScriptingFiles.FullDataScript.source_ingestion import util as source_utils
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.repository import (
     PostgresMoneyPuckRepository,
@@ -37,10 +37,16 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.services impor
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.fakes import (
     MemorySourceClient,
 )
-
+from sqlalchemy import text
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ingestion"
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
+
+
+class MoneyPuckFixtureOptions(TypedDict):
+    expected_seasons: tuple[int, ...]
+    minimum_rows_per_kind: int
+    maximum_duplicate_ratio: float
 
 
 class CsvResponse:
@@ -49,6 +55,9 @@ class CsvResponse:
 
     def raise_for_status(self):
         return None
+
+    def json(self):
+        return json.loads(self.text)
 
 
 class JsonResponse(CsvResponse):
@@ -65,7 +74,7 @@ class MoneyPuckSession:
         self.skater_games = skater_games
         self.season = season
 
-    def get(self, url, timeout):
+    def get(self, url, timeout, params=None):
         if "skaters.csv" in url:
             header = (
                 "playerId,season,name,team,position,situation,games_played,"
@@ -89,7 +98,7 @@ class CapWagesSession:
         self.cap_hit = cap_hit
         self.fail_profile = fail_profile
 
-    def get(self, url, timeout):
+    def get(self, url, timeout, params=None):
         if url.endswith("/players/active"):
             row = ["Contract Fixture", "contract-fixture", "AAA", "C"] + [None] * 27
             row[7] = "USA"
@@ -128,7 +137,7 @@ class ScheduleSession:
     def __init__(self, game_ids=(2025020001, 2025020002)):
         self.game_ids = game_ids
 
-    def get(self, url, timeout):
+    def get(self, url, timeout, params=None):
         games = [
             {
                 "id": game_id,
@@ -150,7 +159,7 @@ class ScheduleSession:
 
 
 class NhlRosterSession:
-    def get(self, url, timeout):
+    def get(self, url, timeout, params=None):
         if url.endswith("/standings/now"):
             return JsonResponse(
                 {
@@ -355,7 +364,7 @@ def test_value_coercion_contract_money_and_capwages_player_parsing():
     capwages_row = ["Fixture Player", None, "AAA", "L"] + [None] * 27
     capwages_row[7] = "CAN"
     capwages_row[30] = "97-1-13"
-    assert ingestion._parse_capwages_players([capwages_row], minimum_rows=1) == (
+    assert parse_active_players([capwages_row], minimum_rows=1) == (
         ActivePlayer(
             name="Fixture Player",
             slug="fixture-player",
@@ -366,7 +375,7 @@ def test_value_coercion_contract_money_and_capwages_player_parsing():
         ),
     )
     with pytest.raises(ingestion.IngestionValidationError, match="minimum is 2"):
-        ingestion._parse_capwages_players([capwages_row], minimum_rows=2)
+        parse_active_players([capwages_row], minimum_rows=2)
 
 
 def test_cross_field_stat_invariants_reject_inconsistent_rows():
@@ -545,7 +554,7 @@ def test_moneypuck_ingestion_is_idempotent_deduplicated_and_updates_typed_values
 ):
     from sqlalchemy import text
 
-    options = {
+    options: MoneyPuckFixtureOptions = {
         "expected_seasons": (2024, 2025),
         "minimum_rows_per_kind": 2,
         "maximum_duplicate_ratio": 0.5,
@@ -730,7 +739,7 @@ def test_contract_rejects_noncontiguous_years_and_impossible_cap_hit(migrated_da
             super().__init__()
             self.mode = mode
 
-        def get(self, url, timeout):
+        def get(self, url, timeout, params=None):
             response = super().get(url, timeout)
             if not url.endswith("/players/active"):
                 payload = json.loads(response.text.split(">", 1)[1].rsplit("<", 1)[0])
@@ -886,7 +895,7 @@ def test_cross_source_identity_uses_external_id_and_avoids_ambiguous_names(
 ):
     from sqlalchemy import text
 
-    options = {
+    options: MoneyPuckFixtureOptions = {
         "expected_seasons": (2024, 2025),
         "minimum_rows_per_kind": 2,
         "maximum_duplicate_ratio": 0.5,
@@ -916,7 +925,7 @@ def test_cross_source_identity_uses_external_id_and_avoids_ambiguous_names(
 
     # An ambiguous name must not steal either existing player's identity.
     class AmbiguousCapWages(CapWagesSession):
-        def get(self, url, timeout):
+        def get(self, url, timeout, params=None):
             response = super().get(url, timeout)
             if url.endswith("/players/active"):
                 payload = json.loads(response.text.split(">", 1)[1].rsplit("<", 1)[0])
@@ -978,9 +987,8 @@ def test_ingestion_foreign_keys_and_grain_indexes_match_loader_contract(
 
 def test_ingestion_run_tracking_and_concurrent_run_lock(migrated_database):
     import psycopg2
-    from sqlalchemy import text
-
     from app.ScriptingFiles.FullDataScript import ingestion_tracking
+    from sqlalchemy import text
 
     @ingestion_tracking.tracked_ingestion("nhl", "overlap_fixture")
     def fixture_stage():
