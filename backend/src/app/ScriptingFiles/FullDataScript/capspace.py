@@ -12,21 +12,56 @@ from __future__ import annotations
 
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass, replace
-from datetime import date
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from html.parser import HTMLParser
+from dataclasses import dataclass, replace
+from decimal import Decimal
 import argparse
 import hashlib
 import json
-import re
 import time
 from typing import Any, Iterable, Protocol, runtime_checkable
 from collections.abc import Mapping
+from urllib.parse import urlsplit
 
 import requests
 from psycopg2.extras import Json, execute_values
 
+from app.ScriptingFiles.FullDataScript.contracts.schemas import (
+    parse_source_document,
+)
+from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
+    parse_contract_document as _parse_contract_document,
+    parse_capspace_page as parse_capspace_page,
+    normalize_contracts as normalize_contracts,
+)
+from app.ScriptingFiles.FullDataScript.contracts.domain import (
+    Candidate as Candidate,
+    ContractSeason as ContractSeason,
+    ParsedContract as ParsedContract,
+    ProfileResult as ProfileResult,
+    ProfileSource,
+    ProfileStatus,
+    AbsenceReason,
+    FailureReason,
+    ContractsAbsent,
+    ProfileFailure,
+    parsed_profile,
+)
+from app.ScriptingFiles.FullDataScript.contracts.schemas.serialization import (
+    serialize_contract,
+)
+from app.ScriptingFiles.FullDataScript.contracts.errors import (
+    CapSpaceError as CapSpaceError,
+    CapSpaceParseError as CapSpaceParseError,
+    MissingContractError,
+)
+from app.ScriptingFiles.FullDataScript.contracts.util import (
+    money_to_cents as money_to_cents,
+    season_start_year as season_start_year,
+    clean_text as _clean_text,
+)
+from app.ScriptingFiles.FullDataScript.contracts.policy import (
+    capwages_document_matches as _capwages_document_matches,
+)
 from app.database import database_transaction, init_db
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
     slug_from_name as _slug_from_name,
@@ -54,26 +89,18 @@ class ProfileSession(Protocol):
 
 CAPSPACE_BASE_URL = "https://cap-space.com"
 CAPWAGES_BASE_URL = "https://capwages.com"
-CAPSPACE_SOURCE = "capspace"
-CAPWAGES_SOURCE = "capwages"
-STATUS_FAILED = "failed"
-STATUS_NO_CONTRACTS = "no_contracts"
-STATUS_NO_MATCHING_CONTRACTS = "no_matching_contracts"
-STATUS_NO_NHL_ID = "no_nhl_id"
-STATUS_NOT_FOUND = "not_found"
-STATUS_PARSE_FAILED = "parse_failed"
-STATUS_SUCCEEDED = "succeeded"
+CAPSPACE_SOURCE = ProfileSource.CAPSPACE
+CAPWAGES_SOURCE = ProfileSource.CAPWAGES
+STATUS_FAILED = ProfileStatus.FAILED
+STATUS_NO_CONTRACTS = ProfileStatus.NO_CONTRACTS
+STATUS_NO_MATCHING_CONTRACTS = ProfileStatus.NO_MATCHING_CONTRACTS
+STATUS_NO_NHL_ID = ProfileStatus.NO_NHL_ID
+STATUS_NOT_FOUND = ProfileStatus.NOT_FOUND
+STATUS_PARSE_FAILED = ProfileStatus.PARSE_FAILED
+STATUS_SUCCEEDED = ProfileStatus.SUCCEEDED
 FAILURE_STATUSES = frozenset({STATUS_FAILED, STATUS_PARSE_FAILED})
 RETRYABLE_HTTP_STATUSES = frozenset({429, 500, 502, 503, 504})
 CAPWAGES_SLUG_SUFFIXES = ("", "-1", "-2", "-3")
-AUXILIARY_TABLE_PREFIXES = (
-    "buyout years",
-    "termination fees",
-    "cap recapture",
-)
-NO_CONTRACT_MARKERS = re.compile(
-    r"Contract History|No recorded contracts|Total Value\s*:", re.I
-)
 DEFAULT_FIRST_SEASON = 2008
 DEFAULT_LAST_SEASON = 2025
 MAX_WORKERS = 8
@@ -99,584 +126,6 @@ MISSING_CONTRACT_PREDICATE = """NOT EXISTS (
      WHERE c.player_id=s.player_id
        AND cs.season_start_year=s.season_start_year
 )"""
-
-
-class CapSpaceError(RuntimeError):
-    """A source or parser failure that is safe to report per player."""
-
-
-class CapSpaceParseError(CapSpaceError):
-    """The page was reachable but no trustworthy contract structure was found."""
-
-
-@dataclass(frozen=True)
-class ContractSeason:
-    season_start_year: int
-    cap_hit_cents: int
-    base_salary_cents: int | None = None
-    signing_bonus_cents: int | None = None
-    performance_bonus_cents: int | None = None
-    minors_salary_cents: int | None = None
-    clause: str | None = None
-    owning_team: str | None = None
-    is_slide: bool = False
-    source_payload: dict[str, Any] | None = None
-
-
-@dataclass(frozen=True)
-class ParsedContract:
-    contract_type: str | None
-    is_entry_level: bool
-    total_value_cents: int | None
-    term_years: int
-    signed_on: date | None
-    signing_team: str | None
-    expiry_status: str | None
-    seasons: tuple[ContractSeason, ...]
-    external_id: str | None = None
-    source_payload: dict[str, Any] | None = None
-
-
-@dataclass(frozen=True)
-class Candidate:
-    player_id: int
-    first_name: str
-    last_name: str
-    nhl_id: str | None
-    missing_seasons: tuple[int, ...]
-
-
-@dataclass(frozen=True)
-class ProfileResult:
-    candidate: Candidate
-    url: str
-    status: str
-    contracts: tuple[ParsedContract, ...] = ()
-    error: str | None = None
-    html: str | None = None
-    source_code: str = CAPSPACE_SOURCE
-    fallback_attempted: bool = False
-    primary_status: str | None = None
-    fallback_status: str | None = None
-
-    @property
-    def target_seasons_covered(self) -> frozenset[int]:
-        targets = set(self.candidate.missing_seasons)
-        return frozenset(
-            season.season_start_year
-            for contract in self.contracts
-            for season in contract.seasons
-            if season.season_start_year in targets
-        )
-
-    @property
-    def covers_target(self) -> bool:
-        return bool(self.target_seasons_covered)
-
-
-def money_to_cents(value: Any) -> int | None:
-    """Convert a dollar string to cents without turning malformed input into zero."""
-    if value is None or str(value).strip() in {"", "-", "—", "–", "N/A", "NA"}:
-        return None
-    text = str(value).strip().replace("$", "").replace(",", "").replace(" ", "")
-    try:
-        amount = Decimal(text)
-    except (InvalidOperation, ValueError) as exc:
-        raise CapSpaceParseError(f"malformed monetary value: {value!r}") from exc
-    if not amount.is_finite() or amount < 0:
-        raise CapSpaceParseError(f"invalid monetary value: {value!r}")
-    return int((amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-
-
-def season_start_year(value: Any) -> int:
-    text = " ".join(str(value or "").replace("–", "-").replace("—", "-").split())
-    match = re.fullmatch(r"(\d{4})\s*-\s*(?:\d{2}|\d{4})", text)
-    if not match:
-        raise CapSpaceParseError(f"malformed season: {value!r}")
-    year = int(match.group(1))
-    if year < 1900 or year > 2200:
-        raise CapSpaceParseError(f"unreasonable season: {value!r}")
-    return year
-
-
-def _clean_text(value: Any) -> str:
-    return " ".join(str(value or "").replace("\xa0", " ").split())
-
-
-def _date_value(value: Any) -> date | None:
-    text = _clean_text(value)
-    if not text:
-        return None
-    for pattern in (r"(\d{4})-(\d{1,2})-(\d{1,2})", r"(\d{1,2})/(\d{1,2})/(\d{4})"):
-        match = re.search(pattern, text)
-        if match:
-            parts = [int(part) for part in match.groups()]
-            if pattern.startswith("(\\d{1,2}"):
-                parts = [parts[2], parts[0], parts[1]]
-            try:
-                return date(*parts)
-            except ValueError as exc:
-                raise CapSpaceParseError(f"malformed signing date: {value!r}") from exc
-    month_match = re.fullmatch(r"([A-Za-z]{3,9})\.?\s+(\d{1,2}),\s*(\d{4})", text)
-    if month_match:
-        month_names = {
-            name: index
-            for index, names in enumerate(
-                (
-                    (),
-                    ("jan", "january"),
-                    ("feb", "february"),
-                    ("mar", "march"),
-                    ("apr", "april"),
-                    ("may",),
-                    ("jun", "june"),
-                    ("jul", "july"),
-                    ("aug", "august"),
-                    ("sep", "sept", "september"),
-                    ("oct", "october"),
-                    ("nov", "november"),
-                    ("dec", "december"),
-                )
-            )
-            for name in names
-        }
-        month = month_names.get(month_match.group(1).lower())
-        if month:
-            try:
-                return date(int(month_match.group(3)), month, int(month_match.group(2)))
-            except ValueError as exc:
-                raise CapSpaceParseError(f"malformed signing date: {value!r}") from exc
-    raise CapSpaceParseError(f"malformed signing date: {value!r}")
-
-
-def _expiry(value: Any) -> str | None:
-    text = _clean_text(value).upper()
-    if "RFA" in text:
-        return "RFA"
-    if "UFA" in text:
-        return "UFA"
-    return None
-
-
-def _contract_type(value: Any) -> str | None:
-    text = _clean_text(value)
-    return text[:32] or None
-
-
-class _Node:
-    def __init__(
-        self,
-        tag: str = "root",
-        attrs: dict[str, str] | None = None,
-        parent: _Node | None = None,
-    ):
-        self.tag = tag
-        self.attrs = attrs or {}
-        self.parent = parent
-        self.children: list[_Node | str] = []
-
-    def text(self) -> str:
-        return _clean_text(
-            " ".join(
-                child if isinstance(child, str) else child.text()
-                for child in self.children
-            )
-        )
-
-
-class _TreeParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.root = _Node()
-        self.current = self.root
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        node = _Node(
-            tag.lower(),
-            {key.lower(): value or "" for key, value in attrs},
-            self.current,
-        )
-        self.current.children.append(node)
-        if tag.lower() not in {"meta", "link", "img", "input", "br", "hr"}:
-            self.current = node
-
-    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        self.handle_starttag(tag, attrs)
-
-    def handle_endtag(self, tag: str) -> None:
-        node = self.current
-        while node is not self.root:
-            if node.tag == tag.lower():
-                self.current = node.parent or self.root
-                return
-            node = node.parent or self.root
-
-    def handle_data(self, data: str) -> None:
-        if data:
-            self.current.children.append(data)
-
-
-@dataclass(frozen=True)
-class _SourceDocument:
-    html: str
-    root: _Node
-    next_data: tuple[dict[str, Any], ...]
-
-    @classmethod
-    def parse(cls, html: str) -> _SourceDocument:
-        parser = _TreeParser()
-        parser.feed(html)
-        payloads: list[dict[str, Any]] = []
-        for node in _descendants(parser.root, "script"):
-            if node.attrs.get("id") != "__NEXT_DATA__":
-                continue
-            try:
-                payload = json.loads(node.text())
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if isinstance(payload, dict):
-                payloads.append(payload)
-        return cls(html=html, root=parser.root, next_data=tuple(payloads))
-
-
-def _descendants(node: _Node, tag: str | None = None) -> list[_Node]:
-    found: list[_Node] = []
-    for child in node.children:
-        if isinstance(child, _Node):
-            if tag is None or child.tag == tag:
-                found.append(child)
-            found.extend(_descendants(child, tag))
-    return found
-
-
-def _classes(node: _Node) -> set[str]:
-    return set(node.attrs.get("class", "").split())
-
-
-def _page_player(payload: dict[str, Any]) -> dict[str, Any]:
-    page = payload.get("props", {}).get("pageProps", {})
-    player = page.get("player") or page.get("person") or {}
-    return player if isinstance(player, dict) else {}
-
-
-def _embedded_nhl_id(document: _SourceDocument) -> str | None:
-    for payload in document.next_data:
-        player = _page_player(payload)
-        if player.get("nhlId") is not None:
-            return str(player["nhlId"])
-    return None
-
-
-def _is_entry_level(value: Any) -> bool:
-    contract_type = _clean_text(value).upper()
-    return "ENTRY" in contract_type or "ELC" in contract_type
-
-
-def _season_from_mapping(row: dict[str, Any]) -> ContractSeason:
-    normalized = {
-        re.sub(r"[^a-z]", "", str(key).lower()): value for key, value in row.items()
-    }
-    season = season_start_year(normalized.get("season"))
-    cap_hit = money_to_cents(normalized.get("caphit", normalized.get("caphitcents")))
-    if cap_hit is None:
-        raise CapSpaceParseError(f"missing cap hit for season {row.get('season')!r}")
-    raw_nhl = normalized.get("nhlsalary", normalized.get("basesalary"))
-    is_slide = "slide" in _clean_text(raw_nhl).lower()
-    return ContractSeason(
-        season_start_year=season,
-        cap_hit_cents=cap_hit,
-        base_salary_cents=None if is_slide else money_to_cents(raw_nhl),
-        signing_bonus_cents=money_to_cents(
-            normalized.get("signingbonus", normalized.get("signingbonuses"))
-        ),
-        performance_bonus_cents=money_to_cents(
-            normalized.get(
-                "performancebonus",
-                normalized.get(
-                    "performancebonuses",
-                    normalized.get("perfbonus", normalized.get("perfbonuses")),
-                ),
-            )
-        ),
-        minors_salary_cents=money_to_cents(
-            normalized.get("minor salary", normalized.get("minorssalary"))
-        ),
-        clause=_clean_text(normalized.get("clause")) or None,
-        owning_team=_clean_text(normalized.get("owningteam", normalized.get("team")))
-        or None,
-        is_slide=is_slide,
-        source_payload=dict(row),
-    )
-
-
-def _contracts_from_json(payload: dict[str, Any]) -> list[ParsedContract]:
-    page = payload.get("props", {}).get("pageProps", {})
-    person = page.get("person") or page.get("player") or {}
-    raw_contracts = person.get("contracts") or page.get("contracts") or []
-    parsed: list[ParsedContract] = []
-    for raw in raw_contracts:
-        if not isinstance(raw, dict):
-            continue
-        details = raw.get("details") or raw.get("seasons") or []
-        seasons = []
-        for row in details:
-            if not isinstance(row, dict):
-                continue
-            try:
-                seasons.append(_season_from_mapping(row))
-            except CapSpaceParseError:
-                continue
-        if not seasons:
-            continue
-        try:
-            raw_start = min(row.season_start_year for row in seasons)
-            raw_end = max(row.season_start_year for row in seasons)
-            term = int(
-                raw.get("term")
-                or raw.get("termYears")
-                or raw.get("seasonsCount")
-                or len(seasons)
-            )
-            if (
-                term <= 0
-                or raw_end < raw_start
-                or len({row.season_start_year for row in seasons}) != len(seasons)
-            ):
-                continue
-            parsed.append(
-                ParsedContract(
-                    contract_type=_contract_type(
-                        raw.get("type") or raw.get("contractType")
-                    ),
-                    is_entry_level=_is_entry_level(
-                        raw.get("type") or raw.get("contractType")
-                    ),
-                    total_value_cents=money_to_cents(
-                        raw.get("value") or raw.get("totalValue")
-                    ),
-                    term_years=term,
-                    signed_on=_date_value(
-                        raw.get("signingDate") or raw.get("signed_on")
-                    ),
-                    signing_team=_clean_text(raw.get("signingTeam") or raw.get("team"))
-                    or None,
-                    expiry_status=_expiry(raw.get("expiryStatus") or raw.get("expiry")),
-                    seasons=tuple(seasons),
-                    external_id=_clean_text(raw.get("id") or raw.get("contractId"))
-                    or None,
-                    source_payload=raw,
-                )
-            )
-        except (CapSpaceParseError, TypeError, ValueError):
-            continue
-    return parsed
-
-
-def _table_rows(block: _Node) -> list[dict[str, str]]:
-    tables = _descendants(block, "table")
-    for table in tables:
-        rows = _descendants(table, "tr")
-        for header_index, row in enumerate(rows):
-            header_cells = [
-                node
-                for node in row.children
-                if isinstance(node, _Node) and node.tag in {"th", "td"}
-            ]
-            if not header_cells:
-                continue
-            headers = [
-                re.sub(r"[^a-z]", "", cell.text().lower()) for cell in header_cells
-            ]
-            # CapSpace currently renders the season-table header as <td>, and
-            # places contract metadata in a separate table before it.
-            if "season" not in headers or "caphit" not in headers:
-                continue
-            parsed: list[dict[str, str]] = []
-            for data_row in rows[header_index + 1 :]:
-                cells = [
-                    node
-                    for node in data_row.children
-                    if isinstance(node, _Node) and node.tag in {"th", "td"}
-                ]
-                if not cells:
-                    continue
-                values = [_clean_text(cell.text()) for cell in cells]
-                first_value = values[0].lower() if values else ""
-                if first_value.startswith(AUXILIARY_TABLE_PREFIXES):
-                    break
-                # A contract table can contain lockout rows, auxiliary
-                # sections, or a repeated header for buyout data. Keep only
-                # rows that have a real season and monetary cap hit.
-                try:
-                    season_start_year(values[0])
-                    money_to_cents(values[1])
-                except (IndexError, CapSpaceParseError):
-                    continue
-                if len(values) < len(headers):
-                    values.extend([""] * (len(headers) - len(values)))
-                parsed.append(dict(zip(headers, values)))
-            if parsed:
-                return parsed
-    return []
-
-
-def _document_contracts(document: _SourceDocument) -> list[ParsedContract]:
-    for payload in document.next_data:
-        try:
-            json_contracts = _contracts_from_json(payload)
-        except (TypeError, CapSpaceError):
-            json_contracts = []
-        if json_contracts:
-            return json_contracts
-
-    candidates = []
-    for node in _descendants(document.root):
-        text = node.text()
-        classes = _classes(node)
-        if (
-            (
-                node.tag == "article"
-                or "contract" in classes
-                or "contract-block" in classes
-            )
-            and "Total Value" in text
-            and _descendants(node, "table")
-        ):
-            candidates.append(node)
-    blocks = [
-        node
-        for node in candidates
-        if not any(parent in candidates for parent in _parents(node))
-    ]
-    result: list[ParsedContract] = []
-    for block in blocks:
-        text = block.text()
-        rows = _table_rows(block)
-        seasons = []
-        for row in rows:
-            try:
-                seasons.append(_season_from_mapping(row))
-            except CapSpaceParseError:
-                continue
-        if not seasons:
-            continue
-        value_match = re.search(
-            r"Total Value\s*:\s*(\$?[0-9][0-9,]*(?:\.[0-9]+)?)", text, re.I
-        )
-        term_match = re.search(r"Seasons?\s*:\s*(\d+)", text, re.I)
-        date_match = re.search(
-            r"Signing Date\s*:\s*(\d{4}-\d{1,2}-\d{1,2})", text, re.I
-        )
-        expiry_match = re.search(r"Expiration Status\s*:\s*(RFA|UFA)", text, re.I)
-        team_match = re.search(
-            r"Signing Team\s*:\s*(.+?)(?=\s*\|?\s*Season\s+|\s*Cap Hit\b|$)", text, re.I
-        )
-        headings = [
-            _clean_text(node.text())
-            for node in _descendants(block)
-            if node.tag in {"h2", "h3", "h4"}
-        ]
-        contract_type = next(
-            (heading for heading in headings if "contract" in heading.lower()), None
-        )
-        parsed_type = _contract_type(contract_type)
-        signed_on = None
-        if date_match:
-            try:
-                signed_on = _date_value(date_match.group(1).strip())
-            except CapSpaceParseError:
-                pass
-        total_value = None
-        if value_match:
-            try:
-                total_value = money_to_cents(value_match.group(1).strip())
-            except CapSpaceParseError:
-                pass
-        result.append(
-            ParsedContract(
-                contract_type=parsed_type,
-                is_entry_level=_is_entry_level(parsed_type),
-                total_value_cents=total_value,
-                term_years=int(term_match.group(1)) if term_match else len(seasons),
-                signed_on=signed_on,
-                signing_team=_clean_text(team_match.group(1)) or None
-                if team_match
-                else None,
-                expiry_status=_expiry(expiry_match.group(1)) if expiry_match else None,
-                seasons=tuple(seasons),
-                external_id=block.attrs.get("data-contract-id")
-                or block.attrs.get("data-external-id")
-                or None,
-                source_payload={"text": text, "rows": rows},
-            )
-        )
-    return result
-
-
-def _parents(node: _Node) -> list[_Node]:
-    result = []
-    parent = node.parent
-    while parent:
-        result.append(parent)
-        parent = parent.parent
-    return result
-
-
-def _parse_contract_document(
-    document: _SourceDocument,
-    *,
-    expected_nhl_id: str | None = None,
-    require_nhl_id: bool = False,
-) -> tuple[ParsedContract, ...]:
-    if expected_nhl_id:
-        returned_id = _embedded_nhl_id(document)
-        if require_nhl_id and returned_id is None:
-            raise CapSpaceParseError("source page does not expose an NHL ID")
-        if returned_id is not None and returned_id != str(expected_nhl_id):
-            raise CapSpaceParseError("source page does not match requested NHL ID")
-    contracts = _document_contracts(document)
-    if not contracts:
-        if NO_CONTRACT_MARKERS.search(document.html):
-            return ()
-        raise CapSpaceParseError("CapSpace contract markup was not recognised")
-    for contract in contracts:
-        if contract.term_years <= 0 or len(
-            {row.season_start_year for row in contract.seasons}
-        ) != len(contract.seasons):
-            raise CapSpaceParseError("duplicate or invalid contract seasons")
-    return tuple(contracts)
-
-
-def parse_capspace_page(
-    html: str,
-    *,
-    expected_nhl_id: str | None = None,
-    require_nhl_id: bool = False,
-) -> tuple[ParsedContract, ...]:
-    """Parse a CapSpace/CapWages page and optionally require NHL-ID identity."""
-    if not isinstance(html, str) or not html.strip():
-        raise CapSpaceParseError("empty CapSpace response")
-    return _parse_contract_document(
-        _SourceDocument.parse(html),
-        expected_nhl_id=expected_nhl_id,
-        require_nhl_id=require_nhl_id,
-    )
-
-
-def normalize_contracts(
-    contracts: Iterable[ParsedContract],
-    nhl_id: str,
-    source_code: str = CAPSPACE_SOURCE,
-) -> tuple[ParsedContract, ...]:
-    normalized = []
-    for index, contract in enumerate(contracts):
-        first = min(row.season_start_year for row in contract.seasons)
-        last = max(row.season_start_year for row in contract.seasons)
-        external_id = (
-            contract.external_id or f"{source_code}:{nhl_id}:{first}:{last}:{index}"
-        )
-        normalized.append(replace(contract, external_id=external_id))
-    return tuple(normalized)
 
 
 def select_candidates(
@@ -724,7 +173,11 @@ def select_candidates(
     )
     return [
         Candidate(
-            int(row[0]), row[1], row[2], str(row[3]) if row[3] else None, tuple(row[4])
+            player_id=int(row[0]),
+            first_name=row[1],
+            last_name=row[2],
+            nhl_id=str(row[3]) if row[3] else None,
+            missing_seasons=tuple(row[4]),
         )
         for row in cursor.fetchall()
     ]
@@ -816,7 +269,7 @@ def _contract_row(cursor, contract_id: int) -> tuple[Any, ...]:
     )
     row = cursor.fetchone()
     if row is None:
-        raise CapSpaceError(f"contract {contract_id} disappeared during reconciliation")
+        raise MissingContractError(contract_id=contract_id)
     return row
 
 
@@ -1173,7 +626,11 @@ def _fetch_profile(
     session: ProfileSession, candidate: Candidate, *, max_attempts: int = 4
 ) -> ProfileResult:
     if not candidate.nhl_id:
-        return ProfileResult(candidate, "", STATUS_NO_NHL_ID)
+        return ProfileResult(
+            candidate=candidate,
+            url="",
+            outcome=ContractsAbsent(reason=AbsenceReason.NO_NHL_ID, detail=None),
+        )
     url = f"{CAPSPACE_BASE_URL}/person/nhl:{candidate.nhl_id}"
     for attempt in range(max_attempts):
         try:
@@ -1181,28 +638,39 @@ def _fetch_profile(
         except requests.RequestException as exc:
             if attempt + 1 == max_attempts:
                 return ProfileResult(
-                    candidate,
-                    url,
-                    STATUS_FAILED,
-                    error="timeout" if isinstance(exc, requests.Timeout) else str(exc),
+                    candidate=candidate,
+                    url=url,
+                    outcome=ProfileFailure(
+                        reason=FailureReason.FAILED,
+                        detail="timeout"
+                        if isinstance(exc, requests.Timeout)
+                        else str(exc),
+                    ),
                 )
             time.sleep(min(2**attempt, 8))
             continue
         if response.status_code == 404:
-            return ProfileResult(candidate, url, STATUS_NOT_FOUND)
+            return ProfileResult(
+                candidate=candidate,
+                url=url,
+                outcome=ContractsAbsent(reason=AbsenceReason.NOT_FOUND, detail=None),
+            )
         if response.status_code == 200:
             returned_url = getattr(response, "url", "")
             if (
                 isinstance(returned_url, str)
                 and returned_url
-                and f"/person/nhl:{candidate.nhl_id}" not in returned_url
+                and urlsplit(returned_url).path.rstrip("/")
+                != f"/person/nhl:{candidate.nhl_id}"
             ):
                 return ProfileResult(
-                    candidate,
-                    url,
-                    STATUS_PARSE_FAILED,
-                    error="CapSpace redirected to a different player identity",
+                    candidate=candidate,
+                    url=url,
                     html=response.text,
+                    outcome=ProfileFailure(
+                        reason=FailureReason.PARSE_FAILED,
+                        detail="CapSpace redirected to a different player identity",
+                    ),
                 )
             try:
                 contracts = parse_capspace_page(
@@ -1210,21 +678,24 @@ def _fetch_profile(
                 )
             except CapSpaceError as exc:
                 return ProfileResult(
-                    candidate,
-                    url,
-                    STATUS_PARSE_FAILED,
-                    error=str(exc),
+                    candidate=candidate,
+                    url=url,
                     html=response.text,
+                    outcome=ProfileFailure(
+                        reason=FailureReason.PARSE_FAILED, detail=str(exc)
+                    ),
                 )
-            status = STATUS_NO_CONTRACTS if not contracts else STATUS_SUCCEEDED
-            return ProfileResult(candidate, url, status, contracts, html=response.text)
+            return parsed_profile(
+                candidate=candidate, url=url, html=response.text, contracts=contracts
+            )
         retryable = response.status_code in RETRYABLE_HTTP_STATUSES
         if not retryable or attempt + 1 == max_attempts:
             return ProfileResult(
-                candidate,
-                url,
-                STATUS_FAILED,
-                error=f"HTTP {response.status_code}",
+                candidate=candidate,
+                url=url,
+                outcome=ProfileFailure(
+                    reason=FailureReason.FAILED, detail=f"HTTP {response.status_code}"
+                ),
             )
         retry_after = response.headers.get("Retry-After")
         try:
@@ -1232,7 +703,11 @@ def _fetch_profile(
         except ValueError:
             delay = min(2**attempt, 8)
         time.sleep(delay)
-    return ProfileResult(candidate, url, STATUS_FAILED, error="retry exhaustion")
+    return ProfileResult(
+        candidate=candidate,
+        url=url,
+        outcome=ProfileFailure(reason=FailureReason.FAILED, detail="retry exhaustion"),
+    )
 
 
 def _target_seasons_covered(result: ProfileResult) -> set[int]:
@@ -1240,59 +715,12 @@ def _target_seasons_covered(result: ProfileResult) -> set[int]:
     return set(result.target_seasons_covered)
 
 
-def _capwages_document_matches(
-    document: _SourceDocument,
-    candidate: Candidate,
-    url: str,
-) -> bool:
-    """Validate legacy profiles that predate CapWages' NHL-ID field.
-
-    Newer pages are keyed by NHL ID. Older pages must instead agree on the
-    canonical name and slug and expose an NHL stats season that overlaps this
-    player's missing-season target. This avoids accepting a same-name profile
-    based on its URL alone.
-    """
-    for payload in document.next_data:
-        player = _page_player(payload)
-        if player.get("nhlId") is not None:
-            return str(player["nhlId"]) == str(candidate.nhl_id)
-        expected_slug = _slug_from_name(f"{candidate.first_name} {candidate.last_name}")
-        page_slug = _clean_text(player.get("slug")).lower()
-        page_name_slug = _slug_from_name(_clean_text(player.get("name")))
-        url_slug = url.rstrip("/").rsplit("/", 1)[-1].lower()
-        if (
-            not expected_slug
-            or page_name_slug != expected_slug
-            or page_slug != url_slug
-            or not (
-                url_slug == expected_slug or url_slug.startswith(f"{expected_slug}-")
-            )
-        ):
-            return False
-        stats_seasons = set()
-        for row in player.get("stats") or []:
-            if (
-                not isinstance(row, dict)
-                or _clean_text(row.get("league")).upper() != "NHL"
-            ):
-                continue
-            match = re.match(
-                r"(\d{4})",
-                _clean_text(row.get("season") or row.get("platformSeason")),
-            )
-            games = str(row.get("gp") or "0").strip()
-            if match and games.isdigit() and int(games) > 0:
-                stats_seasons.add(int(match.group(1)))
-        return bool(stats_seasons & set(candidate.missing_seasons))
-    return False
-
-
 def _capwages_identity_matches(
     html: str,
     candidate: Candidate,
     url: str,
 ) -> bool:
-    return _capwages_document_matches(_SourceDocument.parse(html), candidate, url)
+    return _capwages_document_matches(parse_source_document(html), candidate, url)
 
 
 def _fetch_capwages_profile(
@@ -1302,16 +730,21 @@ def _fetch_capwages_profile(
     """Try CapWages slugs with strong identity checks and bounded requests."""
     if not candidate.nhl_id:
         return ProfileResult(
-            candidate, "", STATUS_NO_NHL_ID, source_code=CAPWAGES_SOURCE
+            candidate=candidate,
+            url="",
+            source_code=CAPWAGES_SOURCE,
+            outcome=ContractsAbsent(reason=AbsenceReason.NO_NHL_ID, detail=None),
         )
     slug = _slug_from_name(f"{candidate.first_name} {candidate.last_name}")
     if not slug:
         return ProfileResult(
-            candidate,
-            "",
-            STATUS_NOT_FOUND,
-            error="player name cannot form a CapWages slug",
+            candidate=candidate,
+            url="",
             source_code=CAPWAGES_SOURCE,
+            outcome=ContractsAbsent(
+                reason=AbsenceReason.NOT_FOUND,
+                detail="player name cannot form a CapWages slug",
+            ),
         )
     last_result: ProfileResult | None = None
     for suffix in CAPWAGES_SLUG_SUFFIXES:
@@ -1320,11 +753,13 @@ def _fetch_capwages_profile(
             response = session.get(url, timeout=30)
         except requests.RequestException as exc:
             last_result = ProfileResult(
-                candidate,
-                url,
-                STATUS_FAILED,
-                error="timeout" if isinstance(exc, requests.Timeout) else str(exc),
+                candidate=candidate,
+                url=url,
                 source_code=CAPWAGES_SOURCE,
+                outcome=ProfileFailure(
+                    reason=FailureReason.FAILED,
+                    detail="timeout" if isinstance(exc, requests.Timeout) else str(exc),
+                ),
             )
             continue
         if response.status_code == 404 and not suffix:
@@ -1332,10 +767,10 @@ def _fetch_capwages_profile(
             # owned by a same-name player. Avoid three guaranteed misses for
             # every historical candidate absent from CapWages.
             return ProfileResult(
-                candidate,
-                url,
-                STATUS_NOT_FOUND,
+                candidate=candidate,
+                url=url,
                 source_code=CAPWAGES_SOURCE,
+                outcome=ContractsAbsent(reason=AbsenceReason.NOT_FOUND, detail=None),
             )
         if response.status_code == 404:
             continue
@@ -1343,21 +778,24 @@ def _fetch_capwages_profile(
             # A rate-limit or source outage applies to the host, not just this
             # guessed slug. Stop rather than multiplying requests.
             return ProfileResult(
-                candidate,
-                url,
-                STATUS_FAILED,
-                error=f"HTTP {response.status_code}",
+                candidate=candidate,
+                url=url,
                 source_code=CAPWAGES_SOURCE,
+                outcome=ProfileFailure(
+                    reason=FailureReason.FAILED, detail=f"HTTP {response.status_code}"
+                ),
             )
-        document = _SourceDocument.parse(response.text)
+        document = parse_source_document(response.text)
         if not _capwages_document_matches(document, candidate, url):
             last_result = ProfileResult(
-                candidate,
-                url,
-                STATUS_PARSE_FAILED,
-                error="CapWages profile identity could not be validated",
+                candidate=candidate,
+                url=url,
                 html=response.text,
                 source_code=CAPWAGES_SOURCE,
+                outcome=ProfileFailure(
+                    reason=FailureReason.PARSE_FAILED,
+                    detail="CapWages profile identity could not be validated",
+                ),
             )
             continue
         try:
@@ -1367,30 +805,30 @@ def _fetch_capwages_profile(
             )
         except CapSpaceError as exc:
             last_result = ProfileResult(
-                candidate,
-                url,
-                STATUS_PARSE_FAILED,
-                error=str(exc),
+                candidate=candidate,
+                url=url,
                 html=response.text,
                 source_code=CAPWAGES_SOURCE,
+                outcome=ProfileFailure(
+                    reason=FailureReason.PARSE_FAILED, detail=str(exc)
+                ),
             )
             return last_result
-        result = ProfileResult(
-            candidate,
-            url,
-            STATUS_NO_CONTRACTS if not contracts else STATUS_SUCCEEDED,
-            contracts,
+        result = parsed_profile(
+            candidate=candidate,
+            url=url,
             html=response.text,
             source_code=CAPWAGES_SOURCE,
+            contracts=contracts,
         )
         if result.covers_target:
             return result
-        return replace(result, status=STATUS_NO_MATCHING_CONTRACTS)
+        return result
     return last_result or ProfileResult(
-        candidate,
-        f"{CAPWAGES_BASE_URL}/players/{slug}",
-        STATUS_NOT_FOUND,
+        candidate=candidate,
+        url=f"{CAPWAGES_BASE_URL}/players/{slug}",
         source_code=CAPWAGES_SOURCE,
+        outcome=ContractsAbsent(reason=AbsenceReason.NOT_FOUND, detail=None),
     )
 
 
@@ -1452,7 +890,7 @@ def _result_source_payload(result: ProfileResult) -> dict[str, Any]:
         "status": result.status,
         "error": result.error,
         "url": result.url,
-        "contracts": [asdict(contract) for contract in result.contracts],
+        "contracts": [serialize_contract(contract) for contract in result.contracts],
     }
 
 
@@ -1515,7 +953,7 @@ def _persist_batch(
     batch_summary: Counter[str] = Counter()
     with database_transaction() as connection:
         cursor = connection.cursor()
-        source_ids = {
+        source_ids: dict[str, int] = {
             source_code: _source_id(cursor, source_code)
             for source_code in {result.source_code for result in results}
             | {CAPSPACE_SOURCE}
