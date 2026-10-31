@@ -1,49 +1,15 @@
-from __future__ import annotations
-
 import numpy as np
 import pandas as pd
 
+from ml.configuration import MODEL_FEATURE_COLUMNS, FeatureOptions
 from ml.pipelines.build_model_dataset import build_model_dataset
-
-
-# Numeric features we currently expect to feed into the skater-value model.
-# Salary-cap and contract information are intentionally excluded.
-MODEL_FEATURE_COLUMNS = [
-    "games_played",
-    "toi_hours",
-    "goals_per_60",
-    "assists_per_60",
-    "points_per_60",
-    "xg_per_60",
-    "shots_on_goal_per_60",
-    "unblocked_attempts_per_60",
-    "game_score_per_60",
-    "primary_assists_per_60",
-    "secondary_assists_per_60",
-    "takeaways_per_60",
-    "giveaways_per_60",
-    "net_takeaways_per_60",
-    "blocks_per_60",
-    "penalties_per_60",
-    "penalties_drawn_per_60",
-    "penalty_differential_per_60",
-    "goals_above_expected_per_60",
-    "on_ice_expected_goals_pct",
-    "offensive_zone_start_pct",
-    "defensive_zone_start_pct",
-    "neutral_zone_start_pct",
-]
+from ml.schemas import validate_feature_options, validate_frame
 
 
 def _per_60(
     values: pd.Series,
     ice_time_seconds: pd.Series,
 ) -> pd.Series:
-    """
-    Convert a season total into a per-60-minute rate.
-
-    Returns NaN when ice time is missing or zero.
-    """
     valid_toi = ice_time_seconds.where(ice_time_seconds > 0)
 
     return values.astype(float) * 3600.0 / valid_toi
@@ -51,19 +17,42 @@ def _per_60(
 
 def build_features(
     df: pd.DataFrame | None = None,
+    *,
+    options: FeatureOptions | None = None,
 ) -> pd.DataFrame:
-    """
-    Build skater player-season features.
 
-    If no DataFrame is supplied, the base model dataset is
-    loaded directly from the ML data pipeline.
-
-    Contract information is intentionally excluded.
-    """
-
+    selected = options or FeatureOptions()
+    validate_feature_options(selected)
     if df is None:
-        df = build_model_dataset()
-
+        df = build_model_dataset(options=selected)
+    validate_frame(
+        df,
+        required=(
+            "player_id",
+            "season",
+            "games_played",
+            "ice_time_seconds",
+            "goals",
+            "assists",
+            "points",
+            "individual_expected_goals",
+            "individual_shots_on_goal",
+            "individual_unblocked_attempts",
+            "game_score",
+            "individual_primary_assists",
+            "individual_secondary_assists",
+            "takeaways",
+            "giveaways",
+            "shots_blocked",
+            "penalties",
+            "penalties_drawn",
+            "offensive_zone_shift_starts",
+            "defensive_zone_shift_starts",
+            "neutral_zone_shift_starts",
+            "on_ice_expected_goals_pct",
+        ),
+        grain=("player_id", "season"),
+    )
     features = df.copy()
 
     if "position_group" not in features.columns and "position" in features.columns:
@@ -77,17 +66,9 @@ def build_features(
             }
         )
 
-    # ---------------------------------------------------------
-    # Ice-time / usage
-    # ---------------------------------------------------------
-
     features["toi_minutes"] = features["ice_time_seconds"] / 60.0
 
     features["toi_hours"] = features["ice_time_seconds"] / 3600.0
-
-    # ---------------------------------------------------------
-    # Offensive production
-    # ---------------------------------------------------------
 
     features["goals_per_60"] = _per_60(
         features["goals"],
@@ -134,10 +115,6 @@ def build_features(
         features["ice_time_seconds"],
     )
 
-    # ---------------------------------------------------------
-    # Defensive / possession events
-    # ---------------------------------------------------------
-
     features["takeaways_per_60"] = _per_60(
         features["takeaways"],
         features["ice_time_seconds"],
@@ -157,10 +134,6 @@ def build_features(
         features["ice_time_seconds"],
     )
 
-    # ---------------------------------------------------------
-    # Penalty impact
-    # ---------------------------------------------------------
-
     features["penalties_per_60"] = _per_60(
         features["penalties"],
         features["ice_time_seconds"],
@@ -175,10 +148,6 @@ def build_features(
         features["penalties_drawn_per_60"] - features["penalties_per_60"]
     )
 
-    # ---------------------------------------------------------
-    # Finishing relative to expected goals
-    # ---------------------------------------------------------
-
     features["goals_above_expected"] = (
         features["goals"] - features["individual_expected_goals"]
     )
@@ -187,10 +156,6 @@ def build_features(
         features["goals_above_expected"],
         features["ice_time_seconds"],
     )
-
-    # ---------------------------------------------------------
-    # Zone-start deployment
-    # ---------------------------------------------------------
 
     zone_start_total = (
         features["offensive_zone_shift_starts"].fillna(0)
@@ -212,17 +177,10 @@ def build_features(
         features["neutral_zone_shift_starts"] / valid_zone_starts
     )
 
-    # ---------------------------------------------------------
-    # Training eligibility
-    # ---------------------------------------------------------
+    features["eligible_for_training"] = (
+        features["games_played"].fillna(0) >= selected.minimum_training_games
+    ) & (features["ice_time_seconds"].fillna(0) > 0)
 
-    # We still calculate features for everyone, but tiny samples
-    # should not define the model during training.
-    features["eligible_for_training"] = (features["games_played"].fillna(0) >= 20) & (
-        features["ice_time_seconds"].fillna(0) > 0
-    )
-
-    # Convert infinities created by unexpected source data to NaN.
     features.replace(
         [np.inf, -np.inf],
         np.nan,
@@ -234,12 +192,11 @@ def build_features(
 
 def get_training_dataset(
     df: pd.DataFrame | None = None,
+    *,
+    options: FeatureOptions | None = None,
 ) -> pd.DataFrame:
-    """
-    Return only player-seasons eligible for model training.
-    """
 
-    features = build_features(df)
+    features = build_features(df, options=options)
 
     return features[features["eligible_for_training"]].reset_index(drop=True)
 
@@ -262,7 +219,7 @@ def print_feature_diagnostics(
 
     print("\nMissing values by model feature:")
 
-    missing = df[MODEL_FEATURE_COLUMNS].isna().sum().sort_values(ascending=False)
+    missing = df[list(MODEL_FEATURE_COLUMNS)].isna().sum().sort_values(ascending=False)
 
     print(missing.to_string())
 

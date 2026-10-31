@@ -1,14 +1,9 @@
-from __future__ import annotations
-
-
 import pandas as pd
-from sqlalchemy import text
-
 from app.config import get_database_settings
 from app.database import database_resources
+from sqlalchemy import Connection, text
 
-
-SALARY_CAP_QUERY = text("""
+SALARY_CAP_QUERY = """
 SELECT
     start_year AS season,
     end_year,
@@ -21,17 +16,18 @@ FROM seasons
 WHERE salary_cap_cents IS NOT NULL
 
 ORDER BY start_year;
-""")
+"""
 
 
-def load_salary_cap() -> pd.DataFrame:
-    """Load NHL salary-cap history by season."""
+def load_salary_cap(*, connection: Connection | None = None) -> pd.DataFrame:
 
-    with (
-        database_resources(get_database_settings()) as resources,
-        resources.engine.connect() as connection,
-    ):
-        return pd.read_sql(SALARY_CAP_QUERY, connection)
+    if connection is None:
+        with (
+            database_resources(get_database_settings()) as resources,
+            resources.engine.connect() as owned,
+        ):
+            return load_salary_cap(connection=owned)
+    return pd.read_sql(text(SALARY_CAP_QUERY), connection)
 
 
 if __name__ == "__main__":

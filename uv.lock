@@ -785,6 +785,7 @@ dependencies = [
     { name = "joblib" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "pydantic" },
     { name = "scikit-learn" },
     { name = "tradevalue-backend" },
 ]
@@ -794,6 +795,7 @@ requires-dist = [
     { name = "joblib", specifier = "==1.5.1" },
     { name = "numpy", specifier = "==2.4.4" },
     { name = "pandas", specifier = "==2.3.3" },
+    { name = "pydantic", specifier = "==2.13.4" },
     { name = "scikit-learn", specifier = "==1.8.0" },
     { name = "tradevalue-backend", editable = "backend" },
 ]
