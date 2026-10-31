@@ -26,9 +26,25 @@ def _error(status: int, code: str, message: str, details=None) -> JSONResponse:
     return JSONResponse(status_code=status, content=body)
 
 
+class ContractFastAPI(FastAPI):
+    def openapi(self) -> dict[str, object]:
+        if self.openapi_schema is None:
+            schema = get_openapi(
+                title=self.title,
+                version=self.version,
+                routes=self.routes,
+            )
+            for path in schema["paths"].values():
+                for operation in path.values():
+                    if isinstance(operation, dict):
+                        operation.get("responses", {}).pop("422", None)
+            self.openapi_schema = schema
+        return self.openapi_schema
+
+
 def create_app() -> FastAPI:
     settings = get_api_settings()
-    application = FastAPI(title="TradeValue API", version="1.0.0")
+    application = ContractFastAPI(title="TradeValue API", version="1.0.0")
     application.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),
@@ -48,12 +64,16 @@ def create_app() -> FastAPI:
         for issue in exc.errors():
             field = str(issue["loc"][-1])
             details.setdefault(field, []).append(issue["msg"])
-        return _error(400, "INVALID_REQUEST", "The request parameters are invalid.", details)
+        return _error(
+            400, "INVALID_REQUEST", "The request parameters are invalid.", details
+        )
 
     @application.exception_handler(SQLAlchemyError)
     async def database_handler(_request: Request, exc: SQLAlchemyError):
         logger.exception("Database request failed", exc_info=exc)
-        return _error(503, "DATABASE_UNAVAILABLE", "The data service is temporarily unavailable.")
+        return _error(
+            503, "DATABASE_UNAVAILABLE", "The data service is temporarily unavailable."
+        )
 
     @application.exception_handler(Exception)
     async def unhandled_handler(_request: Request, exc: Exception):
@@ -62,23 +82,6 @@ def create_app() -> FastAPI:
 
     application.include_router(router)
 
-    def contract_schema():
-        if application.openapi_schema is None:
-            schema = get_openapi(
-                title=application.title,
-                version=application.version,
-                routes=application.routes,
-            )
-            # RequestValidationError is translated to the shared 400 envelope,
-            # so FastAPI's default 422 documentation would be incorrect.
-            for path in schema["paths"].values():
-                for operation in path.values():
-                    if isinstance(operation, dict):
-                        operation.get("responses", {}).pop("422", None)
-            application.openapi_schema = schema
-        return application.openapi_schema
-
-    application.openapi = contract_schema
     return application
 
 

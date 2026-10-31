@@ -69,25 +69,19 @@ def build_model_dataset(
     )
 
     # Ensure one observation per player-season.
-    duplicate_count = df.duplicated(
-        subset=["player_id", "season"]
-    ).sum()
+    duplicate_count = df.duplicated(subset=["player_id", "season"]).sum()
 
     if duplicate_count:
         raise RuntimeError(
-            f"Model dataset contains {duplicate_count} "
-            "duplicate player-season rows."
+            f"Model dataset contains {duplicate_count} duplicate player-season rows."
         )
 
     # Prevent accidental contract leakage.
-    leaked_columns = FORBIDDEN_CONTRACT_COLUMNS.intersection(
-        df.columns
-    )
+    leaked_columns = FORBIDDEN_CONTRACT_COLUMNS.intersection(df.columns)
 
     if leaked_columns:
         raise RuntimeError(
-            "Contract data leaked into model dataset: "
-            f"{sorted(leaked_columns)}"
+            f"Contract data leaked into model dataset: {sorted(leaked_columns)}"
         )
 
     return df.reset_index(drop=True)
@@ -105,60 +99,29 @@ def print_model_dataset_diagnostics(
 
     print(f"Players: {df['player_id'].nunique():,}")
 
-    print(
-        f"Seasons: {df['season'].min()} - "
-        f"{df['season'].max()}"
-    )
+    print(f"Seasons: {df['season'].min()} - {df['season'].max()}")
 
     print(f"Columns: {len(df.columns)}")
 
-    duplicates = df.duplicated(
-        ["player_id", "season"]
-    ).sum()
+    duplicates = df.duplicated(["player_id", "season"]).sum()
 
-    print(
-        f"Duplicate player-seasons: "
-        f"{duplicates:,}"
-    )
+    print(f"Duplicate player-seasons: {duplicates:,}")
 
-    advanced_count = (
-        df["ice_time_seconds"]
-        .notna()
-        .sum()
-    )
+    advanced_count = df["ice_time_seconds"].notna().sum()
 
-    salary_cap_count = (
-        df["salary_cap_cents"]
-        .notna()
-        .sum()
-    )
+    salary_cap_count = df["salary_cap_cents"].notna().sum()
 
-    print(
-        "Advanced stats coverage: "
-        f"{advanced_count:,} / {len(df):,}"
-    )
+    print(f"Advanced stats coverage: {advanced_count:,} / {len(df):,}")
 
-    print(
-        "Salary cap coverage: "
-        f"{salary_cap_count:,} / {len(df):,}"
-    )
+    print(f"Salary cap coverage: {salary_cap_count:,} / {len(df):,}")
 
     print("\nRows by position group:")
 
-    print(
-        df["position_group"]
-        .value_counts(dropna=False)
-        .to_string()
-    )
+    print(df["position_group"].value_counts(dropna=False).to_string())
 
     print("\nRows by season:")
 
-    print(
-        df.groupby("season")
-        .size()
-        .sort_index()
-        .to_string()
-    )
+    print(df.groupby("season").size().sort_index().to_string())
 
     sample_columns = [
         "player_name",
@@ -176,11 +139,7 @@ def print_model_dataset_diagnostics(
 
     print("\nSample:")
 
-    print(
-        df[sample_columns]
-        .head(15)
-        .to_string(index=False)
-    )
+    print(df[sample_columns].head(15).to_string(index=False))
 
 
 if __name__ == "__main__":

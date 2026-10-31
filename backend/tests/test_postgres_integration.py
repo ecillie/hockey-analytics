@@ -123,9 +123,15 @@ VALUES
 
 @pytest.fixture(scope="module")
 def engine():
+    assert TEST_DATABASE_URL is not None
     database_engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
     with database_engine.begin() as connection:
-        assert connection.execute(text("SELECT to_regclass('public.players')")).scalar_one() == "players"
+        assert (
+            connection.execute(
+                text("SELECT to_regclass('public.players')")
+            ).scalar_one()
+            == "players"
+        )
         connection.exec_driver_sql(SEED_SQL)
     yield database_engine
     database_engine.dispose()
@@ -139,15 +145,26 @@ def service(engine):
 
 def test_listing_prefers_total_rows_and_current_team(service):
     result = service.players(2025, None, None, None, None, "points", "desc", 1, 3)
-    assert result["pagination"] == {"page": 1, "pageSize": 3, "totalItems": 6, "totalPages": 2}
+    assert result["pagination"] == {
+        "page": 1,
+        "pageSize": 3,
+        "totalItems": 6,
+        "totalPages": 2,
+    }
     traded = next(player for player in result["data"] if player["id"] == 1001)
     assert (traded["gamesPlayed"], traded["goals"], traded["points"]) == (82, 30, 80)
     assert traded["team"]["abbreviation"] == "BBB"
     assert traded["hockeyValue"] == pytest.approx(41.0)
     assert traded["projectedNextSeasonHockeyValue"] == pytest.approx(42.5)
 
-    aggregated = service.players(2025, None, None, None, "Low Forward", "name", "asc", 1, 10)["data"][0]
-    assert (aggregated["gamesPlayed"], aggregated["goals"], aggregated["points"]) == (20, 2, 5)
+    aggregated = service.players(
+        2025, None, None, None, "Low Forward", "name", "asc", 1, 10
+    )["data"][0]
+    assert (aggregated["gamesPlayed"], aggregated["goals"], aggregated["points"]) == (
+        20,
+        2,
+        5,
+    )
     assert aggregated["team"]["abbreviation"] == "BBB"
 
     filtered = service.players(2025, "bbb", "C", "ACTIVE", "High", "name", "asc", 1, 10)
@@ -216,7 +233,9 @@ def test_skater_goalie_history_and_value(service):
     assert value["gameScorePer60AboveReplacement"] == pytest.approx(1.5)
     assert value["toiHours"] == pytest.approx(27.3333333)
     assert value["modelVersion"] == "integration-v1"
-    assert service.value_history(1001) == [{"season": 2025, "hockeyValue": pytest.approx(41.0)}]
+    assert service.value_history(1001) == [
+        {"season": 2025, "hockeyValue": pytest.approx(41.0)}
+    ]
 
 
 def test_team_roster_contract_and_raw_cap_subtotals(service):

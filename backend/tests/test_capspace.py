@@ -19,22 +19,30 @@ def fixture(name: str) -> str:
 
 def capwages_html(nhl_id: int | None, season: int = 2010) -> str:
     player = {
-        "contracts": [{
-            "id": "capwages-contract",
-            "type": "Standard Contract",
-            "value": "$1,000,000",
-            "term": 1,
-            "signingDate": "2010-07-01",
-            "details": [{
-                "season": f"{season}-{str(season + 1)[-2:]}",
-                "capHit": "$1,000,000",
-            }],
-        }],
+        "contracts": [
+            {
+                "id": "capwages-contract",
+                "type": "Standard Contract",
+                "value": "$1,000,000",
+                "term": 1,
+                "signingDate": "2010-07-01",
+                "details": [
+                    {
+                        "season": f"{season}-{str(season + 1)[-2:]}",
+                        "capHit": "$1,000,000",
+                    }
+                ],
+            }
+        ],
     }
     if nhl_id is not None:
         player["nhlId"] = nhl_id
     payload = {"props": {"pageProps": {"player": player}}}
-    return '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(payload) + "</script>"
+    return (
+        '<script id="__NEXT_DATA__" type="application/json">'
+        + json.dumps(payload)
+        + "</script>"
+    )
 
 
 def test_datsyuk_fixture_parses_identity_money_team_and_clause():
@@ -43,6 +51,7 @@ def test_datsyuk_fixture_parses_identity_money_team_and_clause():
     )[0]
 
     assert contract.external_id == "datsyuk-2007"
+    assert contract.signed_on is not None
     assert contract.signed_on.isoformat() == "2007-04-06"
     assert contract.term_years == 7
     assert contract.total_value_cents == 4_690_000_000
@@ -84,7 +93,9 @@ def test_malformed_money_is_rejected(value):
 
 def test_changed_markup_and_malformed_season_are_not_silently_accepted():
     with pytest.raises(capspace.CapSpaceParseError):
-        capspace.parse_capspace_page("<html><body><h1>Changed markup</h1></body></html>")
+        capspace.parse_capspace_page(
+            "<html><body><h1>Changed markup</h1></body></html>"
+        )
     with pytest.raises(capspace.CapSpaceParseError):
         capspace.season_start_year("not-a-season")
 
@@ -168,13 +179,36 @@ def test_retryable_server_errors_exhaust_without_mutation(status):
 
 def test_json_contract_payload_is_supported():
     payload = {
-        "props": {"pageProps": {"person": {"contracts": [{
-            "id": "json-contract", "type": "Standard Contract", "value": "$1,000,000",
-            "term": 1, "signingDate": "2020-07-01", "signingTeam": "AAA",
-            "expiryStatus": "RFA", "details": [{"season": "2020-21", "capHit": "$1,000,000", "nhlSalary": "$900,000"}],
-        }]}}}
+        "props": {
+            "pageProps": {
+                "person": {
+                    "contracts": [
+                        {
+                            "id": "json-contract",
+                            "type": "Standard Contract",
+                            "value": "$1,000,000",
+                            "term": 1,
+                            "signingDate": "2020-07-01",
+                            "signingTeam": "AAA",
+                            "expiryStatus": "RFA",
+                            "details": [
+                                {
+                                    "season": "2020-21",
+                                    "capHit": "$1,000,000",
+                                    "nhlSalary": "$900,000",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            }
+        }
     }
-    html = '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(payload) + "</script>"
+    html = (
+        '<script id="__NEXT_DATA__" type="application/json">'
+        + json.dumps(payload)
+        + "</script>"
+    )
 
     contract = capspace.parse_capspace_page(html)[0]
 
@@ -202,28 +236,42 @@ def test_invalid_next_data_falls_back_to_rendered_contract_table():
 
 def test_json_date_plural_bonus_keys_and_identity_are_supported():
     payload = {
-        "props": {"pageProps": {"player": {
-            "nhlId": 8470281,
-            "contracts": [{
-                "type": "Standard Contract (Extension)",
-                "value": "$72,000,000",
-                "length": "13 years",
-                "signingDate": "Dec. 3, 2009",
-                "signingTeam": "Chicago Blackhawks",
-                "expiryStatus": "UFA",
-                "details": [{
-                    "season": "2010-11",
-                    "capHit": "$5,538,462",
-                    "baseSalary": "$5,000,000",
-                    "signingBonuses": "$3,000,000",
-                    "performanceBonuses": "$25,000",
-                }],
-            }],
-        }}}}
-    html = '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(payload) + "</script>"
+        "props": {
+            "pageProps": {
+                "player": {
+                    "nhlId": 8470281,
+                    "contracts": [
+                        {
+                            "type": "Standard Contract (Extension)",
+                            "value": "$72,000,000",
+                            "length": "13 years",
+                            "signingDate": "Dec. 3, 2009",
+                            "signingTeam": "Chicago Blackhawks",
+                            "expiryStatus": "UFA",
+                            "details": [
+                                {
+                                    "season": "2010-11",
+                                    "capHit": "$5,538,462",
+                                    "baseSalary": "$5,000,000",
+                                    "signingBonuses": "$3,000,000",
+                                    "performanceBonuses": "$25,000",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            }
+        }
+    }
+    html = (
+        '<script id="__NEXT_DATA__" type="application/json">'
+        + json.dumps(payload)
+        + "</script>"
+    )
 
     contract = capspace.parse_capspace_page(html, expected_nhl_id="8470281")[0]
 
+    assert contract.signed_on is not None
     assert contract.signed_on.isoformat() == "2009-12-03"
     assert contract.seasons[0].signing_bonus_cents == 300_000_000
     assert contract.seasons[0].performance_bonus_cents == 2_500_000
@@ -231,7 +279,11 @@ def test_json_date_plural_bonus_keys_and_identity_are_supported():
 
 def test_embedded_page_identity_must_match_the_candidate_nhl_id():
     payload = {"props": {"pageProps": {"player": {"nhlId": 1, "contracts": []}}}}
-    html = '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(payload) + "</script>"
+    html = (
+        '<script id="__NEXT_DATA__" type="application/json">'
+        + json.dumps(payload)
+        + "</script>"
+    )
 
     with pytest.raises(capspace.CapSpaceParseError, match="does not match"):
         capspace.parse_capspace_page(html, expected_nhl_id="2")
@@ -249,17 +301,27 @@ def test_capwages_name_lookup_requires_an_embedded_nhl_id():
 def test_legacy_capwages_identity_requires_name_slug_and_nhl_stats_overlap():
     candidate = capspace.Candidate(7, "Cory", "Stillman", "8458943", (2010,))
     payload = {
-        "props": {"pageProps": {"player": {
-            "name": "Stillman, Cory",
-            "slug": "cory-stillman",
-            "stats": [{
-                "season": "2010-11",
-                "league": "NHL",
-                "gp": "65",
-            }],
-        }}}
+        "props": {
+            "pageProps": {
+                "player": {
+                    "name": "Stillman, Cory",
+                    "slug": "cory-stillman",
+                    "stats": [
+                        {
+                            "season": "2010-11",
+                            "league": "NHL",
+                            "gp": "65",
+                        }
+                    ],
+                }
+            }
+        }
     }
-    html = '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(payload) + "</script>"
+    html = (
+        '<script id="__NEXT_DATA__" type="application/json">'
+        + json.dumps(payload)
+        + "</script>"
+    )
 
     assert capspace._capwages_identity_matches(
         html,
@@ -284,13 +346,21 @@ def test_legacy_capwages_identity_requires_name_slug_and_nhl_stats_overlap():
 def test_legacy_capwages_identity_requires_positive_nhl_games(stats):
     candidate = capspace.Candidate(7, "Cory", "Stillman", "8458943", (2010,))
     payload = {
-        "props": {"pageProps": {"player": {
-            "name": "Stillman, Cory",
-            "slug": "cory-stillman",
-            "stats": stats,
-        }}}
+        "props": {
+            "pageProps": {
+                "player": {
+                    "name": "Stillman, Cory",
+                    "slug": "cory-stillman",
+                    "stats": stats,
+                }
+            }
+        }
     }
-    html = '<script id="__NEXT_DATA__" type="application/json">' + json.dumps(payload) + "</script>"
+    html = (
+        '<script id="__NEXT_DATA__" type="application/json">'
+        + json.dumps(payload)
+        + "</script>"
+    )
 
     assert not capspace._capwages_identity_matches(
         html,
@@ -424,7 +494,9 @@ def test_profile_metrics_and_source_grouping_are_centralized():
         (missing_id, {"status": capspace.STATUS_NO_NHL_ID})
     ]
     assert grouped[capspace.CAPWAGES_SOURCE][0][0] == covered
-    assert grouped[capspace.CAPWAGES_SOURCE][0][1]["status"] == capspace.STATUS_SUCCEEDED
+    assert (
+        grouped[capspace.CAPWAGES_SOURCE][0][1]["status"] == capspace.STATUS_SUCCEEDED
+    )
 
 
 def test_normalize_contracts_preserves_typed_season_rows():

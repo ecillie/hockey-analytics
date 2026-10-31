@@ -92,6 +92,11 @@ jobs:
           enable-cache: true
       - name: Install backend dependencies
         run: uv sync --locked --all-groups
+      - name: Check Python lint, formatting, and types
+        run: |
+          uv run ruff check
+          uv run ruff format --check
+          uv run ty check
       - name: Verify dependency exports
         run: bash scripts/export-requirements.sh --check
       - name: Validate committed OpenAPI contract
