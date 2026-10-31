@@ -214,6 +214,22 @@ eight. Run the dry-run and local Pavel Datsyuk smoke case
 be run only after reviewing the local coverage report; this repository never
 connects to production as part of tests or development.
 
+Contract source boundaries live under
+`app.ScriptingFiles.FullDataScript.contracts`: `schemas/` validates embedded
+JSON and rendered HTML tables with Beautiful Soup, `domain.py` holds immutable
+contract and profile outcomes, `policy.py` validates profile identity, and
+`util.py` converts amounts, seasons, and dates. Raw source snapshots are stored
+as JSON text and decoded into independent dictionaries at serialization
+boundaries. Explicit empty contract lists are distinct from malformed source
+pages. Invalid amounts and inconsistent season ranges are rejected before
+active-contract persistence. Historical amounts retain half-up rounding;
+active CapWages ingestion retains half-even rounding.
+
+For PostgreSQL tests, set `TEST_DATABASE_URL` to a freshly migrated disposable
+database whose name starts with `tradevalue_test`. Backend test fixtures bind
+both runtime and fixture connections to that URL and disable local dotenv
+loading for the session.
+
 The runtime entrypoint is `app.main:create_runtime_app` with Uvicorn's `--factory`
 flag. It loads a single environment snapshot, validates HTTP and database
 settings, and returns the application. FastAPI lifespan startup creates the

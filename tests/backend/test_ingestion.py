@@ -11,6 +11,11 @@ from unittest.mock import Mock, patch
 import pytest
 import requests
 
+from app.ScriptingFiles.FullDataScript.contracts.domain import ActivePlayer
+from app.ScriptingFiles.FullDataScript.contracts.schemas.active import (
+    capwages_birth_date,
+)
+from app.ScriptingFiles.FullDataScript.contracts.errors import MoneyParseError
 from app.ScriptingFiles.FullDataScript import (
     ingestion,
     team_stints,
@@ -342,23 +347,24 @@ def test_value_coercion_contract_money_and_capwages_player_parsing():
     assert source_utils.parse_number("NaN") is None
     assert source_utils.parse_number("bad") is None
     assert ingestion._money_cents("$1,234.56") == 123456
-    assert ingestion._money_cents("bad") is None
-    assert ingestion._capwages_birth_date("97-1-13") == "1997-01-13"
-    assert ingestion._capwages_birth_date("97-99-13") is None
+    with pytest.raises(MoneyParseError):
+        ingestion._money_cents("bad")
+    assert capwages_birth_date("97-1-13") == "1997-01-13"
+    assert capwages_birth_date("97-99-13") is None
 
     capwages_row = ["Fixture Player", None, "AAA", "L"] + [None] * 27
     capwages_row[7] = "CAN"
     capwages_row[30] = "97-1-13"
-    assert ingestion._parse_capwages_players([capwages_row], minimum_rows=1) == [
-        {
-            "name": "Fixture Player",
-            "slug": "fixture-player",
-            "team": "AAA",
-            "position": "L",
-            "nationality": "CAN",
-            "birth_date": "1997-01-13",
-        }
-    ]
+    assert ingestion._parse_capwages_players([capwages_row], minimum_rows=1) == (
+        ActivePlayer(
+            name="Fixture Player",
+            slug="fixture-player",
+            team="AAA",
+            position="L",
+            nationality="CAN",
+            birth_date="1997-01-13",
+        ),
+    )
     with pytest.raises(ingestion.IngestionValidationError, match="minimum is 2"):
         ingestion._parse_capwages_players([capwages_row], minimum_rows=2)
 

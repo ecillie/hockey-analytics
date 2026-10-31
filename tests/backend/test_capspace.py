@@ -105,7 +105,13 @@ def test_page_with_no_contracts_is_distinct_from_malformed_markup():
 
 
 def test_nhl_id_is_the_only_url_identity():
-    candidate = capspace.Candidate(7, "Pavel", "Datsyuk", "8467514", (2008, 2009))
+    candidate = capspace.Candidate(
+        player_id=7,
+        first_name="Pavel",
+        last_name="Datsyuk",
+        nhl_id="8467514",
+        missing_seasons=(2008, 2009),
+    )
     session = Mock()
     session.get.return_value = Mock(status_code=404, headers={}, text="")
 
@@ -116,7 +122,13 @@ def test_nhl_id_is_the_only_url_identity():
 
 
 def test_no_nhl_id_never_fetches_or_name_matches():
-    candidate = capspace.Candidate(7, "Pavel", "Datsyuk", None, (2008,))
+    candidate = capspace.Candidate(
+        player_id=7,
+        first_name="Pavel",
+        last_name="Datsyuk",
+        nhl_id=None,
+        missing_seasons=(2008,),
+    )
     session = Mock()
 
     outcome = capspace._fetch_profile(session, candidate)
@@ -126,7 +138,13 @@ def test_no_nhl_id_never_fetches_or_name_matches():
 
 
 def test_http_429_retry_after_then_success():
-    candidate = capspace.Candidate(7, "Pavel", "Datsyuk", "8467514", (2008,))
+    candidate = capspace.Candidate(
+        player_id=7,
+        first_name="Pavel",
+        last_name="Datsyuk",
+        nhl_id="8467514",
+        missing_seasons=(2008,),
+    )
     session = Mock()
     session.get.side_effect = [
         Mock(status_code=429, headers={"Retry-After": "3"}, text=""),
@@ -141,7 +159,13 @@ def test_http_429_retry_after_then_success():
 
 
 def test_http_timeout_and_retry_exhaustion_are_reported():
-    candidate = capspace.Candidate(7, "Fixture", "Player", "123", (2008,))
+    candidate = capspace.Candidate(
+        player_id=7,
+        first_name="Fixture",
+        last_name="Player",
+        nhl_id="123",
+        missing_seasons=(2008,),
+    )
     session = Mock()
     session.get.side_effect = requests.Timeout("slow")
     with patch.object(capspace.time, "sleep"):
@@ -151,7 +175,13 @@ def test_http_timeout_and_retry_exhaustion_are_reported():
 
 
 def test_malformed_retry_after_uses_exponential_backoff():
-    candidate = capspace.Candidate(7, "Fixture", "Player", "123", (2008,))
+    candidate = capspace.Candidate(
+        player_id=7,
+        first_name="Fixture",
+        last_name="Player",
+        nhl_id="123",
+        missing_seasons=(2008,),
+    )
     session = Mock()
     session.get.side_effect = [
         Mock(status_code=429, headers={"Retry-After": "invalid"}, text=""),
@@ -167,7 +197,13 @@ def test_malformed_retry_after_uses_exponential_backoff():
 
 @pytest.mark.parametrize("status", [500, 502, 503, 504])
 def test_retryable_server_errors_exhaust_without_mutation(status):
-    candidate = capspace.Candidate(7, "Fixture", "Player", "123", (2008,))
+    candidate = capspace.Candidate(
+        player_id=7,
+        first_name="Fixture",
+        last_name="Player",
+        nhl_id="123",
+        missing_seasons=(2008,),
+    )
     session = Mock()
     session.get.return_value = Mock(status_code=status, headers={}, text="")
     with patch.object(capspace.time, "sleep"):
@@ -299,7 +335,13 @@ def test_capwages_name_lookup_requires_an_embedded_nhl_id():
 
 
 def test_legacy_capwages_identity_requires_name_slug_and_nhl_stats_overlap():
-    candidate = capspace.Candidate(7, "Cory", "Stillman", "8458943", (2010,))
+    candidate = capspace.Candidate(
+        player_id=7,
+        first_name="Cory",
+        last_name="Stillman",
+        nhl_id="8458943",
+        missing_seasons=(2010,),
+    )
     payload = {
         "props": {
             "pageProps": {
@@ -330,7 +372,13 @@ def test_legacy_capwages_identity_requires_name_slug_and_nhl_stats_overlap():
     )
     assert not capspace._capwages_identity_matches(
         html,
-        capspace.Candidate(8, "Cory", "Stillman", "1", (2011,)),
+        capspace.Candidate(
+            player_id=8,
+            first_name="Cory",
+            last_name="Stillman",
+            nhl_id="1",
+            missing_seasons=(2011,),
+        ),
         "https://capwages.com/players/cory-stillman",
     )
 
@@ -344,7 +392,13 @@ def test_legacy_capwages_identity_requires_name_slug_and_nhl_stats_overlap():
     ],
 )
 def test_legacy_capwages_identity_requires_positive_nhl_games(stats):
-    candidate = capspace.Candidate(7, "Cory", "Stillman", "8458943", (2010,))
+    candidate = capspace.Candidate(
+        player_id=7,
+        first_name="Cory",
+        last_name="Stillman",
+        nhl_id="8458943",
+        missing_seasons=(2010,),
+    )
     payload = {
         "props": {
             "pageProps": {
@@ -370,7 +424,13 @@ def test_legacy_capwages_identity_requires_positive_nhl_games(stats):
 
 
 def test_capwages_fallback_tries_disambiguated_slug_and_preserves_source():
-    candidate = capspace.Candidate(7, "Colin", "White", "8470000", (2010,))
+    candidate = capspace.Candidate(
+        player_id=7,
+        first_name="Colin",
+        last_name="White",
+        nhl_id="8470000",
+        missing_seasons=(2010,),
+    )
     session = Mock()
 
     def response(url, timeout):
@@ -405,7 +465,13 @@ def test_capwages_fallback_tries_disambiguated_slug_and_preserves_source():
 
 
 def test_missing_capwages_base_slug_does_not_fan_out_numbered_requests():
-    candidate = capspace.Candidate(7, "Absent", "Player", "8470000", (2010,))
+    candidate = capspace.Candidate(
+        player_id=7,
+        first_name="Absent",
+        last_name="Player",
+        nhl_id="8470000",
+        missing_seasons=(2010,),
+    )
     session = Mock()
     session.get.return_value = Mock(status_code=404, headers={}, text="")
 
@@ -419,7 +485,13 @@ def test_missing_capwages_base_slug_does_not_fan_out_numbered_requests():
 
 
 def test_capwages_host_failure_stops_slug_fanout():
-    candidate = capspace.Candidate(7, "Blocked", "Player", "8470000", (2010,))
+    candidate = capspace.Candidate(
+        player_id=7,
+        first_name="Blocked",
+        last_name="Player",
+        nhl_id="8470000",
+        missing_seasons=(2010,),
+    )
     session = Mock()
     session.get.return_value = Mock(status_code=403, headers={}, text="")
 
@@ -431,7 +503,13 @@ def test_capwages_host_failure_stops_slug_fanout():
 
 
 def test_capwages_success_parses_the_document_once():
-    candidate = capspace.Candidate(7, "Fixture", "Player", "8470000", (2010,))
+    candidate = capspace.Candidate(
+        player_id=7,
+        first_name="Fixture",
+        last_name="Player",
+        nhl_id="8470000",
+        missing_seasons=(2010,),
+    )
     session = Mock()
     session.get.return_value = Mock(
         status_code=200,
@@ -440,9 +518,9 @@ def test_capwages_success_parses_the_document_once():
     )
 
     with patch.object(
-        capspace._SourceDocument,
-        "parse",
-        wraps=capspace._SourceDocument.parse,
+        capspace,
+        "parse_source_document",
+        wraps=capspace.parse_source_document,
     ) as parse:
         outcome = capspace._fetch_capwages_profile(session, candidate)
 
@@ -462,24 +540,37 @@ def test_team_resolution_prefers_source_then_unique_stint():
 
 def test_profile_metrics_and_source_grouping_are_centralized():
     contract = capspace.parse_capspace_page(fixture("capspace_datsyuk.html"))[0]
-    covered = capspace.Candidate(7, "Pavel", "Datsyuk", "8467514", (2008,))
-    missing_id = capspace.Candidate(8, "No", "Identifier", None, (2008,))
-    success = capspace.ProfileResult(
-        covered,
-        "https://capwages.com/players/pavel-datsyuk",
-        capspace.STATUS_SUCCEEDED,
-        (contract,),
+    covered = capspace.Candidate(
+        player_id=7,
+        first_name="Pavel",
+        last_name="Datsyuk",
+        nhl_id="8467514",
+        missing_seasons=(2008,),
+    )
+    missing_id = capspace.Candidate(
+        player_id=8,
+        first_name="No",
+        last_name="Identifier",
+        nhl_id=None,
+        missing_seasons=(2008,),
+    )
+    success = capspace.parsed_profile(
+        candidate=covered,
+        url="https://capwages.com/players/pavel-datsyuk",
         source_code=capspace.CAPWAGES_SOURCE,
         fallback_attempted=True,
         primary_status=capspace.STATUS_NO_CONTRACTS,
         fallback_status=capspace.STATUS_SUCCEEDED,
+        contracts=(contract,),
     )
     failure = capspace.ProfileResult(
-        covered,
-        "https://cap-space.com/person/nhl:8467514",
-        capspace.STATUS_FAILED,
+        candidate=covered,
+        url="https://cap-space.com/person/nhl:8467514",
         fallback_attempted=True,
         fallback_status=capspace.STATUS_PARSE_FAILED,
+        outcome=capspace.ProfileFailure(
+            reason=capspace.FailureReason.FAILED, detail="fixture failure"
+        ),
     )
 
     metrics = capspace._profile_metrics([success, failure])
