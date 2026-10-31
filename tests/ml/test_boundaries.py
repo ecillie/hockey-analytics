@@ -1,6 +1,7 @@
 """Behavior at ML data, configuration, and artifact boundaries."""
 
 import json
+from collections.abc import Generator
 from contextlib import contextmanager, nullcontext
 from dataclasses import FrozenInstanceError
 from importlib import import_module
@@ -10,6 +11,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import pytest
+from app.config import AppEnvironment, DatabaseSettings
 from ml.artifacts import ArtifactPaths, load_model, save_model, save_predictions
 from ml.configuration import (
     CATEGORICAL_FEATURES,
@@ -49,6 +51,13 @@ class TestDataBoundaries:
         module = import_module("ml.pipelines.run_pipeline")
         calls = []
         connection = object()
+        settings = DatabaseSettings(
+            environment=AppEnvironment.DEV,
+            database_url="postgresql://unused/tradevalue_test_ml",
+        )
+
+        def read_settings() -> DatabaseSettings:
+            return settings
 
         def read_players(min_games=1, *, connection):
             calls.append(("players", connection))
@@ -59,7 +68,8 @@ class TestDataBoundaries:
             return caps
 
         @contextmanager
-        def resources(settings):
+        def resources(selected_settings) -> Generator[SimpleNamespace]:
+            assert selected_settings is settings
             calls.append(("opened", connection))
             yield SimpleNamespace(engine=SimpleNamespace(connect=connect))
             calls.append(("closed", connection))
@@ -67,6 +77,8 @@ class TestDataBoundaries:
         def connect():
             return nullcontext(connection)
 
+        monkeypatch.setenv("ENV", "")
+        monkeypatch.setattr(module, "get_database_settings", read_settings)
         monkeypatch.setattr(module, "database_resources", resources)
         monkeypatch.setattr(module, "load_player_stats", read_players)
         monkeypatch.setattr(module, "load_salary_cap", read_caps)
