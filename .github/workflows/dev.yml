@@ -3,7 +3,7 @@ name: Dev
 on:
   pull_request:
     branches: [Dev]
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   push:
     branches: [Dev]
   workflow_dispatch:
@@ -44,6 +44,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PROMOTION_TOKEN }}
         run: |
+          is_draft=$(gh pr view "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" --json isDraft --jq '.isDraft')
+          if [ "$is_draft" != false ]; then
+            echo "PR is currently a draft; skipping auto-merge."
+            exit 0
+          fi
           gh pr merge "${{ github.event.pull_request.number }}" \
             --repo "${{ github.repository }}" \
             --auto \
