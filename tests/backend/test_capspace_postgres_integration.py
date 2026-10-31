@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import os
 from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
-from sqlalchemy import create_engine, text
-
 from app.ScriptingFiles.FullDataScript import capspace
-
+from app.ScriptingFiles.FullDataScript.contracts import repository as persistence
+from sqlalchemy import create_engine, text
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(
@@ -30,7 +28,7 @@ class FixtureSession:
 
 
 @pytest.fixture()
-def database(monkeypatch):
+def database():
     assert TEST_DATABASE_URL is not None
     engine = create_engine(TEST_DATABASE_URL)
     with engine.begin() as connection:
@@ -59,21 +57,6 @@ def database(monkeypatch):
             text("TRUNCATE teams, players, ingestion_runs RESTART IDENTITY CASCADE")
         )
 
-    @contextmanager
-    def transaction():
-        import psycopg2
-
-        connection = psycopg2.connect(TEST_DATABASE_URL)
-        try:
-            yield connection
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            connection.close()
-
-    monkeypatch.setattr(capspace, "database_transaction", transaction)
     yield engine
     engine.dispose()
 
@@ -258,13 +241,13 @@ def test_dry_run_and_conflict_are_mutation_free(database):
 
 def test_transaction_rolls_back_partial_persistence(database, monkeypatch):
     seed_player(database, 8004)
-    original = capspace._persist_contracts
+    original = persistence.persist_contracts
 
     def fail_after_insert(cursor, *args, **kwargs):
         original(cursor, *args, **kwargs)
         raise RuntimeError("fixture failure")
 
-    monkeypatch.setattr(capspace, "_persist_contracts", fail_after_insert)
+    monkeypatch.setattr(persistence, "persist_contracts", fail_after_insert)
     with pytest.raises(RuntimeError, match="fixture failure"):
         capspace._run(
             FixtureSession(FIXTURE.read_text(encoding="utf-8")),

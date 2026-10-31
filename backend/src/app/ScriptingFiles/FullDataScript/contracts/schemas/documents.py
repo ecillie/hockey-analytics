@@ -2,13 +2,12 @@
 
 import json
 
-from bs4 import BeautifulSoup, Tag
-from pydantic import BaseModel, Field, ValidationError, InstanceOf
-
 from app.ScriptingFiles.FullDataScript.contracts.errors import (
     ContractDocumentError,
     DocumentFailure,
 )
+from bs4 import BeautifulSoup, Tag
+from pydantic import BaseModel, Field, InstanceOf, ValidationError
 
 
 class ContractPage(BaseModel):

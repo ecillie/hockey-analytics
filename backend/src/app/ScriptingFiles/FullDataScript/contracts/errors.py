@@ -74,6 +74,29 @@ class MissingContractError(CapSpaceError):
         self.contract_id = contract_id
 
 
+class MissingContractSourceError(CapSpaceError):
+    def __init__(self, *, source_code: str) -> None:
+        super().__init__(
+            f"{source_code} source is not registered; run Alembic upgrade head"
+        )
+        self.source_code = source_code
+
+
+class ReconciliationFailure(StrEnum):
+    AMBIGUOUS = auto()
+    INCOMPATIBLE = auto()
+    FOREIGN_PLAYER = auto()
+
+
+class ContractConflictError(CapSpaceError):
+    def __init__(self, *, player_id: int, reason: ReconciliationFailure) -> None:
+        super().__init__(
+            f"contract reconciliation for player {player_id}: {reason.value}"
+        )
+        self.player_id = player_id
+        self.reason = reason
+
+
 class ActiveContractError(IngestionValidationError):
     def __init__(self, *, slug: str, failure: CapSpaceParseError) -> None:
         detail = (
@@ -103,3 +126,21 @@ class ProfileSlugError(CapSpaceParseError):
         )
         self.expected = expected
         self.actual = actual
+
+
+class ActiveSeasonCapError(IngestionValidationError):
+    def __init__(self, *, external_id: str, season: int) -> None:
+        super().__init__(
+            f"CapWages contract {external_id} exceeds the season salary cap"
+        )
+        self.external_id = external_id
+        self.season = season
+
+
+class ActiveProfileCoverageError(IngestionValidationError):
+    def __init__(self, *, ratio: float, minimum: float) -> None:
+        super().__init__(
+            f"CapWages profile success ratio {ratio:.2%} is below {minimum:.2%}; refusing partial refresh"
+        )
+        self.ratio = ratio
+        self.minimum = minimum

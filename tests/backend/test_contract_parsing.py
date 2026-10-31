@@ -1,18 +1,12 @@
 """Contract boundary regressions and generated amount/season inputs."""
 
-from decimal import Decimal
 import json
+from decimal import Decimal
 from pathlib import Path
 from types import MappingProxyType
 
-from hypothesis import given, strategies as st
 import pytest
-
-from app.ScriptingFiles.FullDataScript import capspace
-from app.ScriptingFiles.FullDataScript.contracts.schemas.active import (
-    parse_active_profile,
-    parse_active_index,
-)
+from app.ScriptingFiles.FullDataScript.contracts import http as profile_http
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
     AbsenceReason,
     Candidate,
@@ -28,6 +22,10 @@ from app.ScriptingFiles.FullDataScript.contracts.errors import (
     MoneyParseError,
     ProfileSlugError,
 )
+from app.ScriptingFiles.FullDataScript.contracts.schemas.active import (
+    parse_active_index,
+    parse_active_profile,
+)
 from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
     parse_capspace_page,
 )
@@ -39,6 +37,8 @@ from app.ScriptingFiles.FullDataScript.contracts.util import (
     money_to_cents,
     season_start_year,
 )
+from hypothesis import given
+from hypothesis import strategies as st
 
 
 class TestAmountAndSeasonProperties:
@@ -277,7 +277,7 @@ class TestProfileOutcomes:
     def test_redirected_identity_is_a_failure(
         self, candidate: Candidate, redirected_session: SavedSession
     ) -> None:
-        result = capspace._fetch_profile(redirected_session, candidate)
+        result = profile_http.fetch_profile(redirected_session, candidate)
         assert isinstance(result.outcome, ProfileFailure)
         assert result.status is ProfileStatus.PARSE_FAILED
         assert result.contracts == ()
@@ -301,7 +301,7 @@ class TestProfileOutcomes:
     def test_absence_and_failure_are_distinct(
         self, candidate: Candidate, session: SavedSession
     ) -> None:
-        result = capspace._fetch_profile(session, candidate)
+        result = profile_http.fetch_profile(session, candidate)
         assert not isinstance(result.outcome, ContractsFound)
         if isinstance(result.outcome, ContractsAbsent):
             assert result.outcome.reason is AbsenceReason.NO_CONTRACTS

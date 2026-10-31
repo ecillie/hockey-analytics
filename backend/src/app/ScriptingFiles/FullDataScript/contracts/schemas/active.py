@@ -1,10 +1,10 @@
 """CapWages active index and profile normalization without persistence."""
 
+import re
 from collections.abc import Iterable
 from dataclasses import replace
 from datetime import date
 from decimal import ROUND_HALF_EVEN
-import re
 
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
     ActivePlayer,
@@ -18,14 +18,14 @@ from app.ScriptingFiles.FullDataScript.contracts.errors import (
     DocumentFailure,
     ProfileSlugError,
 )
+from app.ScriptingFiles.FullDataScript.contracts.schemas import (
+    parse_source_document,
+    validate_page,
+)
 from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
     contract_from_mapping,
     mapping_rows,
     page_player,
-)
-from app.ScriptingFiles.FullDataScript.contracts.schemas import (
-    parse_source_document,
-    validate_page,
 )
 from app.ScriptingFiles.FullDataScript.contracts.util import clean_text, optional_text
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import RowCountViolation

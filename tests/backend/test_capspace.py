@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import Mock, patch
-import json
 
 import pytest
 import requests
-
 from app.ScriptingFiles.FullDataScript import capspace
-
+from app.ScriptingFiles.FullDataScript.contracts import domain as contract_domain
+from app.ScriptingFiles.FullDataScript.contracts import http as profile_http
+from app.ScriptingFiles.FullDataScript.contracts import reporting as contract_reporting
+from app.ScriptingFiles.FullDataScript.contracts import (
+    repository as contract_repository,
+)
+from app.ScriptingFiles.FullDataScript.contracts.options import (
+    HistoricalContractOptions,
+)
+from app.ScriptingFiles.FullDataScript.contracts.tests.fakes import (
+    EmptyContractRepository,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ingestion"
 
@@ -115,7 +125,7 @@ def test_nhl_id_is_the_only_url_identity():
     session = Mock()
     session.get.return_value = Mock(status_code=404, headers={}, text="")
 
-    outcome = capspace._fetch_profile(session, candidate)
+    outcome = profile_http.fetch_profile(session, candidate)
 
     assert outcome.url == "https://cap-space.com/person/nhl:8467514"
     assert outcome.status == "not_found"
@@ -131,7 +141,7 @@ def test_no_nhl_id_never_fetches_or_name_matches():
     )
     session = Mock()
 
-    outcome = capspace._fetch_profile(session, candidate)
+    outcome = profile_http.fetch_profile(session, candidate)
 
     assert outcome.status == "no_nhl_id"
     session.get.assert_not_called()
@@ -150,8 +160,8 @@ def test_http_429_retry_after_then_success():
         Mock(status_code=429, headers={"Retry-After": "3"}, text=""),
         Mock(status_code=200, headers={}, text=fixture("capspace_datsyuk.html")),
     ]
-    with patch.object(capspace.time, "sleep") as sleep:
-        outcome = capspace._fetch_profile(session, candidate)
+    with patch.object(profile_http.time, "sleep") as sleep:
+        outcome = profile_http.fetch_profile(session, candidate)
 
     assert outcome.status == "succeeded"
     sleep.assert_called_once_with(3.0)
@@ -168,8 +178,8 @@ def test_http_timeout_and_retry_exhaustion_are_reported():
     )
     session = Mock()
     session.get.side_effect = requests.Timeout("slow")
-    with patch.object(capspace.time, "sleep"):
-        outcome = capspace._fetch_profile(session, candidate, max_attempts=2)
+    with patch.object(profile_http.time, "sleep"):
+        outcome = profile_http.fetch_profile(session, candidate, max_attempts=2)
     assert outcome.status == "failed"
     assert outcome.error == "timeout"
 
@@ -188,8 +198,8 @@ def test_malformed_retry_after_uses_exponential_backoff():
         Mock(status_code=404, headers={}, text=""),
     ]
 
-    with patch.object(capspace.time, "sleep") as sleep:
-        outcome = capspace._fetch_profile(session, candidate, max_attempts=2)
+    with patch.object(profile_http.time, "sleep") as sleep:
+        outcome = profile_http.fetch_profile(session, candidate, max_attempts=2)
 
     assert outcome.status == capspace.STATUS_NOT_FOUND
     sleep.assert_called_once_with(1)
@@ -206,8 +216,8 @@ def test_retryable_server_errors_exhaust_without_mutation(status):
     )
     session = Mock()
     session.get.return_value = Mock(status_code=status, headers={}, text="")
-    with patch.object(capspace.time, "sleep"):
-        outcome = capspace._fetch_profile(session, candidate, max_attempts=2)
+    with patch.object(profile_http.time, "sleep"):
+        outcome = profile_http.fetch_profile(session, candidate, max_attempts=2)
     assert outcome.status == "failed"
     assert outcome.error == f"HTTP {status}"
     assert session.get.call_count == 2
@@ -365,12 +375,12 @@ def test_legacy_capwages_identity_requires_name_slug_and_nhl_stats_overlap():
         + "</script>"
     )
 
-    assert capspace._capwages_identity_matches(
+    assert profile_http.capwages_identity_matches(
         html,
         candidate,
         "https://capwages.com/players/cory-stillman",
     )
-    assert not capspace._capwages_identity_matches(
+    assert not profile_http.capwages_identity_matches(
         html,
         capspace.Candidate(
             player_id=8,
@@ -416,7 +426,7 @@ def test_legacy_capwages_identity_requires_positive_nhl_games(stats):
         + "</script>"
     )
 
-    assert not capspace._capwages_identity_matches(
+    assert not profile_http.capwages_identity_matches(
         html,
         candidate,
         "https://capwages.com/players/cory-stillman",
@@ -454,14 +464,14 @@ def test_capwages_fallback_tries_disambiguated_slug_and_preserves_source():
 
     session.get.side_effect = response
 
-    outcome = capspace._fetch_profile_with_fallback(session, candidate)
+    outcome = profile_http.fetch_profile_with_fallback(session, candidate)
 
     assert outcome.status == "succeeded"
     assert outcome.source_code == "capwages"
     assert outcome.fallback_attempted is True
     assert outcome.primary_status == "no_contracts"
     assert outcome.url.endswith("/colin-white-1")
-    assert capspace._target_seasons_covered(outcome) == {2010}
+    assert profile_http.target_seasons_covered(outcome) == {2010}
 
 
 def test_missing_capwages_base_slug_does_not_fan_out_numbered_requests():
@@ -475,7 +485,7 @@ def test_missing_capwages_base_slug_does_not_fan_out_numbered_requests():
     session = Mock()
     session.get.return_value = Mock(status_code=404, headers={}, text="")
 
-    outcome = capspace._fetch_capwages_profile(session, candidate)
+    outcome = profile_http.fetch_capwages_profile(session, candidate)
 
     assert outcome.status == "not_found"
     session.get.assert_called_once_with(
@@ -495,7 +505,7 @@ def test_capwages_host_failure_stops_slug_fanout():
     session = Mock()
     session.get.return_value = Mock(status_code=403, headers={}, text="")
 
-    outcome = capspace._fetch_capwages_profile(session, candidate)
+    outcome = profile_http.fetch_capwages_profile(session, candidate)
 
     assert outcome.status == "failed"
     assert outcome.error == "HTTP 403"
@@ -518,11 +528,11 @@ def test_capwages_success_parses_the_document_once():
     )
 
     with patch.object(
-        capspace,
+        profile_http,
         "parse_source_document",
-        wraps=capspace.parse_source_document,
+        wraps=profile_http.parse_source_document,
     ) as parse:
-        outcome = capspace._fetch_capwages_profile(session, candidate)
+        outcome = profile_http.fetch_capwages_profile(session, candidate)
 
     assert outcome.status == capspace.STATUS_SUCCEEDED
     assert parse.call_count == 1
@@ -532,10 +542,10 @@ def test_team_resolution_prefers_source_then_unique_stint():
     teams = {"det": 1, "detroit red wings": 1}
     stints = {2008: (2,), 2009: (2, 3)}
 
-    assert capspace._resolve_team_id(teams, stints, 2008, "DET") == 1
-    assert capspace._resolve_team_id(teams, stints, 2008, None) == 2
-    assert capspace._resolve_team_id(teams, stints, 2009, None) is None
-    assert capspace._resolve_team_id(teams, stints, 2010, None) is None
+    assert contract_repository.resolve_team_id(teams, stints, 2008, "DET") == 1
+    assert contract_repository.resolve_team_id(teams, stints, 2008, None) == 2
+    assert contract_repository.resolve_team_id(teams, stints, 2009, None) is None
+    assert contract_repository.resolve_team_id(teams, stints, 2010, None) is None
 
 
 def test_profile_metrics_and_source_grouping_are_centralized():
@@ -554,7 +564,7 @@ def test_profile_metrics_and_source_grouping_are_centralized():
         nhl_id=None,
         missing_seasons=(2008,),
     )
-    success = capspace.parsed_profile(
+    success = contract_domain.parsed_profile(
         candidate=covered,
         url="https://capwages.com/players/pavel-datsyuk",
         source_code=capspace.CAPWAGES_SOURCE,
@@ -568,13 +578,15 @@ def test_profile_metrics_and_source_grouping_are_centralized():
         url="https://cap-space.com/person/nhl:8467514",
         fallback_attempted=True,
         fallback_status=capspace.STATUS_PARSE_FAILED,
-        outcome=capspace.ProfileFailure(
-            reason=capspace.FailureReason.FAILED, detail="fixture failure"
+        outcome=contract_domain.ProfileFailure(
+            reason=contract_domain.FailureReason.FAILED, detail="fixture failure"
         ),
     )
 
-    metrics = capspace._profile_metrics([success, failure])
-    grouped = capspace._source_records_by_code([covered, missing_id], [success])
+    metrics = contract_reporting.profile_metrics([success, failure])
+    grouped = contract_reporting.source_records_by_code(
+        [covered, missing_id], [success]
+    )
 
     assert metrics["profiles_succeeded"] == 1
     assert metrics["profiles_with_target_coverage"] == 1
@@ -720,15 +732,13 @@ def test_run_rejects_unsafe_worker_and_batch_bounds(options):
 
 
 def test_run_returns_complete_empty_summary_without_fetching(monkeypatch):
-    monkeypatch.setattr(
-        capspace,
-        "_candidate_snapshot",
-        lambda **_: ([], {"candidate_player_seasons": 0, "candidate_players": 0}),
+    repository = EmptyContractRepository()
+    summary = capspace.run_historical_contracts(
+        None,
+        options=HistoricalContractOptions(),
+        dry_run=True,
+        repository_factory=repository.open_repository,
     )
-    fetch = Mock()
-    monkeypatch.setattr(capspace, "_fetch_profiles", fetch)
-
-    summary = capspace._run(Mock(), dry_run=True)
 
     assert summary == {
         "candidate_player_seasons": 0,
@@ -741,4 +751,3 @@ def test_run_returns_complete_empty_summary_without_fetching(monkeypatch):
         "records_skipped": 0,
         "remaining_uncovered_player_seasons": 0,
     }
-    fetch.assert_not_called()

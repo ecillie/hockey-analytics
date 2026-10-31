@@ -3,8 +3,8 @@
 from dataclasses import asdict
 
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
-    ParsedContract,
     ContractSeason,
+    ParsedContract,
 )
 
 
