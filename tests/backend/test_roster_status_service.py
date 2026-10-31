@@ -1,302 +1,502 @@
-from datetime import date
-import unittest
+"""Roster precedence, identity matching, and feed boundary regressions."""
 
+from dataclasses import dataclass, field, replace
+from datetime import date
+from io import BytesIO
+from urllib.request import Request
+
+import pytest
+
+from app.ScriptingFiles.FullDataScript.roster_status import http_json_client
 from app.ScriptingFiles.FullDataScript.roster_status.ahl_roster_service import (
     AhlRosterService,
+)
+from app.ScriptingFiles.FullDataScript.roster_status.domain import (
+    AhlFeedOptions,
+    FetchResult,
+    HttpOptions,
+    RosterStatus,
+)
+from app.ScriptingFiles.FullDataScript.roster_status.errors import (
+    InvalidJsonResponseError,
+)
+from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import (
+    JsonClient,
+    JsonHttpClient,
+    decode_json_or_jsonp,
 )
 from app.ScriptingFiles.FullDataScript.roster_status.nhl_roster_service import (
     NhlRosterService,
 )
-from app.ScriptingFiles.FullDataScript.roster_status.roster_models import (
-    ExternalRosterPlayer,
-    FetchResult,
-    RosterStatus,
-    StoredPlayer,
-)
-from app.ScriptingFiles.FullDataScript.roster_status.roster_status_service import (
+from app.ScriptingFiles.FullDataScript.roster_status.repository import RosterRepository
+from app.ScriptingFiles.FullDataScript.roster_status.services import (
+    RosterFeed,
     RosterStatusService,
 )
+from app.ScriptingFiles.FullDataScript.roster_status.tests.fakes import (
+    FixedRosterFeed,
+    MemoryHttpClient,
+    MemoryRosterRepository,
+)
+from app.ScriptingFiles.FullDataScript.roster_status.util import (
+    match_ahl_players,
+    parse_birth_date,
+)
 
 
-class FakeRepository:
-    def __init__(self, players, ltir_player_ids=None):
-        self.players = players
-        self.ltir_player_ids = ltir_player_ids or set()
-        self.updates = {}
-        self.ahl_mappings = []
-
-    def load_players(self):
-        return self.players
-
-    def load_active_ltir_player_ids(self, as_of):
-        return self.ltir_player_ids
-
-    def bulk_update_statuses(self, updates):
-        self.updates = updates
-
-    def save_ahl_external_ids(self, matches):
-        self.ahl_mappings = list(matches)
+@dataclass(slots=True, kw_only=True, frozen=True)
+class SyncScenario:
+    service: RosterStatusService
+    repository: MemoryRosterRepository
+    expected: RosterStatus | None
 
 
-class FakeRosterService:
-    def __init__(self, result):
-        self.result = result
-
-    def fetch_current_rosters(self):
-        return self.result
-
-
-class FakeHttpClient:
-    def __init__(self, responses):
-        self.responses = responses
-        self.calls = []
-
-    def get_json(self, url, params=None):
-        self.calls.append((url, params))
-        response = self.responses.pop(0)
-        if isinstance(response, Exception):
-            raise response
-        return response
-
-
-def stored_player(
-    player_id=1,
-    status=RosterStatus.UNKNOWN,
-    nhl_id="8478402",
-    ahl_id=None,
-    name=("Connor", "McDavid"),
-    birth_date=date(1997, 1, 13),
-):
-    return StoredPlayer(
-        id=player_id,
-        first_name=name[0],
-        last_name=name[1],
-        birth_date=birth_date,
-        roster_status=status,
-        nhl_external_id=nhl_id,
-        ahl_external_id=ahl_id,
+class TestStatusPrecedence:
+    @pytest.fixture(
+        params=[
+            pytest.param(
+                (True, True, True, True, True, RosterStatus.LTIR), id="ltir-beats-both"
+            ),
+            pytest.param(
+                (False, True, True, True, True, RosterStatus.ACTIVE), id="nhl-beats-ahl"
+            ),
+            pytest.param(
+                (False, True, True, False, False, RosterStatus.ACTIVE),
+                id="positive-nhl-on-partial-feeds",
+            ),
+            pytest.param(
+                (False, False, True, True, True, RosterStatus.MINORS),
+                id="ahl-identity-match",
+            ),
+            pytest.param(
+                (False, False, True, True, False, RosterStatus.MINORS),
+                id="positive-ahl-on-partial-ahl",
+            ),
+            pytest.param(
+                (False, False, True, False, True, None),
+                id="partial-nhl-preserves-status",
+            ),
+            pytest.param(
+                (False, False, False, True, False, None),
+                id="partial-ahl-preserves-status",
+            ),
+            pytest.param(
+                (False, False, False, True, True, RosterStatus.UNKNOWN),
+                id="complete-feeds-unknown",
+            ),
+        ]
     )
+    def scenario(self, request, player, ahl_player):
+        ltir, nhl_present, ahl_present, nhl_complete, ahl_complete, expected = (
+            request.param
+        )
+        repository = MemoryRosterRepository(
+            players=(player,),
+            ltir_player_ids=frozenset({player.id}) if ltir else frozenset(),
+        )
+        nhl = FetchResult(
+            items=(replace(ahl_player, external_id="11", full_name="Renamed Player"),)
+            if nhl_present
+            else (),
+            errors=() if nhl_complete else ("NHL failed",),
+        )
+        ahl = FetchResult(
+            items=(ahl_player,) if ahl_present else (),
+            errors=() if ahl_complete else ("AHL failed",),
+        )
+        return SyncScenario(
+            service=RosterStatusService(
+                repository=repository,
+                nhl_service=FixedRosterFeed(result=nhl),
+                ahl_service=FixedRosterFeed(result=ahl),
+            ),
+            repository=repository,
+            expected=expected,
+        )
 
+    def test_classification(self, scenario, caplog):
+        summary = scenario.service.sync(date(2026, 9, 6))
+        expected = {} if scenario.expected is None else {1: scenario.expected}
+        assert scenario.repository.updates == expected
+        assert summary.statuses_updated == len(expected)
+        assert summary.preserved_count == (1 if scenario.expected is None else 0)
+        assert sum(
+            (
+                summary.active_count,
+                summary.minors_count,
+                summary.ltir_count,
+                summary.unknown_count,
+            )
+        ) == len(expected)
+        assert caplog.records == []
 
-def nhl_result(*player_ids, complete=True):
-    return FetchResult(
-        items={
-            player_id: ExternalRosterPlayer(player_id, "NHL Player")
-            for player_id in player_ids
-        },
-        complete=complete,
-        errors=() if complete else ("NHL failed",),
-    )
+    @pytest.fixture
+    def missing_nhl_id(self, player):
+        repository = MemoryRosterRepository(
+            players=(replace(player, nhl_external_id=None),)
+        )
+        return RosterStatusService(
+            repository=repository,
+            nhl_service=FixedRosterFeed(),
+            ahl_service=FixedRosterFeed(),
+        ), repository
 
+    def test_complete_feeds_do_not_guess_unknown_without_nhl_identity(
+        self, missing_nhl_id
+    ):
+        service, repository = missing_nhl_id
+        assert service.sync().preserved_count == 1
+        assert repository.updates == {}
 
-def ahl_result(*players, complete=True):
-    return FetchResult(
-        items=list(players),
-        complete=complete,
-        errors=() if complete else ("AHL failed",),
-    )
-
-
-class RosterStatusServiceTests(unittest.TestCase):
-    def sync(self, player, nhl, ahl, ltir=None):
-        repository = FakeRepository([player], ltir)
-        summary = RosterStatusService(
+    @pytest.fixture
+    def empty_collaborators(self):
+        repository = MemoryRosterRepository()
+        feed = FixedRosterFeed()
+        return (
+            RosterStatusService(
+                repository=repository, nhl_service=feed, ahl_service=feed
+            ),
             repository,
-            FakeRosterService(nhl),
-            FakeRosterService(ahl),
-        ).sync(date(2026, 9, 6))
-        return repository, summary
-
-    def test_nhl_roster_player_is_active_by_id(self):
-        player = stored_player(name=("Different", "Name"))
-        repository, _ = self.sync(
-            player,
-            nhl_result("8478402"),
-            ahl_result(),
-        )
-        self.assertEqual(repository.updates[player.id], RosterStatus.ACTIVE)
-
-    def test_ahl_roster_player_is_minors_by_name_and_dob(self):
-        player = stored_player(name=("Kaapo", "Kahkonen"), birth_date=date(1996, 8, 16))
-        ahl_player = ExternalRosterPlayer(
-            "7179",
-            "Kaapo Kähkönen",
-            date(1996, 8, 16),
-        )
-        repository, _ = self.sync(player, nhl_result(), ahl_result(ahl_player))
-        self.assertEqual(repository.updates[player.id], RosterStatus.MINORS)
-        self.assertEqual(
-            repository.ahl_mappings, [(player.id, "7179", "Kaapo Kähkönen")]
+            feed,
         )
 
-    def test_existing_ahl_id_is_preferred_over_name(self):
-        player = stored_player(ahl_id="7179", name=("Old", "Name"))
-        ahl_player = ExternalRosterPlayer("7179", "New Name", date(1990, 1, 1))
-        repository, _ = self.sync(player, nhl_result(), ahl_result(ahl_player))
-        self.assertEqual(repository.updates[player.id], RosterStatus.MINORS)
+    def test_empty_valid_collaborators_are_retained(self, empty_collaborators):
+        service, repository, feed = empty_collaborators
+        assert isinstance(repository, RosterRepository)
+        assert isinstance(feed, RosterFeed)
+        assert service.repository is repository
+        assert service.nhl_service is service.ahl_service is feed
+        assert service.sync().statuses_updated == 0
 
-    def test_ltir_override_beats_nhl_roster(self):
-        player = stored_player()
-        repository, _ = self.sync(
-            player,
-            nhl_result("8478402"),
-            ahl_result(),
-            {player.id},
+
+class TestIdentityMatching:
+    @pytest.fixture
+    def known_id(self, player):
+        return replace(
+            player, ahl_external_id="7179", first_name="Old", last_name="Name"
         )
-        self.assertEqual(repository.updates[player.id], RosterStatus.LTIR)
 
-    def test_ltir_override_beats_ahl_roster(self):
-        player = stored_player(ahl_id="7179")
-        ahl_player = ExternalRosterPlayer("7179", "AHL Player")
-        repository, _ = self.sync(
-            player,
-            nhl_result(),
-            ahl_result(ahl_player),
-            {player.id},
+    def test_known_id_survives_name_and_birth_date_changes(self, known_id, ahl_player):
+        assert match_ahl_players((known_id,), (ahl_player,)) == {
+            known_id.id: ahl_player
+        }
+
+    def test_normalized_name_and_dob_map_conservatively(self, player, ahl_player):
+        assert match_ahl_players((player,), (ahl_player,)) == {player.id: ahl_player}
+
+    @pytest.fixture(
+        params=[
+            pytest.param("stored-identity", id="duplicate-stored-identity"),
+            pytest.param("source-identity", id="duplicate-source-identity"),
+            pytest.param("source-id", id="conflicting-source-id"),
+            pytest.param("missing-birth-date", id="no-birth-date"),
+            pytest.param("wrong-birth-date", id="wrong-birth-date"),
+        ]
+    )
+    def ambiguous(self, request, player, ahl_player):
+        players = (player,)
+        feed = (ahl_player,)
+        if request.param == "stored-identity":
+            players += (replace(player, id=2),)
+        if request.param == "source-identity":
+            feed += (replace(ahl_player, external_id="99"),)
+        if request.param == "source-id":
+            feed += (replace(ahl_player, full_name="Different Person"),)
+        if request.param == "missing-birth-date":
+            feed = (replace(ahl_player, birth_date=None),)
+        if request.param == "wrong-birth-date":
+            feed = (replace(ahl_player, birth_date=date(1990, 1, 1)),)
+        return players, feed
+
+    def test_ambiguous_or_incomplete_identity_is_not_mapped(self, ambiguous):
+        assert match_ahl_players(*ambiguous) == {}
+
+    @pytest.fixture
+    def claimed_identity(self, known_id, player, ahl_player):
+        return (known_id, replace(player, id=2)), (ahl_player,)
+
+    def test_known_external_id_cannot_be_claimed_again_by_name(self, claimed_identity):
+        assert set(match_ahl_players(*claimed_identity)) == {1}
+
+
+class TestFeedAdapters:
+    @pytest.fixture
+    def nhl(self, nhl_payloads):
+        return NhlRosterService(http_client=MemoryHttpClient(responses=nhl_payloads))
+
+    @pytest.fixture
+    def ahl(self, ahl_payloads):
+        client = MemoryHttpClient(responses=ahl_payloads)
+        return AhlRosterService(http_client=client), client
+
+    def test_nhl_players_and_immutable_result(self, nhl):
+        result = nhl.fetch_current_rosters()
+        assert result.complete
+        assert isinstance(result.items, tuple)
+        assert result.items[0].external_id == "11"
+        assert result.items[0].full_name == "NHL Player"
+
+    def test_ahl_identity_and_request_configuration(self, ahl):
+        service, client = ahl
+        assert isinstance(client, JsonClient)
+        result = service.fetch_current_rosters()
+        assert result.complete
+        assert result.items[0].external_id == "7179"
+        assert result.items[0].birth_date == date(1996, 8, 16)
+        params = client.calls[1][1]
+        assert params is not None
+        assert params["season_id"] == "90"
+        assert params["view"] == "roster"
+        assert "rosterstatus" not in params
+
+    @pytest.fixture
+    def explicit_options(self, ahl_payloads, monkeypatch):
+        monkeypatch.setenv("AHL_FEED_KEY", "ambient-key")
+        monkeypatch.setenv("AHL_SEASON_ID", "ambient-season")
+        client = MemoryHttpClient(responses=ahl_payloads)
+        return AhlRosterService(
+            http_client=client,
+            options=AhlFeedOptions(feed_key="explicit-key", season_id="91"),
+        ), client
+
+    def test_options_and_empty_client_are_not_replaced(self, explicit_options):
+        service, client = explicit_options
+        assert len(client) == 0
+        assert service.http_client is client
+        service.fetch_current_rosters()
+        assert client.calls[0][1]["key"] == "explicit-key"
+        assert client.calls[1][1]["season_id"] == "91"
+
+    @pytest.fixture(
+        params=[
+            pytest.param("nhl", id="nhl-partial"),
+            pytest.param("ahl", id="ahl-partial"),
+        ]
+    )
+    def partial(self, request, nhl_payloads, ahl_payloads):
+        if request.param == "nhl":
+            nhl_payloads["https://api-web.nhle.com/v1/roster/TOR/current"] = (
+                TimeoutError("feed timeout")
+            )
+            return NhlRosterService(
+                http_client=MemoryHttpClient(responses=nhl_payloads)
+            )
+        ahl_payloads["416"] = TimeoutError("feed timeout")
+        return AhlRosterService(http_client=MemoryHttpClient(responses=ahl_payloads))
+
+    def test_partial_feed_retains_positive_results_and_reports_once(
+        self, partial, caplog
+    ):
+        result = partial.fetch_current_rosters()
+        assert not result.complete
+        assert len(result.items) == 1
+        assert len(result.errors) == 1
+        assert "timeout" in result.errors[0]
+        assert caplog.records == []
+
+    @pytest.fixture(
+        params=[
+            pytest.param(("nhl", "bootstrap", {}), id="nhl-malformed-standings"),
+            pytest.param(
+                ("nhl", "roster", {"forwards": "bad", "defensemen": [], "goalies": []}),
+                id="nhl-malformed-roster",
+            ),
+            pytest.param(
+                ("ahl", "bootstrap", {"teamsNoAll": "bad"}),
+                id="ahl-malformed-bootstrap",
+            ),
+            pytest.param(
+                ("ahl", "roster", {"roster": [{"sections": [{"data": [{}]}]}]}),
+                id="ahl-malformed-player",
+            ),
+        ]
+    )
+    def malformed(self, request, nhl_payloads, ahl_payloads):
+        feed, stage, payload = request.param
+        if feed == "nhl":
+            key = (
+                "https://api-web.nhle.com/v1/standings/now"
+                if stage == "bootstrap"
+                else "https://api-web.nhle.com/v1/roster/EDM/current"
+            )
+            nhl_payloads[key] = payload
+            return NhlRosterService(
+                http_client=MemoryHttpClient(responses=nhl_payloads)
+            )
+        ahl_payloads["bootstrap" if stage == "bootstrap" else "415"] = payload
+        return AhlRosterService(http_client=MemoryHttpClient(responses=ahl_payloads))
+
+    def test_malformed_feed_is_incomplete(self, malformed):
+        result = malformed.fetch_current_rosters()
+        assert not result.complete
+        assert len(result.errors) > 0
+
+    @pytest.fixture
+    def unexpected_failure(self, nhl_payloads):
+        nhl_payloads["https://api-web.nhle.com/v1/standings/now"] = RuntimeError(
+            "programming error"
         )
-        self.assertEqual(repository.updates[player.id], RosterStatus.LTIR)
+        return NhlRosterService(http_client=MemoryHttpClient(responses=nhl_payloads))
 
-    def test_player_found_nowhere_is_unknown(self):
-        player = stored_player(status=RosterStatus.ACTIVE)
-        repository, _ = self.sync(player, nhl_result(), ahl_result())
-        self.assertEqual(repository.updates[player.id], RosterStatus.UNKNOWN)
+    def test_programming_errors_are_not_hidden_as_feed_absence(
+        self, unexpected_failure
+    ):
+        with pytest.raises(RuntimeError, match="programming error"):
+            unexpected_failure.fetch_current_rosters()
 
-    def test_nhl_failure_preserves_existing_status(self):
-        player = stored_player(status=RosterStatus.MINORS)
-        repository, summary = self.sync(
-            player,
-            nhl_result(complete=False),
-            ahl_result(),
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class HttpOpener:
+    response: BytesIO
+    calls: list[tuple[Request, float]] = field(default_factory=list)
+
+    def __call__(self, request: Request, *, timeout: float) -> BytesIO:
+        self.calls.append((request, timeout))
+        return self.response
+
+
+class TestJsonTransport:
+    @pytest.mark.parametrize(
+        "body",
+        [
+            pytest.param('{"ok": true}', id="json"),
+            pytest.param('JSON_CALLBACK({"ok": true});', id="jsonp"),
+            pytest.param(
+                ' jQuery.callback(\n{"ok": true}\n) ', id="qualified-callback"
+            ),
+        ],
+    )
+    def test_objects_decode(self, body):
+        assert decode_json_or_jsonp(body) == {"ok": True}
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            pytest.param("[]", id="array"),
+            pytest.param("callback([])", id="wrapped-array"),
+            pytest.param("({})", id="missing-callback-name"),
+            pytest.param("callback({}) trailing", id="trailing-garbage"),
+            pytest.param('callback({"broken":})', id="invalid-json"),
+            pytest.param("callback({}", id="unterminated-callback"),
+        ],
+    )
+    def test_invalid_envelopes_are_rejected(self, body):
+        with pytest.raises(InvalidJsonResponseError):
+            decode_json_or_jsonp(body)
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            pytest.param(None, None, id="missing"),
+            pytest.param("", None, id="empty"),
+            pytest.param("invalid", None, id="malformed"),
+            pytest.param("1996-08-16", date(1996, 8, 16), id="valid-date"),
+        ],
+    )
+    def test_optional_birth_dates(self, value, expected):
+        assert parse_birth_date(value) == expected
+
+    @pytest.fixture
+    def opener(self, monkeypatch):
+        opener = HttpOpener(response=BytesIO(b'{"ok": true}'))
+        monkeypatch.setattr(http_json_client, "urlopen", opener)
+        return opener
+
+    def test_timeout_headers_query_and_resource_closure(self, opener):
+        result = JsonHttpClient(options=HttpOptions(timeout_seconds=2)).get_json(
+            "https://feed.test", {"key": "a b"}
         )
-        self.assertNotIn(player.id, repository.updates)
-        self.assertEqual(summary.preserved_count, 1)
+        assert result == {"ok": True}
+        request, timeout = opener.calls[0]
+        assert timeout == 2
+        assert request.full_url == "https://feed.test?key=a+b"
+        assert request.get_header("User-agent") == "TradeValueRosterSync/1.0"
+        assert opener.response.closed
 
-    def test_ahl_failure_does_not_create_unknown(self):
-        player = stored_player(status=RosterStatus.MINORS)
-        repository, summary = self.sync(
-            player,
-            nhl_result(),
-            ahl_result(complete=False),
+
+class TestDuplicateAhlSightings:
+    @pytest.fixture
+    def repeated_identity(self, player, ahl_player):
+        return replace(player, ahl_external_id=ahl_player.external_id), (
+            ahl_player,
+            replace(ahl_player, team_external_id="another-team"),
         )
-        self.assertNotIn(player.id, repository.updates)
-        self.assertEqual(summary.preserved_count, 1)
 
-    def test_ambiguous_name_and_dob_does_not_match_ahl(self):
-        first = stored_player(player_id=1, nhl_id="1", name=("Same", "Player"))
-        second = stored_player(player_id=2, nhl_id="2", name=("Same", "Player"))
-        repository = FakeRepository([first, second])
-        ahl_player = ExternalRosterPlayer("99", "Same Player", first.birth_date)
-        RosterStatusService(
-            repository,
-            FakeRosterService(nhl_result()),
-            FakeRosterService(ahl_result(ahl_player)),
-        ).sync()
-        self.assertEqual(repository.updates[1], RosterStatus.UNKNOWN)
-        self.assertEqual(repository.updates[2], RosterStatus.UNKNOWN)
-        self.assertEqual(repository.ahl_mappings, [])
+    def test_identical_sightings_preserve_stable_id_matching(self, repeated_identity):
+        player, sightings = repeated_identity
+        assert match_ahl_players((player,), sightings)[player.id].external_id == "7179"
 
-
-class RosterFeedClientTests(unittest.TestCase):
-    def test_nhl_service_collects_players_by_nhl_id(self):
-        http = FakeHttpClient(
-            [
+    @pytest.fixture
+    def conflicting_feed(self, ahl_payloads):
+        ahl_payloads["416"] = {
+            "roster": [
                 {
-                    "standings": [
-                        {"teamAbbrev": {"default": "EDM"}},
-                        {"teamAbbrev": {"default": "TOR"}},
-                    ]
-                },
-                {
-                    "forwards": [
+                    "sections": [
                         {
-                            "id": 8478402,
-                            "firstName": {"default": "Connor"},
-                            "lastName": {"default": "McDavid"},
-                        }
-                    ],
-                    "defensemen": [],
-                    "goalies": [],
-                },
-                {"forwards": [], "defensemen": [], "goalies": []},
-            ]
-        )
-        result = NhlRosterService(http).fetch_current_rosters()
-        self.assertTrue(result.complete)
-        self.assertIn("8478402", result.items)
-        self.assertEqual(result.items["8478402"].full_name, "Connor McDavid")
-
-    def test_ahl_service_reads_public_feed_player_id_name_and_dob(self):
-        http = FakeHttpClient(
-            [
-                {
-                    "current_season_id": "90",
-                    "current_league_id": "4",
-                    "teamsNoAll": [{"id": "415", "name": "Laval Rocket"}],
-                },
-                {
-                    "roster": [
-                        {
-                            "sections": [
+                            "data": [
                                 {
-                                    "data": [
-                                        {
-                                            "row": {
-                                                "player_id": "7179",
-                                                "name": "Kaapo Kähkönen",
-                                                "birthdate": "1996-08-16",
-                                            }
-                                        }
-                                    ]
+                                    "row": {
+                                        "player_id": "7179",
+                                        "name": "Different Person",
+                                        "birthdate": "1990-01-01",
+                                    }
                                 }
                             ]
                         }
                     ]
-                },
+                }
             ]
+        }
+        return AhlRosterService(http_client=MemoryHttpClient(responses=ahl_payloads))
+
+    def test_conflicting_profiles_make_the_feed_incomplete(self, conflicting_feed):
+        result = conflicting_feed.fetch_current_rosters()
+        assert not result.complete
+        assert result.items == ()
+        assert "conflicting profiles" in result.errors[0]
+
+
+class TestEmptyFeedDiscovery:
+    @pytest.fixture(
+        params=[
+            pytest.param(("nhl", {"standings": []}), id="no-nhl-teams"),
+            pytest.param(
+                ("ahl", {"current_season_id": "90", "teamsNoAll": []}),
+                id="no-ahl-teams",
+            ),
+            pytest.param(("ahl", {"teamsNoAll": [{"id": "415"}]}), id="no-ahl-season"),
+        ]
+    )
+    def feed(self, request):
+        source, payload = request.param
+        if source == "nhl":
+            return NhlRosterService(
+                http_client=MemoryHttpClient(
+                    responses={"https://api-web.nhle.com/v1/standings/now": payload}
+                )
+            )
+        return AhlRosterService(
+            http_client=MemoryHttpClient(responses={"bootstrap": payload})
         )
-        result = AhlRosterService(http_client=http).fetch_current_rosters()
-        self.assertTrue(result.complete)
-        self.assertEqual(result.items[0].external_id, "7179")
-        self.assertEqual(result.items[0].birth_date, date(1996, 8, 16))
-        roster_params = http.calls[1][1]
-        self.assertEqual(roster_params["view"], "roster")
-        self.assertNotIn("rosterstatus", roster_params)
 
-    def test_ahl_partial_failure_keeps_positive_results_but_marks_incomplete(self):
-        http = FakeHttpClient(
-            [
-                {
-                    "current_season_id": "90",
-                    "current_league_id": "4",
-                    "teamsNoAll": [{"id": "1"}, {"id": "2"}],
-                },
-                {
-                    "roster": [
-                        {
-                            "sections": [
-                                {
-                                    "data": [
-                                        {
-                                            "row": {
-                                                "player_id": "10",
-                                                "name": "Found Player",
-                                                "birthdate": "2000-01-01",
-                                            }
-                                        }
-                                    ]
-                                }
-                            ]
-                        }
-                    ]
-                },
-                TimeoutError("feed timeout"),
-            ]
-        )
-        result = AhlRosterService(http_client=http).fetch_current_rosters()
-        self.assertFalse(result.complete)
-        self.assertEqual([player.external_id for player in result.items], ["10"])
-        self.assertEqual(len(result.errors), 1)
+    def test_empty_discovery_cannot_mark_existing_players_unknown(self, feed):
+        result = feed.fetch_current_rosters()
+        assert not result.complete
+        assert len(result.errors) == 1
+        assert result.items == ()
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestIncompleteTeamDiscovery:
+    @pytest.fixture
+    def malformed_team_list(self, nhl_payloads):
+        nhl_payloads["https://api-web.nhle.com/v1/standings/now"] = {
+            "standings": [{"teamAbbrev": {"default": "EDM"}}, {"teamAbbrev": {}}]
+        }
+        return NhlRosterService(http_client=MemoryHttpClient(responses=nhl_payloads))
+
+    def test_invalid_team_cannot_be_silently_dropped_from_discovery(
+        self, malformed_team_list
+    ):
+        result = malformed_team_list.fetch_current_rosters()
+        assert not result.complete
+        assert result.items == ()

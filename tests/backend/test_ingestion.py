@@ -10,7 +10,17 @@ from unittest.mock import Mock, patch
 import pytest
 import requests
 
-from app.ScriptingFiles.FullDataScript import ingestion, team_stints
+from app.ScriptingFiles.FullDataScript import (
+    ingestion,
+    team_stints,
+    populate_roster_status,
+)
+from app.ScriptingFiles.FullDataScript.roster_status.domain import (
+    ExternalRosterPlayer,
+    FetchResult,
+)
+from app.ScriptingFiles.FullDataScript.roster_status.tests.fakes import FixedRosterFeed
+from sqlalchemy import text
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ingestion"
@@ -426,8 +436,6 @@ def test_run_all_uses_last_good_contract_snapshot_but_not_for_other_failures():
 
 
 def test_roster_command_exit_codes():
-    from app.ScriptingFiles.FullDataScript import populate_roster_status
-
     success = {
         "statuses_updated": 1,
         "active_count": 1,
@@ -448,7 +456,9 @@ def test_roster_command_exit_codes():
         patch.object(
             populate_roster_status,
             "sync_roster_status",
-            side_effect=populate_roster_status.IncompleteRosterFeedError("partial"),
+            side_effect=populate_roster_status.IncompleteRosterFeedError(
+                errors=("partial",)
+            ),
         ),
     ):
         assert populate_roster_status.main() == 2
@@ -956,95 +966,6 @@ def test_ingestion_foreign_keys_and_grain_indexes_match_loader_contract(
         assert len(indexes) == 5
 
 
-def test_roster_repository_persists_statuses_ltir_and_ahl_identity(migrated_database):
-    from datetime import date
-    from sqlalchemy import text
-
-    from app.ScriptingFiles.FullDataScript.roster_status.roster_models import (
-        ExternalRosterPlayer,
-        FetchResult,
-    )
-    from app.ScriptingFiles.FullDataScript.roster_status.roster_repository import (
-        PostgresRosterRepository,
-    )
-    from app.ScriptingFiles.FullDataScript.roster_status.roster_status_service import (
-        RosterStatusService,
-    )
-
-    with migrated_database.begin() as connection:
-        connection.execute(
-            text("""
-            INSERT INTO players (id,first_name,last_name,birth_date,roster_status) VALUES
-                (11,'Active','Fixture','1990-01-01','UNKNOWN'),
-                (12,'Minor','Fixture','1991-02-02','ACTIVE'),
-                (13,'Injured','Fixture','1992-03-03','ACTIVE');
-            INSERT INTO player_external_ids (player_id,source_id,external_id)
-            SELECT 11,id,'11' FROM data_sources WHERE code='nhl';
-            INSERT INTO player_external_ids (player_id,source_id,external_id)
-            SELECT 12,id,'12' FROM data_sources WHERE code='nhl';
-            INSERT INTO player_external_ids (player_id,source_id,external_id)
-            SELECT 13,id,'13' FROM data_sources WHERE code='nhl';
-            INSERT INTO ltir_overrides (player_id,start_date) VALUES (13,'2025-01-01');
-        """)
-        )
-
-    class Feed:
-        def __init__(self, result):
-            self.result = result
-
-        def fetch_current_rosters(self):
-            return self.result
-
-    with ingestion.database_transaction() as connection:
-        summary = RosterStatusService(
-            PostgresRosterRepository(connection),
-            Feed(
-                FetchResult(
-                    items={"11": ExternalRosterPlayer("11", "Renamed Active")},
-                    complete=True,
-                )
-            ),
-            Feed(
-                FetchResult(
-                    items=[
-                        ExternalRosterPlayer(
-                            "ahl-12", "Minor Fixture", date(1991, 2, 2)
-                        )
-                    ],
-                    complete=True,
-                )
-            ),
-        ).sync(date(2025, 10, 1))
-    assert (summary.active_count, summary.minors_count, summary.ltir_count) == (1, 1, 1)
-
-    with migrated_database.begin() as connection:
-        statuses = dict(
-            connection.execute(
-                text("SELECT id,roster_status::text FROM players ORDER BY id")
-            ).all()
-        )
-        assert statuses == {11: "ACTIVE", 12: "MINORS", 13: "LTIR"}
-        assert (
-            connection.execute(
-                text("""
-            SELECT count(*) FROM player_external_ids external
-            JOIN data_sources source ON source.id=external.source_id
-            WHERE source.code='ahl' AND external.player_id=12 AND external.external_id='ahl-12'
-        """)
-            ).scalar_one()
-            == 1
-        )
-        connection.execute(text("DELETE FROM players WHERE id=12"))
-        assert (
-            connection.execute(
-                text("""
-            SELECT count(*) FROM player_external_ids WHERE player_id=12
-        """)
-            ).scalar_one()
-            == 0
-        )
-
-
 def test_ingestion_run_tracking_and_concurrent_run_lock(migrated_database):
     import psycopg2
     from sqlalchemy import text
@@ -1089,66 +1010,130 @@ def test_ingestion_run_tracking_and_concurrent_run_lock(migrated_database):
         assert "already holds" in runs[0][3]
 
 
-def test_incomplete_roster_feed_rolls_back_detected_status_changes(
-    migrated_database, monkeypatch
-):
-    from sqlalchemy import text
-
-    from app.ScriptingFiles.FullDataScript import populate_roster_status
-    from app.ScriptingFiles.FullDataScript.roster_status.roster_models import (
-        ExternalRosterPlayer,
-        FetchResult,
-    )
-
-    with migrated_database.begin() as connection:
-        connection.execute(
-            text("""
-            INSERT INTO players (id,first_name,last_name,roster_status)
-            VALUES (21,'Partial','Fixture','MINORS');
-            INSERT INTO player_external_ids (player_id,source_id,external_id)
-            SELECT 21,id,'21' FROM data_sources WHERE code='nhl';
-        """)
-        )
-
-    class Feed:
-        def __init__(self, result=None):
-            self.result = result
-
-        def fetch_current_rosters(self):
-            return self.result
-
-    monkeypatch.setattr(
-        populate_roster_status,
-        "NhlRosterService",
-        lambda: Feed(
-            FetchResult(
-                items={"21": ExternalRosterPlayer("21", "Partial Fixture")},
-                complete=False,
-                errors=("one NHL team failed",),
-            )
-        ),
-    )
-    monkeypatch.setattr(
-        populate_roster_status,
-        "AhlRosterService",
-        lambda: Feed(FetchResult(items=[], complete=True)),
-    )
-    with pytest.raises(populate_roster_status.IncompleteRosterFeedError):
-        populate_roster_status.sync_roster_status()
-
-    with migrated_database.connect() as connection:
-        assert (
-            connection.execute(
-                text("SELECT roster_status::text FROM players WHERE id=21")
-            ).scalar_one()
-            == "MINORS"
-        )
-        assert (
+class TestRosterTransactions:
+    @pytest.fixture
+    def roster_database(self, migrated_database):
+        with migrated_database.begin() as connection:
             connection.execute(
                 text("""
-            SELECT status FROM ingestion_runs
-            WHERE job_name='populate_roster_status' ORDER BY id DESC LIMIT 1
-        """)
-            ).scalar_one()
-            == "failed"
+                INSERT INTO players (id,first_name,last_name,birth_date,roster_status) VALUES
+                    (11,'Active','Fixture','1990-01-01','MINORS'),
+                    (12,'Minor','Fixture','1991-02-02','ACTIVE'),
+                    (13,'Injured','Fixture','1992-03-03','ACTIVE');
+                INSERT INTO player_external_ids (player_id,source_id,external_id)
+                    SELECT player_id, id, player_id::text FROM data_sources
+                    CROSS JOIN (VALUES (11),(12),(13)) AS p(player_id) WHERE code='nhl';
+                INSERT INTO ltir_overrides (player_id,start_date) VALUES (13,'2025-01-01');
+            """)
+            )
+        return migrated_database
+
+    @pytest.fixture
+    def feeds(self):
+        nhl = FixedRosterFeed(
+            result=FetchResult(
+                items=(
+                    ExternalRosterPlayer(external_id="11", full_name="Renamed Active"),
+                )
+            )
         )
+        ahl = FixedRosterFeed(
+            result=FetchResult(
+                items=(
+                    ExternalRosterPlayer(
+                        external_id="ahl-12",
+                        full_name="Minor Fixture",
+                        birth_date=date(1991, 2, 2),
+                    ),
+                )
+            )
+        )
+        return nhl, ahl
+
+    def test_complete_feeds_commit_statuses_and_identity_mapping(
+        self, roster_database, feeds
+    ):
+        nhl, ahl = feeds
+        summary = populate_roster_status.sync_roster_status(
+            nhl_service=nhl, ahl_service=ahl, as_of=date(2025, 10, 1)
+        )
+        assert (
+            summary["active_count"],
+            summary["minors_count"],
+            summary["ltir_count"],
+        ) == (1, 1, 1)
+        with roster_database.connect() as connection:
+            assert dict(
+                connection.execute(
+                    text("SELECT id,roster_status::text FROM players ORDER BY id")
+                ).all()
+            ) == {11: "ACTIVE", 12: "MINORS", 13: "LTIR"}
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM player_external_ids p JOIN data_sources s ON s.id=p.source_id WHERE s.code='ahl' AND p.player_id=12 AND p.external_id='ahl-12'"
+                    )
+                ).scalar_one()
+                == 1
+            )
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT status FROM ingestion_runs WHERE job_name='populate_roster_status'"
+                    )
+                ).scalar_one()
+                == "succeeded"
+            )
+
+    @pytest.fixture(
+        params=[
+            pytest.param("nhl", id="incomplete-nhl"),
+            pytest.param("ahl", id="incomplete-ahl"),
+        ]
+    )
+    def partial_feeds(self, request, feeds):
+        nhl, ahl = feeds
+        if request.param == "nhl":
+            nhl = FixedRosterFeed(
+                result=FetchResult(
+                    items=nhl.result.items, errors=("one NHL team failed",)
+                )
+            )
+        if request.param == "ahl":
+            ahl = FixedRosterFeed(
+                result=FetchResult(
+                    items=ahl.result.items, errors=("one AHL team failed",)
+                )
+            )
+        return nhl, ahl
+
+    def test_incomplete_feed_rolls_back_statuses_and_new_external_ids(
+        self, roster_database, partial_feeds
+    ):
+        nhl, ahl = partial_feeds
+        with pytest.raises(populate_roster_status.IncompleteRosterFeedError):
+            populate_roster_status.sync_roster_status(
+                nhl_service=nhl, ahl_service=ahl, as_of=date(2025, 10, 1)
+            )
+        with roster_database.connect() as connection:
+            assert dict(
+                connection.execute(
+                    text("SELECT id,roster_status::text FROM players ORDER BY id")
+                ).all()
+            ) == {11: "MINORS", 12: "ACTIVE", 13: "ACTIVE"}
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM player_external_ids p JOIN data_sources s ON s.id=p.source_id WHERE s.code='ahl'"
+                    )
+                ).scalar_one()
+                == 0
+            )
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT status FROM ingestion_runs WHERE job_name='populate_roster_status'"
+                    )
+                ).scalar_one()
+                == "failed"
+            )

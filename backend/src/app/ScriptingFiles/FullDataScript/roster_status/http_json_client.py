@@ -1,50 +1,60 @@
-"""Small dependency-free JSON/JSONP HTTP client used by roster loaders."""
+"""Bounded synchronous JSON/JSONP transport for roster feeds."""
 
-from __future__ import annotations
-
-import json
-from typing import Any, Protocol, runtime_checkable
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+import re
+from typing import Protocol, runtime_checkable
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+from pydantic import TypeAdapter, ValidationError
+
+from app.ScriptingFiles.FullDataScript.roster_status.domain import HttpOptions
+from app.ScriptingFiles.FullDataScript.roster_status.errors import (
+    InvalidJsonResponseError,
+)
 
 
 @runtime_checkable
 class JsonClient(Protocol):
-    def get_json(self, url: str, params: dict[str, str] | None = None) -> dict: ...
+    def get_json(self, url: str, params: Mapping[str, str] | None = None) -> object: ...
 
 
+@dataclass(slots=True, kw_only=True, frozen=True)
 class JsonHttpClient:
-    def __init__(self, timeout_seconds: float = 15.0) -> None:
-        self.timeout_seconds = timeout_seconds
+    options: HttpOptions = field(default_factory=HttpOptions)
 
-    def get_json(
-        self,
-        url: str,
-        params: dict[str, str] | None = None,
-    ) -> dict[str, Any]:
-        if params:
+    def get_json(self, url: str, params: Mapping[str, str] | None = None) -> object:
+        if params is not None and len(params) > 0:
             url = f"{url}?{urlencode(params)}"
-
         request = Request(
             url,
             headers={
                 "Accept": "application/json, text/javascript",
-                "User-Agent": "TradeValueRosterSync/1.0",
+                "User-Agent": self.options.user_agent,
             },
         )
-        with urlopen(request, timeout=self.timeout_seconds) as response:
+        with urlopen(request, timeout=self.options.timeout_seconds) as response:
             body = response.read().decode("utf-8")
+        return decode_json_or_jsonp(body)
 
-        return self._decode_json_or_jsonp(body)
 
-    @staticmethod
-    def _decode_json_or_jsonp(body: str) -> dict[str, Any]:
-        payload = body.strip()
-        if payload.startswith("{"):
-            return json.loads(payload)
-
-        opening = payload.find("(")
-        closing = payload.rfind(")")
-        if opening < 1 or closing <= opening:
-            raise ValueError("Response was neither JSON nor JSONP")
-        return json.loads(payload[opening + 1 : closing])
+def decode_json_or_jsonp(body: str) -> dict[str, object]:
+    payload = body.strip()
+    if not payload.startswith("{"):
+        callback = re.fullmatch(
+            r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\((.*)\)\s*;?",
+            payload,
+            flags=re.DOTALL,
+        )
+        if callback is None:
+            raise InvalidJsonResponseError(
+                reason="expected a JSON object or callback-wrapped object"
+            )
+        payload = callback.group(1)
+    try:
+        return TypeAdapter(dict[str, object]).validate_json(payload)
+    except ValidationError as exc:
+        raise InvalidJsonResponseError(
+            reason="payload must be a valid JSON object"
+        ) from exc

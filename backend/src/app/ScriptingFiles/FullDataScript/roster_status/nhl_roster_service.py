@@ -1,74 +1,59 @@
-"""Fetch current NHL rosters from the free NHL API."""
+"""NHL standings and roster adapter over an injected HTTP client."""
 
-from __future__ import annotations
+from dataclasses import dataclass, field
 
-import logging
-
-from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import (
-    JsonHttpClient,
-    JsonClient,
-)
-from app.ScriptingFiles.FullDataScript.roster_status.roster_models import (
+from app.ScriptingFiles.FullDataScript.roster_status.domain import (
     ExternalRosterPlayer,
     FetchResult,
+    NhlFeedOptions,
+)
+from app.ScriptingFiles.FullDataScript.roster_status.errors import FeedFetchError
+from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import JsonClient
+from app.ScriptingFiles.FullDataScript.roster_status.schemas import (
+    NhlRoster,
+    NhlStandings,
+)
+from app.ScriptingFiles.FullDataScript.roster_status.util import (
+    fetch_validated,
+    parse_nhl_roster,
 )
 
 
-LOGGER = logging.getLogger(__name__)
-
-
+@dataclass(slots=True, kw_only=True, frozen=True)
 class NhlRosterService:
-    STANDINGS_URL = "https://api-web.nhle.com/v1/standings/now"
-    ROSTER_URL = "https://api-web.nhle.com/v1/roster/{team}/current"
+    http_client: JsonClient
+    options: NhlFeedOptions = field(default_factory=NhlFeedOptions)
 
-    def __init__(self, http_client: JsonClient | None = None) -> None:
-        self.http_client = http_client if http_client is not None else JsonHttpClient()
-
-    def fetch_current_rosters(self) -> FetchResult[dict[str, ExternalRosterPlayer]]:
+    def fetch_current_rosters(self) -> FetchResult:
         try:
-            standings = self.http_client.get_json(self.STANDINGS_URL)
-            teams = sorted(
-                {
-                    row.get("teamAbbrev", {}).get("default")
-                    for row in standings.get("standings", [])
-                    if row.get("teamAbbrev", {}).get("default")
-                }
+            standings = fetch_validated(
+                self.http_client,
+                self.options.standings_url,
+                NhlStandings,
+                "NHL team list",
             )
-        except Exception as exc:
-            message = f"Unable to fetch NHL team list: {exc}"
-            LOGGER.error(message)
-            return FetchResult(items={}, complete=False, errors=(message,))
-
-        if not teams:
-            message = "NHL standings returned no teams"
-            LOGGER.error(message)
-            return FetchResult(items={}, complete=False, errors=(message,))
-
-        players: dict[str, ExternalRosterPlayer] = {}
+        except FeedFetchError as exc:
+            return FetchResult(errors=(str(exc),))
+        teams = sorted(
+            {
+                row.teamAbbrev.default
+                for row in standings.standings
+                if row.teamAbbrev.default != ""
+            }
+        )
+        if len(teams) == 0:
+            return FetchResult(errors=("NHL standings returned no teams",))
+        players: list[ExternalRosterPlayer] = []
         errors: list[str] = []
-
         for team in teams:
             try:
-                roster = self.http_client.get_json(self.ROSTER_URL.format(team=team))
-                for group in ("forwards", "defensemen", "goalies"):
-                    for row in roster.get(group, []):
-                        player_id = row.get("id")
-                        if player_id is None:
-                            continue
-                        first_name = row.get("firstName", {}).get("default", "")
-                        last_name = row.get("lastName", {}).get("default", "")
-                        players[str(player_id)] = ExternalRosterPlayer(
-                            external_id=str(player_id),
-                            full_name=f"{first_name} {last_name}".strip(),
-                            team_external_id=team,
-                        )
-            except Exception as exc:
-                message = f"Unable to fetch NHL roster for {team}: {exc}"
-                LOGGER.error(message)
-                errors.append(message)
-
-        return FetchResult(
-            items=players,
-            complete=not errors,
-            errors=tuple(errors),
-        )
+                payload = fetch_validated(
+                    self.http_client,
+                    self.options.roster_url.format(team=team),
+                    NhlRoster,
+                    f"NHL roster for {team}",
+                )
+                players.extend(parse_nhl_roster(payload, team))
+            except FeedFetchError as exc:
+                errors.append(str(exc))
+        return FetchResult(items=tuple(players), errors=tuple(errors))
