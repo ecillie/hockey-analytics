@@ -50,11 +50,9 @@ from app.ScriptingFiles.FullDataScript.contracts.http import (
 from app.ScriptingFiles.FullDataScript.contracts.http import (
     ProfileSession as ProfileSession,
 )
-from app.ScriptingFiles.FullDataScript.contracts.options import (
-    HistoricalContractOptions,
-    ProfileHttpOptions,
-    find_option_violation,
-)
+from app.ScriptingFiles.FullDataScript.contracts.domain import HistoricalContractOptions
+from app.ScriptingFiles.FullDataScript.contracts.domain import ProfileHttpOptions
+from app.ScriptingFiles.FullDataScript.contracts.policy import find_option_violation
 from app.ScriptingFiles.FullDataScript.contracts.repository import (
     ContractRepositoryFactory,
     open_contract_repository as open_contract_repository,

@@ -39,8 +39,8 @@ from app.ScriptingFiles.FullDataScript.contracts.http import (
     SynchronizedActiveSession,
     open_active_session,
 )
-from app.ScriptingFiles.FullDataScript.contracts.options import (
-    ActiveContractOptions,
+from app.ScriptingFiles.FullDataScript.contracts.domain import ActiveContractOptions
+from app.ScriptingFiles.FullDataScript.contracts.policy import (
     find_active_option_violation,
 )
 from app.ScriptingFiles.FullDataScript.contracts.util import parse_money_cents

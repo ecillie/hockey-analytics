@@ -27,10 +27,10 @@ from app.ScriptingFiles.FullDataScript.contracts.domain import (
     build_parsed_profile,
 )
 from app.ScriptingFiles.FullDataScript.contracts.errors import CapSpaceError
-from app.ScriptingFiles.FullDataScript.contracts.options import (
+from app.ScriptingFiles.FullDataScript.contracts.policy import (
     find_profile_http_violation,
-    ProfileHttpOptions,
 )
+from app.ScriptingFiles.FullDataScript.contracts.domain import ProfileHttpOptions
 from app.ScriptingFiles.FullDataScript.contracts.policy import (
     matches_capwages_document as _capwages_document_matches,
 )

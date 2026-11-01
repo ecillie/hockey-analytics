@@ -23,6 +23,7 @@ from app.ScriptingFiles.FullDataScript.tracking.errors import (
 from app.ScriptingFiles.FullDataScript.tracking.repository import (
     build_advisory_lock_key,
     open_ingestion_run,
+    PostgresIngestionRun,
 )
 
 
@@ -176,6 +177,7 @@ class TestCommittedContractBatches:
                 ):
                     raise AssertionError("overlap entered ingestion")
             run.succeed({"records_created": 3})
+        assert isinstance(run, PostgresIngestionRun)
         assert run.connection.closed != 0
         assert run.cursor.closed
         with open_ingestion_run(

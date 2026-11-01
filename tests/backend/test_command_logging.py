@@ -21,7 +21,7 @@ class TestOpenApiLogging:
         def main() -> int:
             mode, output = sys.argv[1:]
             if mode == 'failure':
-                export_openapi._schema_text = FailingAction()
+                export_openapi.render_schema_text = FailingAction()
             arguments = ['--output', output]
             if mode == 'stale':
                 arguments.append('--check')

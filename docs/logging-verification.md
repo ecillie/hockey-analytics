@@ -1561,3 +1561,64 @@ Runtime role/interface work and precise framework, historical migration and
 native fault-double dispositions remain, along with hosted NonProd correlation,
 final combined acceptance and release promotion. No acceptance PR or production
 promotion is made by this checkpoint.
+
+## Canonical contract roles and durable-run interface checkpoint
+
+Four frozen option/limit classes now live in domain.py, their three option
+checks in policy.py, and four pure profile reporting helpers in util.py. Actual
+runtime callers import those canonical owners. Existing options/reporting import
+paths retain the exact objects through explicit compatibility bindings. Domain
+snapshot properties use native JSON decoding directly, preserving null/fresh-copy
+behavior while removing the reverse dependency on utility helpers.
+
+ExistingContractSeason names the stored pair. SeasonInsertValues and
+SourceRecordValues specify the exact native heterogeneous SQL batch shapes, and
+candidate-selection parameters narrow to integer/string values. IngestionRun is
+a minimal runtime-checkable Protocol with read-only run_id, succeed and fail;
+the decorator no longer imports the concrete PostgreSQL implementation. Both the
+native context and in-memory fake expose the Protocol. The native PostgreSQL
+resource test narrows to its real adapter before checking closed native handles.
+
+render_schema_text is now a public descriptive helper at every actual caller and
+injected command seam. The generated cancellation probe constructs its native
+failures inside guarded main and returns the real command exit. Original native
+cancellation/SIGINT behavior, safe secondary diagnostics and command modes remain.
+
+Verification under Python 3.12.14:
+
+- Complete AST comparison against `b14c606` proves all **11** moved definitions
+  unchanged. Seven runtime modules differ only in imports/type declarations;
+  OpenAPI code differs only in the helper rename. Every contract-repository
+  string constant and SQL tuple construction is unchanged. Native run adapter
+  and factory executable AST remain identical; compatibility objects have exact
+  identity with their canonical owners.
+- All **318** compared command/resource/PostgreSQL test IDs are unchanged.
+  Focused contract/tracking checks pass **191** in **0.37 seconds**; final command/
+  resource checks after the cancellation main change pass **312** in
+  **91.03 seconds**.
+- Fresh migrated `tradevalue_test_logging05_contract_roles`: **1,439 passed,
+  zero skips**, **91.24%** coverage in **132.34 seconds**, with the **100%** API/
+  calendar gate. Isolated units pass **1,389**, with 50 integrations deselected,
+  in **120.23 seconds**.
+- Locked sync, Ruff lint/format, ty, structural scope, dependency exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke,
+  clean API/Vercel/ML artifact installs/exclusions and committed-model gates pass.
+  Final static/export/OpenAPI checks include the generated-main change.
+- Twenty source dispositions were re-reviewed; all **237** current source digests
+  match. No added prohibited forms/comments were found. Public HTTP schema,
+  frontend and committed models remain unchanged. No new image or hosted success
+  is claimed; final combined image/browser and NonProd acceptance remain required.
+
+Evidence uses `/private/tmp/tradevalue-logging05-contract-roles-` prefixes:
+`compare.py`/`compare.txt`, `focus.txt`, `command-focus.txt`,
+`before-nodes.txt`/`after-nodes.txt`, `before-ids.txt`/`after-ids.txt`,
+`checks.sh`/`checks.txt`, `pytest.txt`, `units.txt`, `schema.json` and `packages.txt`.
+Comparison scripts pin the preceding commit; outside-tree collection uses
+`uv run python -m pytest` so the repository is available through normal module
+execution. Those collection artifacts describe source identities, not executions.
+
+Remaining transport/active-service and compatibility-entrypoint role findings,
+exact framework/historical/native fault-double dispositions, hosted NonProd mode/
+correlation and final combined acceptance/release promotion remain open. The
+approved API lifespan hook is unchanged. No acceptance PR or production promotion
+is made by this checkpoint.

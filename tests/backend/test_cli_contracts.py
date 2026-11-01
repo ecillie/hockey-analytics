@@ -58,7 +58,8 @@ class TestCommandBoundaries:
         ),
         pytest.param(CommandCase(module=run_all, action="run_all"), id="ingestion"),
         pytest.param(
-            CommandCase(module=export_openapi, action="_schema_text"), id="openapi"
+            CommandCase(module=export_openapi, action="render_schema_text"),
+            id="openapi",
         ),
         pytest.param(
             CommandCase(module=backfill_team_stints, action="init_db"), id="repair"

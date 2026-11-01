@@ -1,5 +1,23 @@
 # Python verification
 
+The contract-role/interface checkpoint gives four unchanged option/limit values
+their domain owner, three unchanged checks their policy owner, and four unchanged
+reporting helpers their utility owner. Runtime callers use those canonical modules;
+compatibility bindings retain exact identity. Exact SQL batch/pair types and a
+minimal runtime-checkable durable-run Protocol replace broad/concrete seams.
+The schema helper is public and the generated cancellation driver owns its setup
+inside guarded main. Complete AST/string comparisons preserve moved definitions,
+runtime bodies, SQL and tuple construction. All **318** compared test IDs are
+unchanged. Focused checks pass **191** contract/tracking cases and **312** command/
+resource cases, the latter after the generated main change. Fresh migrated
+`tradevalue_test_logging05_contract_roles` passes **1,439 tests, zero skips**,
+**91.24%** coverage in **132.34 seconds**, with the **100%** API/calendar gate.
+Isolated units pass **1,389**, with 50 integrations deselected, in **120.23 seconds**.
+Static, package/export, migration/schema/API and ML gates pass. Twenty dispositions
+were re-reviewed and all 237 current source digests match. Remaining transport/
+active-service/entrypoint role and exact framework/historical/fault-double
+decisions, hosted NonProd and final combined acceptance/release remain open.
+
 The startup/ingestion checkpoint resolves the final two explicit inspected-test
 findings. Generated host mains own capture handlers and fallback SQLite engines;
 native failure/cancellation probes prove disposal once and original identity.

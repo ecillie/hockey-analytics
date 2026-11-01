@@ -6,20 +6,23 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
-from app.ScriptingFiles.FullDataScript.contracts.domain import Candidate, ProfileResult
+from app.ScriptingFiles.FullDataScript.contracts.domain import (
+    Candidate,
+    ProfileResult,
+    HistoricalContractOptions,
+    HistoricalContractLimits,
+    ProfileHttpOptions,
+)
 from app.ScriptingFiles.FullDataScript.contracts.http import (
     ProfileSessionFactory,
     fetch_profile_with_fallback,
 )
-from app.ScriptingFiles.FullDataScript.contracts.options import (
-    HistoricalContractOptions,
-    HistoricalContractLimits,
-    ProfileHttpOptions,
+from app.ScriptingFiles.FullDataScript.contracts.policy import (
     find_option_violation,
     find_profile_http_violation,
+    WorkerLimitPolicy,
 )
-from app.ScriptingFiles.FullDataScript.contracts.policy import WorkerLimitPolicy
-from app.ScriptingFiles.FullDataScript.contracts.reporting import (
+from app.ScriptingFiles.FullDataScript.contracts.util import (
     calculate_profile_metrics,
     count_unprocessed_records,
 )

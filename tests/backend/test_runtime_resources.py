@@ -101,7 +101,7 @@ class TestImportIsolation:
             import backend.export_openapi
             from app.main import create_app
             assert len(create_app().openapi()["paths"]) == 18
-            assert backend.export_openapi._schema_text()
+            assert backend.export_openapi.render_schema_text()
         assert dict(os.environ) == before
     """)
 

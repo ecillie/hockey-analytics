@@ -25,8 +25,8 @@ from app.ScriptingFiles.FullDataScript.contracts.http import ActiveSessionFactor
 from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
     report_request_recovery,
 )
-from app.ScriptingFiles.FullDataScript.contracts.options import (
-    ActiveContractOptions,
+from app.ScriptingFiles.FullDataScript.contracts.domain import ActiveContractOptions
+from app.ScriptingFiles.FullDataScript.contracts.policy import (
     find_active_option_violation,
 )
 from app.ScriptingFiles.FullDataScript.contracts.schemas.active import (
