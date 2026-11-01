@@ -104,6 +104,8 @@ jobs:
           uv run ruff check
           uv run ruff format --check
           uv run ty check
+      - name: Verify Python structural rules
+        run: uv run python -m backend.database.verify_python_rules
       - name: Verify dependency exports
         run: bash scripts/export-requirements.sh --check
       - name: Verify isolated wheel installations

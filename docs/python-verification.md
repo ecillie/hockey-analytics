@@ -386,3 +386,81 @@ renames from the intended alias, annotation, guard, and snapshot changes;
 manual review covered those changes, local-variable shadowing, fixture targets,
 serialization, resource ownership, and compatibility exports. Frozen revisions,
 OpenAPI, lockfiles, tool configuration, and frontend source are unchanged.
+
+## Initial enforcement work, phase 7
+
+At the owner's request, phase 7 started on `origin/Dev` at `459d446` while
+phase 6 PR #161 was still running. After its successful Dev workflow
+`41260161286`, repository automation merged phase 6 as `c37922e`. The phase 7
+branch then fast-forwarded to current Dev and restored its independent checker
+changes without conflicts. No manual merge of the PR was performed.
+
+Run the initial structural gate with:
+
+```bash
+uv run python -m backend.database.verify_python_rules
+```
+
+The reusable backend CI job runs the same command. It parses application, ML,
+operational, migration, and test sources without importing them. Dependency
+environments and retired `.py.txt` loaders are outside the executable scope.
+Missing source roots, missing registered entrypoint files, and invalid Python
+syntax fail the command. A repository-scope test requires every Git-tracked
+`.py` file to be included, so adding a new source location requires updating
+the scope rather than silently excluding it.
+
+This gate detects explicit lambda expressions, static-method decorators,
+literal `while True`, postponed-annotation imports, `Any` imports
+from typing packages (including renamed imports), private class declarations,
+`__post_init__`, direct `object.__setattr__`, and deletion. Preferences about class methods and
+match statements, and the narrower ban on `ClassVar` in dataclasses, remain
+manual checks; the gate does not turn those judgments into broader prohibitions.
+Regression scenarios include source locations, multiple findings, ordinary
+instance methods, bounded loops, text containing forbidden-looking syntax,
+and source that must never execute. Command tests cover help, invalid arguments,
+failure logging, successful output, and fail-closed source inspection.
+
+The initial evidence map below identifies the verification method; it does
+not assert that the final semantic review has been completed.
+
+| Rule family | Automated evidence | Remaining manual acceptance |
+| --- | --- | --- |
+| Managed runtime and dependencies | Locked uv sync, Python 3.12 CI, export parity, clean wheel installs | Confirm declared runtime and dependency boundaries on the selected final commit. |
+| Classes and immutable values | ty; metadata and source-snapshot mutation regressions | Inspect nested state ownership, class responsibilities, method placement, defaults, and constructor effects throughout supported source. |
+| Protocols and inheritance | ty; behavioral repositories and adapter tests | Verify minimal runtime-checkable Protocols and every necessary framework inheritance boundary. |
+| Typing | Ruff and ty; selected prohibited import checks | Review narrow/repeated types, constrained aliases, qualified/indirect forbidden type access, and context-manager annotations. |
+| Control flow | Selected AST bans; pagination and failure-boundary tests | Review branching, nesting, loop exits, walrus opportunities, deliberate truthiness, and indirect equivalents of banned forms. |
+| Errors and cleanup | Primary-failure identity/cause, secondary cleanup notes, cancellation, rollback, close and disposal regressions | Review dedicated typed failures, returning invariants, translation boundaries, and intentional test-only raises. |
+| Async and external I/O | Lifecycle timeout/shutdown tests; isolated unit network guard | Inspect every await, task lifetime, thread boundary, synchronous I/O call, and external-I/O timeout. |
+| Logging and CLIs | Shared CLI behavior scenarios; OpenAPI/import/help tests | Inspect configuration location, lazy diagnostics, one-report behavior, frozen command options, and handler dispatch. |
+| Layout and resources | Wheel/sdist exclusions; installed imports; disposable database integration tests | Resolve role-layout assessment and confirm each resource's owner and lifetime. |
+| Tests | Unit/integration collection, network isolation, fixture-driven scenarios, package exclusions | Review arrangement placement, fixture scope, meaningful assertions, mutable probes and generated input spaces. |
+| Comments, docstrings and names | Ruff formatting; phase 6 naming changes; source/diff searches | Inspect tokenized comments, metadata docstrings, compatibility aliases, and non-mechanical naming decisions. |
+| Published behavior | OpenAPI/generated-type parity; API coverage; ML metadata gate; image smoke | Confirm compatibility values and exact frozen migration behavior on the final combined commit. |
+
+Exact owner dispositions remain to be recorded for Vercel's exported mutable
+ASGI app in `backend/index.py`, Alembic's load-time bootstrap in
+`backend/migrations/env.py`, and intentional source-only test failures that
+must raise to protect a boundary. The earlier ML layout assessment also needs
+its final disposition. Historical merges are evidence of behavior, not blanket
+approval of exceptions to the global rules. The checker adds no allowlist or
+waiver for these cases because it does not attempt to automate those judgments.
+
+The complete file-by-file semantic review, final exception decisions, and final
+phase 7 acceptance record remain outstanding. Initial checker verification is
+recorded separately from that final acceptance.
+
+Initial checkpoint verification on Python 3.12.14 and disposable PostgreSQL 15
+database `tradevalue_test_followup07`: **769 passed, zero skips**, **91.88%**
+aggregate coverage in **62.70 seconds**, with **100%** API/shared-calendar
+coverage. Isolated units passed **719**, with **50** integrations deselected,
+in **38.99 seconds**. The 27 added cases exercise structural detection, deliberate
+manual-review cases, source scope, non-execution, command exits, and diagnostics.
+
+Ruff lint/format, ty, the structural gate, actionlint 1.7.12, locked sync, ML
+metadata, OpenAPI parity, dependency exports, isolated installed packages and
+wheel/sdist exclusions passed. Frontend generated-type parity, lint, all 60
+tests at 100% coverage, and production build passed. The production API image
+passed health/seasons/teams smoke as uid 10001 against the disposable database.
+Existing dependency and sandboxed core-detection warnings remain. No hosted
+database or upstream ingestion was used for this checkpoint.
