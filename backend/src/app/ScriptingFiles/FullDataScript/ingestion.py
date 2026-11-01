@@ -19,7 +19,12 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     MissingSourceSnapshotError,
     PlayerKindViolation,
 )
-from app.database import DatabaseTransactionFactory, open_database_transaction, init_db
+from app.database import (
+    DatabaseTransactionFactory,
+    open_database_cursor,
+    open_database_transaction,
+    init_db,
+)
 from app.ScriptingFiles.FullDataScript import capspace
 from app.ScriptingFiles.FullDataScript.contracts.active_repository import (
     ContextualActiveRepositoryFactory,
@@ -156,8 +161,10 @@ def track_active_contracts(
 
 
 def load_capwages_summary() -> dict[str, int]:
-    with open_database_transaction() as connection:
-        cursor = connection.cursor()
+    with (
+        open_database_transaction() as connection,
+        open_database_cursor(connection) as cursor,
+    ):
         cursor.execute(
             """SELECT
                    (SELECT count(DISTINCT external.player_id)
@@ -169,7 +176,6 @@ def load_capwages_summary() -> dict[str, int]:
                FROM data_sources source WHERE source.code = 'capwages'"""
         )
         players, contracts, contract_seasons = cursor.fetchone()
-        cursor.close()
     if contracts == 0:
         raise MissingSourceSnapshotError(source="CapWages")
     return {

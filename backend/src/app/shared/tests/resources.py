@@ -9,15 +9,47 @@ from app.config import DatabaseSettings
 from collections.abc import Generator
 from sqlalchemy.orm import Session
 from app.api.service import TradeValueService
-from app.database import DatabaseResources
-import psycopg2
+from app.database import (
+    DatabaseResources,
+    open_database_cursor,
+    open_database_transaction,
+)
 from psycopg2 import sql
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class CursorProbe:
+    row: tuple[int, ...]
+    failures: Mapping[str, BaseException]
+    events: list[str]
+
+    def execute(self, query: object, parameters: object = None) -> None:
+        self.events.append("execute")
+        if (failure := self.failures.get("execute")) is not None:
+            raise failure
+
+    def fetchone(self) -> tuple[int, ...]:
+        self.events.append("fetchone")
+        if (failure := self.failures.get("fetchone")) is not None:
+            raise failure
+        return self.row
+
+    def close(self) -> None:
+        self.events.append("cursor.close")
+        if (failure := self.failures.get("cursor.close")) is not None:
+            raise failure
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
 class ResourceProbe:
     failures: Mapping[str, BaseException]
     events: list[str] = field(default_factory=list)
+    cursor_resource: CursorProbe | None = None
+
+    def cursor(self) -> CursorProbe:
+        self.record_operation("cursor")
+        assert self.cursor_resource is not None
+        return self.cursor_resource
 
     def record_operation(self, name: str) -> None:
         self.events.append(name)
@@ -51,6 +83,18 @@ class ResourceFailureScenario:
     expected: BaseException
     cause: Exception
     settings: DatabaseSettings
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class CursorFailureScenario:
+    connection: ResourceProbe
+    primary: BaseException | None
+    cleanup: BaseException | None
+    cause: ValueError
+
+    @property
+    def expected_failure(self) -> BaseException | None:
+        return self.primary if self.primary is not None else self.cleanup
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -90,22 +134,19 @@ class TransactionScenario:
     table: str
 
     def insert_row(self, connection) -> None:
-        with connection.cursor() as cursor:
+        with open_database_cursor(connection) as cursor:
             cursor.execute(
                 sql.SQL("INSERT INTO {} VALUES (1)").format(sql.Identifier(self.table))
             )
 
     def count_rows(self) -> int:
-        connection = psycopg2.connect(self.settings.database_url)
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    sql.SQL("SELECT count(*) FROM {}").format(
-                        sql.Identifier(self.table)
-                    )
-                )
-                row = cursor.fetchone()
-                assert row is not None
-                return row[0]
-        finally:
-            connection.close()
+        with (
+            open_database_transaction(self.settings) as connection,
+            open_database_cursor(connection) as cursor,
+        ):
+            cursor.execute(
+                sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(self.table))
+            )
+            row = cursor.fetchone()
+            assert row is not None
+            return row[0]

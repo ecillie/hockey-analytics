@@ -4,6 +4,11 @@ from dataclasses import replace
 from datetime import date
 from io import BytesIO
 import pytest
+import asyncio
+from email.message import Message
+from urllib.error import HTTPError
+from app.shared.tests.fakes import StageOutcome
+from app.shared.tests.resources import HttpErrorScenario
 from app.ScriptingFiles.FullDataScript.roster_status import http_json_client
 from app.ScriptingFiles.FullDataScript.roster_status.ahl_roster_service import (
     AhlRosterService,
@@ -501,3 +506,53 @@ class TestIncompleteTeamDiscovery:
         result = malformed_team_list.fetch_current_rosters()
         assert not result.complete
         assert result.items == ()
+
+
+class TestOwnedRosterHttpErrors:
+    @pytest.fixture(
+        params=[
+            pytest.param(None, id="closed-error-response"),
+            pytest.param(OSError, id="close-error"),
+            pytest.param(asyncio.CancelledError, id="cancelled-close"),
+            pytest.param(KeyboardInterrupt, id="interrupted-close"),
+        ]
+    )
+    def scenario(self, request, monkeypatch):
+        body = BytesIO(b"upstream_secret")
+        events = []
+        cleanup = None if request.param is None else request.param("close_secret")
+        if cleanup is not None:
+            monkeypatch.setattr(
+                body,
+                "close",
+                StageOutcome(result=None, failure=cleanup, name="close", events=events),
+            )
+        response = HTTPError(
+            "https://feed.test/roster", 503, "upstream_secret", Message(), body
+        )
+        monkeypatch.setattr(
+            http_json_client, "urlopen", StageOutcome(result=None, failure=response)
+        )
+        try:
+            yield HttpErrorScenario(
+                body=body,
+                response=response,
+                primary=response,
+                close_failure=cleanup,
+                events=events,
+            )
+        finally:
+            BytesIO.close(body)
+
+    def test_caught_error_is_closed_without_replacing_primary(self, scenario):
+        with pytest.raises(BaseException) as raised:
+            JsonHttpClient().get_json("https://feed.test/roster")
+        assert raised.value is scenario.response
+        if scenario.close_failure is None:
+            assert scenario.body.closed
+        if scenario.close_failure is not None:
+            assert scenario.events == ["close"]
+            assert (
+                scenario.response.__dict__["tradevalue_cleanup"]
+                is scenario.close_failure
+            )

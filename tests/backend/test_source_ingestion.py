@@ -2,10 +2,12 @@
 
 from dataclasses import replace
 from copy import deepcopy
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 from app.ScriptingFiles.FullDataScript.source_ingestion.schemas import (
+    Integer,
     SchedulePage,
     StatsPage,
+    TeamAbbreviation,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.scenarios import (
     RepositoryStage,
@@ -27,6 +29,8 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     IngestionValidationError,
+    IntegerValueViolation,
+    TeamAbbreviationViolation,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion import util as source_utils
 from app.ScriptingFiles.FullDataScript.source_ingestion import http as source_http
@@ -626,3 +630,33 @@ class TestSchedulePageSnapshots:
         games = parse_schedule_page(page, source="fixture")
         assert len(games) == 1
         assert games[0].external_id == 1
+
+
+class TestTypedNativeValidatorFailures:
+    cases = (
+        pytest.param((Integer, IntegerValueViolation), id="finite-integer"),
+        pytest.param(
+            (TeamAbbreviation, TeamAbbreviationViolation), id="team-abbreviation"
+        ),
+    )
+
+    @pytest.fixture(params=cases)
+    def boundary(self, request):
+        schema, failure = request.param
+        return TypeAdapter(schema), failure
+
+    @pytest.fixture
+    def value(self):
+        return "input_secret"
+
+    def test_native_validation_retains_typed_context_without_echoing_input(
+        self, boundary, value
+    ):
+        adapter, failure_type = boundary
+        with pytest.raises(ValidationError) as raised:
+            adapter.validate_python(value)
+        issue = raised.value.errors(include_input=False)[0]
+        failure = issue["ctx"]["error"]
+        assert isinstance(failure, failure_type)
+        assert failure.value == value
+        assert "input_secret" not in issue["msg"]

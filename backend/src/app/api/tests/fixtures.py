@@ -15,7 +15,9 @@ from app.api.domain import (
 )
 from app.api.service import TradeValueService
 from app.api.tests.fakes import MemoryApiRepository
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
+from app.config import AppEnvironment, DatabaseSettings
+from app.database import open_database_resources
 from sqlalchemy.orm import Session
 from app.api.repository import SqlApiRepository
 
@@ -258,17 +260,20 @@ VALUES
 
 @pytest.fixture(scope="module")
 def postgres_api_engine(disposable_database_url):
-    database_engine = create_engine(disposable_database_url, pool_pre_ping=True)
-    with database_engine.begin() as connection:
-        assert (
-            connection.execute(
-                text("SELECT to_regclass('public.players')")
-            ).scalar_one()
-            == "players"
-        )
-        connection.exec_driver_sql(SEED_SQL)
-    yield database_engine
-    database_engine.dispose()
+    settings = DatabaseSettings(
+        environment=AppEnvironment.DEV, database_url=disposable_database_url
+    )
+    with open_database_resources(settings) as resources:
+        database_engine = resources.engine
+        with database_engine.begin() as connection:
+            assert (
+                connection.execute(
+                    text("SELECT to_regclass('public.players')")
+                ).scalar_one()
+                == "players"
+            )
+            connection.exec_driver_sql(SEED_SQL)
+        yield database_engine
 
 
 @pytest.fixture()

@@ -56,6 +56,15 @@ class FetchResult:
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
+class RosterEvidence:
+    ltir_player_ids: frozenset[int]
+    nhl_external_ids: frozenset[str]
+    ahl_player_ids: frozenset[int]
+    nhl_complete: bool
+    ahl_complete: bool
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
 class SyncSummary:
     statuses_updated: int
     active_count: int

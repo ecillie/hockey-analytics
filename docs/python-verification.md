@@ -66,6 +66,20 @@ The previously verified API image remains applicable because distributed API
 code, build/dependency inputs and shared logging are unchanged; this checkpoint
 does not claim a new image build or hosted NonProd acceptance.
 
+The resource-edge checkpoint shares primary-preserving cursor ownership across
+team-stint queries and cached contract-summary reads, and closes caught roster
+HTTPError responses without replacing the original failure. Roster transport
+validation moved unchanged into the HTTP adapter; classification uses immutable
+per-sync evidence, and native Pydantic validators raise typed compatible errors.
+Three disposable-engine fixtures now guard setup before yield and use production
+transaction/resource ownership. The final fresh
+`tradevalue_test_logging05_resource_edges_final2` run passed **1,317 tests, zero
+skips**, **91.20%** coverage and the **100%** API/calendar gate. Isolated units
+passed **1,267**, with 50 integrations deselected. Static, package/export,
+schema/API, ML and rebuilt INFO/JSON + DEBUG/text image checks pass. The ledger
+now has **38** pending test files and explicit helper/verification/role findings;
+this is still a checkpoint, not final phase-5/phase-7 acceptance.
+
 The supported runtime is Python 3.12. Install the root uv workspace with
 `uv sync --locked --all-groups`. Runtime, ingestion, ML, and development
 requirements are generated from the same lock. Run these checks at the root:

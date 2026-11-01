@@ -8,13 +8,15 @@ from app.ScriptingFiles.FullDataScript.roster_status.domain import (
     FetchResult,
 )
 from app.ScriptingFiles.FullDataScript.roster_status.errors import FeedFetchError
-from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import JsonClient
+from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import (
+    JsonClient,
+    fetch_validated,
+)
 from app.ScriptingFiles.FullDataScript.roster_status.schemas import (
     AhlBootstrap,
     AhlRoster,
 )
 from app.ScriptingFiles.FullDataScript.roster_status.util import (
-    fetch_validated,
     parse_ahl_roster,
     index_ahl_players,
 )

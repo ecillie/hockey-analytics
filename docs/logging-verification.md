@@ -1085,3 +1085,72 @@ in roster util.fetch_validated, immutable roster classification evidence and
 remaining typed-validator/role dispositions. Framework/historical decisions,
 hosted NonProd success/mode/correlation evidence and final release acceptance
 remain open. This checkpoint creates no acceptance PR or production promotion.
+
+### Phase 5 resource edges, roster evidence and fixture ownership
+
+After `c7208fc`, open_database_cursor owns a cursor while borrowing its connection.
+Its existing complete_cleanup path attempts close once and retains the original
+query failure/cause, cancellation or interruption; close-only failure still
+propagates. Team-stint planning/applying and cached CapWages summary reads use
+this guard. The summary's outer transaction retains commit/rollback/connection
+ownership. Native HTTPError response objects raised by roster urlopen are now
+explicitly closed, with close failures recorded as secondary to the HTTP error.
+
+Roster fetch_validated moved unchanged from pure util to the HTTP adapter, with
+both actual feed callers updated. AST comparison confirms its complete
+signature/body, all team-stint SQL assignments and the summary SQL/report strings
+are unchanged. Classification now takes one RosterEvidence containing immutable
+membership frozensets and completeness facts; the mutable match dictionary does
+not cross that boundary. LTIR/active/minors/unknown and incomplete-feed behavior
+remain unchanged. Dedicated IntegerValueViolation/TeamAbbreviationViolation
+leaves preserve native Pydantic ValueError integration and original safe messages
+while exposing typed input context to callers.
+
+Review also found three disposable engine fixtures whose setup could fail before
+yield without disposal. Contract, source and API fixtures now put setup/yield
+inside the production resource guard with explicit disposable Dev settings. The
+source fixture delegates transactions to the production guard instead of copying
+weaker Exception-only cleanup. Integration resource probes use the same cursor
+and transaction ownership. Fixture pools now use the explicit project resource
+settings, and no external database or source ingestion is involved.
+
+Verification under Python 3.12.14:
+
+- Before fixes, 42 cursor and four native HTTPError regressions produced **28
+  failures, 18 passes**. Final focused resource/roster/source units passed
+  **171**, including native typed-validator context and safe-message cases.
+- After the fixture ownership fixes, fresh migrated
+  `tradevalue_test_logging05_resource_edges_final2` passed **1,317 tests, zero
+  skips**, **91.20%** aggregate coverage in **129.86 seconds**, and the
+  **100%** API/calendar gate. Isolated units passed **1,267**, with 50
+  integrations deselected, in **111.64 seconds**. The earlier final run is
+  superseded by final2 for fixture ownership evidence.
+- Locked sync, Ruff lint/format, ty, structural scope, requirements exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke, clean
+  API/Vercel/ML artifacts, exclusions and committed-model gates pass.
+- Rebuilt `tradevalue-logging05-resource-edges:verified` runs as UID 10001 against
+  fresh `tradevalue_test_logging05_resource_edges_probe`. INFO/JSON and DEBUG/text
+  each pass six HTTP/streaming flows with **15 / 22** captured events and
+  graceful exit **0**; invalid startup produces CRITICAL and exit **3**.
+  Probe containers are removed. Later fixture edits are excluded from the API
+  artifact; distributed runtime/build inputs match the rebuilt image.
+- Diff whitespace and prohibited-form searches pass. No new comments,
+  suppressions, dependencies, frontend, public HTTP schema or committed model
+  artifacts changed.
+
+Transcripts use `/private/tmp/tradevalue-logging05-resource-edges-` prefixes.
+The authoritative full script is `tradevalue-logging05-resource-edges-final2-checks.sh`;
+image script/captures use `tradevalue-logging05-resource-edges-image-checks.sh`
+and `tradevalue-logging05-resource-edges-capture`. Source comparison is
+`tradevalue-logging05-resource-edges-move-check.py`; red evidence is
+`tradevalue-logging05-resource-edges-red.txt`.
+
+The source ledger now records 237 files: 18 empty, 20 docstring-only, **161**
+other inspected and **38** test files pending. Inspected does not mean every
+finding is accepted. Source inspection helper ROOT paths still resolve during
+import and should defer filesystem work; the real HTTP/log verifiers should
+assert exact ID/error-severity shapes and stronger response-body evidence before
+combined acceptance. Legacy role/interface and precise framework/historical
+choices remain open, along with hosted NonProd success/mode/correlation evidence
+and final release acceptance. No acceptance PR or production promotion is made
+by this checkpoint.

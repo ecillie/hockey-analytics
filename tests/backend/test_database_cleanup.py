@@ -3,16 +3,111 @@
 import asyncio
 import json
 import logging
+from itertools import product
 
 import pytest
 
 from app import database
 from app.config import AppEnvironment, DatabaseSettings
-from app.shared.tests.resources import ResourceFailureScenario, ResourceProbe
+from app.shared.tests.resources import (
+    CursorFailureScenario,
+    CursorProbe,
+    ResourceFailureScenario,
+    ResourceProbe,
+)
+from app.ScriptingFiles.FullDataScript import ingestion, team_stints
 from app.shared.tests.fakes import StageOutcome
 from app.shared.observability.tests.fakes import HostileValue
 from app.shared.observability.domain import LogFormat, LoggingSettings
 from app.shared.observability.formatting import SafeFormatter
+
+
+class TestOwnedCursorQueries:
+    cases = (
+        pytest.param((None, None, False), id="success"),
+        pytest.param((None, None, True), id="close-only"),
+        *(
+            pytest.param(
+                (failure_type, stage, close_fails),
+                id=f"{failure_type.__name__}-{stage}-close-{close_fails}",
+            )
+            for failure_type, stage, close_fails in product(
+                (RuntimeError, asyncio.CancelledError, KeyboardInterrupt),
+                ("execute", "fetchone"),
+                (False, True),
+            )
+        ),
+    )
+    queries = {
+        "plan": team_stints.plan_team_stint_backfill,
+        "apply": team_stints.apply_team_stint_backfill,
+    }
+    rows = {"plan": (4, 2), "apply": (4, 2, 2), "summary": (4, 2, 3)}
+    results = {
+        "plan": {"canonical_assignments": 4, "missing_assignments": 2},
+        "apply": {
+            "canonical_assignments": 4,
+            "missing_assignments": 2,
+            "inserted_assignments": 2,
+        },
+        "summary": {"players": 4, "contracts": 2, "contract_seasons": 3, "cached": 1},
+    }
+
+    @pytest.fixture(
+        params=[pytest.param(name, id=name) for name in ("plan", "apply", "summary")]
+    )
+    def operation(self, request):
+        return request.param
+
+    @pytest.fixture(params=cases)
+    def scenario(self, request, operation, monkeypatch):
+        failure_type, stage, close_fails = request.param
+        primary = None if failure_type is None else failure_type("query_secret")
+        cause = ValueError("cause_secret")
+        failures = {}
+        if primary is not None:
+            primary.__cause__ = cause
+            failures[stage] = primary
+        cleanup = OSError("close_secret") if close_fails else None
+        if cleanup is not None:
+            failures["cursor.close"] = cleanup
+        events = []
+        cursor = CursorProbe(row=self.rows[operation], failures=failures, events=events)
+        connection = ResourceProbe(failures={}, events=events, cursor_resource=cursor)
+        monkeypatch.setattr(database, "connect_database", connection.create_resource)
+        return CursorFailureScenario(
+            connection=connection, primary=primary, cleanup=cleanup, cause=cause
+        )
+
+    def run_query(self, operation, connection):
+        if operation == "summary":
+            return ingestion.load_capwages_summary()
+        return self.queries[operation](connection)
+
+    def test_cursor_ownership_preserves_primary_and_borrowed_connection(
+        self, operation, scenario
+    ):
+        if scenario.expected_failure is None:
+            assert (
+                self.run_query(operation, scenario.connection)
+                == self.results[operation]
+            )
+        if scenario.expected_failure is not None:
+            with pytest.raises(BaseException) as raised:
+                self.run_query(operation, scenario.connection)
+            assert raised.value is scenario.expected_failure
+        events = scenario.connection.events
+        assert events.count("cursor.close") == 1
+        assert events.count("close") == (1 if operation == "summary" else 0)
+        assert events.count("commit") == (
+            1 if operation == "summary" and scenario.expected_failure is None else 0
+        )
+        if scenario.primary is not None:
+            assert scenario.primary.__cause__ is scenario.cause
+            if scenario.cleanup is not None:
+                assert (
+                    scenario.primary.__dict__["tradevalue_cleanup"] is scenario.cleanup
+                )
 
 
 class TestHostileCleanupAnnotations:

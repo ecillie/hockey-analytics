@@ -19,6 +19,18 @@ class PlayerKindViolation(IngestionValidationError):
         self.kind = kind
 
 
+class IntegerValueViolation(IngestionValidationError):
+    def __init__(self, *, value: object) -> None:
+        super().__init__("a finite integer is required")
+        self.value = value
+
+
+class TeamAbbreviationViolation(IngestionValidationError):
+    def __init__(self, *, value: str) -> None:
+        super().__init__("a team abbreviation is required")
+        self.value = value
+
+
 class RowCountViolation(IngestionValidationError):
     def __init__(self, *, source: str, actual: int, minimum: int) -> None:
         self.source = source

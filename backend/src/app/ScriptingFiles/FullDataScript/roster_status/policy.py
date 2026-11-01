@@ -1,9 +1,7 @@
 """Status precedence and conservative behavior when a feed is incomplete."""
 
-from collections.abc import Mapping
 from app.ScriptingFiles.FullDataScript.roster_status.domain import (
-    ExternalRosterPlayer,
-    FetchResult,
+    RosterEvidence,
     RosterStatus,
     StoredPlayer,
 )
@@ -11,21 +9,20 @@ from app.ScriptingFiles.FullDataScript.roster_status.domain import (
 
 def classify_player(
     player: StoredPlayer,
-    ltir_player_ids: frozenset[int],
-    nhl_ids: frozenset[str],
-    nhl_result: FetchResult,
-    ahl_result: FetchResult,
-    ahl_matches: Mapping[int, ExternalRosterPlayer],
+    evidence: RosterEvidence,
 ) -> RosterStatus | None:
-    if player.id in ltir_player_ids:
+    if player.id in evidence.ltir_player_ids:
         return RosterStatus.LTIR
-    if player.nhl_external_id is not None and player.nhl_external_id in nhl_ids:
+    if (
+        player.nhl_external_id is not None
+        and player.nhl_external_id in evidence.nhl_external_ids
+    ):
         return RosterStatus.ACTIVE
-    if nhl_result.complete and player.id in ahl_matches:
+    if evidence.nhl_complete and player.id in evidence.ahl_player_ids:
         return RosterStatus.MINORS
     if (
-        nhl_result.complete
-        and ahl_result.complete
+        evidence.nhl_complete
+        and evidence.ahl_complete
         and player.nhl_external_id is not None
     ):
         return RosterStatus.UNKNOWN

@@ -11,6 +11,7 @@ from app.shared.observability.domain import LogLevel
 
 from app.ScriptingFiles.FullDataScript.roster_status.domain import (
     FetchResult,
+    RosterEvidence,
     RosterStatus,
     SyncSummary,
 )
@@ -62,13 +63,16 @@ class RosterStatusService:
             (player_id, match.external_id, match.full_name)
             for player_id, match in ahl_matches.items()
         )
-        nhl_ids = frozenset(player.external_id for player in nhl_result.items)
-        decisions = {
-            player.id: classify_player(
-                player, ltir_player_ids, nhl_ids, nhl_result, ahl_result, ahl_matches
-            )
-            for player in players
-        }
+        evidence = RosterEvidence(
+            ltir_player_ids=ltir_player_ids,
+            nhl_external_ids=frozenset(
+                player.external_id for player in nhl_result.items
+            ),
+            ahl_player_ids=frozenset(ahl_matches),
+            nhl_complete=nhl_result.complete,
+            ahl_complete=ahl_result.complete,
+        )
+        decisions = {player.id: classify_player(player, evidence) for player in players}
         updates = {
             player_id: status
             for player_id, status in decisions.items()

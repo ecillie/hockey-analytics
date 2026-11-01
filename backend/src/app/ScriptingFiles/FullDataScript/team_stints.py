@@ -1,6 +1,7 @@
 """Set-based reconstruction of canonical season-ending team assignments."""
 
 from psycopg2.extensions import connection as PgConnection
+from app.database import open_database_cursor
 
 
 class SeasonRangeError(ValueError):
@@ -133,16 +134,13 @@ def plan_team_stint_backfill(
     first_season: int | None = None,
     last_season: int | None = None,
 ) -> dict[str, int]:
-    cursor = connection.cursor()
-    try:
+    with open_database_cursor(connection) as cursor:
         cursor.execute(_PLAN_SQL, build_team_stint_params(first_season, last_season))
         canonical, missing = cursor.fetchone()
         return {
             "canonical_assignments": canonical,
             "missing_assignments": missing,
         }
-    finally:
-        cursor.close()
 
 
 def apply_team_stint_backfill(
@@ -151,8 +149,7 @@ def apply_team_stint_backfill(
     first_season: int | None = None,
     last_season: int | None = None,
 ) -> dict[str, int]:
-    cursor = connection.cursor()
-    try:
+    with open_database_cursor(connection) as cursor:
         cursor.execute(_APPLY_SQL, build_team_stint_params(first_season, last_season))
         canonical, missing, inserted = cursor.fetchone()
         return {
@@ -160,5 +157,3 @@ def apply_team_stint_backfill(
             "missing_assignments": missing,
             "inserted_assignments": inserted,
         }
-    finally:
-        cursor.close()
