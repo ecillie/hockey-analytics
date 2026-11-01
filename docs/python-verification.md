@@ -28,6 +28,18 @@ schema/API, ML and rebuilt INFO/JSON + DEBUG/text image gates passed. The semant
 audit still has 130 nonempty files pending and records the remaining API boundary
 and framework decisions explicitly; these results are not final phase-7 acceptance.
 
+The API query checkpoint now constructs PlayerQuery at the validated route and
+passes it through service/repository without rebuilding positional arguments.
+SummarySelection carries immutable bindings and query options. Existing filter,
+pagination, tie/null ordering and injection regressions retain their behavior;
+OpenAPI parity passes. Fresh `tradevalue_test_logging05_query_final` passed
+**1,236 tests, zero skips**, **90.85%** aggregate coverage and the **100%**
+API/calendar gate. Isolated units passed **1,186**, with 50 integrations
+deselected. Static, migration/schema/API, package/export, ML and rebuilt
+INFO/JSON + DEBUG/text image checks pass. The ledger now records **105**
+nonempty files pending and explicit findings from the inspected sources;
+hosted NonProd and final acceptance remain open.
+
 The supported runtime is Python 3.12. Install the root uv workspace with
 `uv sync --locked --all-groups`. Runtime, ingestion, ML, and development
 requirements are generated from the same lock. Run these checks at the root:

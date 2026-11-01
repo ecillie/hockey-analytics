@@ -1,4 +1,5 @@
 from app.api.tests.fakes import SeasonBoundaryScenario
+from app.api.domain import PlayerQuery
 from datetime import date
 import pytest
 from sqlalchemy import text
@@ -9,10 +10,10 @@ from app.api.service import TradeValueService
 
 
 @pytest.mark.integration
-def test_listing_prefers_total_rows_and_current_team(postgres_api_service):
-    result = postgres_api_service.players(
-        2025, None, None, None, None, "points", "desc", 1, 3
-    )
+def test_listing_prefers_total_rows_and_current_team(
+    postgres_api_service, listing_queries
+):
+    result = postgres_api_service.players(listing_queries[0])
     assert result["pagination"] == {
         "page": 1,
         "pageSize": 3,
@@ -25,9 +26,7 @@ def test_listing_prefers_total_rows_and_current_team(postgres_api_service):
     assert traded["hockeyValue"] == pytest.approx(41.0)
     assert traded["projectedNextSeasonHockeyValue"] == pytest.approx(42.5)
 
-    aggregated = postgres_api_service.players(
-        2025, None, None, None, "Low Forward", "name", "asc", 1, 10
-    )["data"][0]
+    aggregated = postgres_api_service.players(listing_queries[1])["data"][0]
     assert (aggregated["gamesPlayed"], aggregated["goals"], aggregated["points"]) == (
         20,
         2,
@@ -35,10 +34,28 @@ def test_listing_prefers_total_rows_and_current_team(postgres_api_service):
     )
     assert aggregated["team"]["abbreviation"] == "BBB"
 
-    filtered = postgres_api_service.players(
-        2025, "bbb", "C", "ACTIVE", "High", "name", "asc", 1, 10
-    )
+    filtered = postgres_api_service.players(listing_queries[2])
     assert [player["id"] for player in filtered["data"]] == [1004]
+
+
+@pytest.fixture
+def listing_queries():
+    return (
+        PlayerQuery(season=2025, sort="points", page_size=3),
+        PlayerQuery(
+            season=2025, search="Low Forward", sort="name", order="asc", page_size=10
+        ),
+        PlayerQuery(
+            season=2025,
+            team="bbb",
+            position="C",
+            roster_status="ACTIVE",
+            search="High",
+            sort="name",
+            order="asc",
+            page_size=10,
+        ),
+    )
 
 
 @pytest.mark.integration
@@ -321,6 +338,19 @@ def test_leader_filters_and_null_values(postgres_api_service, position, team):
 @pytest.mark.integration
 class TestQueryBoundaries:
     @pytest.fixture
+    def page_queries(self, order):
+        return tuple(
+            PlayerQuery(season=2025, sort="points", order=order, page=page, page_size=2)
+            for page in range(1, 4)
+        )
+
+    @pytest.fixture
+    def injection_query(self):
+        return PlayerQuery(
+            season=2025, search="' OR TRUE --", sort="name", order="asc", page_size=10
+        )
+
+    @pytest.fixture
     def tied_service(self, postgres_api_service):
         postgres_api_service.repository.session.execute(
             text(
@@ -351,19 +381,14 @@ class TestQueryBoundaries:
         ],
     )
     def test_ties_and_null_ordering_across_page_boundaries(
-        self, tied_service, order, expected
+        self, tied_service, page_queries, expected
     ):
-        pages = [
-            tied_service.players(2025, None, None, None, None, "points", order, page, 2)
-            for page in range(1, 4)
-        ]
+        pages = [tied_service.players(query) for query in page_queries]
         assert [row["id"] for page in pages for row in page["data"]] == expected
         assert all(page["pagination"]["totalItems"] == 6 for page in pages)
 
-    def test_search_text_is_bound_as_data(self, postgres_api_service):
-        result = postgres_api_service.players(
-            2025, None, None, None, "' OR TRUE --", "name", "asc", 1, 10
-        )
+    def test_search_text_is_bound_as_data(self, postgres_api_service, injection_query):
+        result = postgres_api_service.players(injection_query)
         assert result["data"] == []
         assert result["pagination"]["totalItems"] == 0
 

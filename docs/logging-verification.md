@@ -911,3 +911,52 @@ grouping also need final boundary-specific disposition. Exact framework and
 historical-migration decisions, hosted NonProd success/mode/correlation evidence
 and final release acceptance remain open. No acceptance PR or production action
 is implied by this verified checkpoint.
+
+### Phase 5 API query boundary and continuing source audit
+
+After `73c716e`, the validated players route constructs the existing frozen
+PlayerQuery once and passes it through the service and repository. This removes
+the long positional reconstruction while retaining the HTTP names, defaults,
+validation and pagination response. SummarySelection now groups summary SQL
+options and immutable binding pairs; only an execution-local dictionary is
+mutable. Sort/filter SQL fragments remain code-controlled and values stay bound.
+Existing filtering, traded-player aggregation, pagination/tie/null ordering and
+injection regressions now receive query values from fixtures.
+
+Verification under Python 3.12.14:
+
+- Fresh migrated `tradevalue_test_logging05_query_final`: **1,236 passed, zero
+  skips**, **90.85%** aggregate coverage in **132.03 seconds**. API/calendar
+  coverage remains **100%**. Isolated units passed **1,186**, with 50 integrations
+  deselected, in **110.77 seconds**.
+- Locked sync, Ruff lint/format, ty, structural gate, dependency exports, OpenAPI
+  parity, migration preflight/history/schema snapshot, API smoke, clean installed
+  API/Vercel/ML packages, wheel/sdist exclusions and committed-model gate pass.
+- Rebuilt `tradevalue-logging05-query:verified` passes INFO/JSON and DEBUG/text as
+  UID 10001 against fresh `tradevalue_test_logging05_query_probe_final`. Each mode
+  passes six real HTTP/streaming flows with exact IDs, CORS, bodies and statuses;
+  captured events are **15 / 22**, graceful exit is **0**, and invalid startup
+  produces CRITICAL with exit **3**. Probe containers are removed. An initial
+  build used the wrong context and failed; the successful rebuild uses `backend`
+  as required by the existing Dockerfile.
+- Diff whitespace and prohibited-form searches pass. No new suppressions,
+  dependencies, public schema, frontend or model artifacts changed.
+
+Complete transcripts use `/private/tmp/tradevalue-logging05-query-final-` and
+`/private/tmp/tradevalue-logging05-query-packages.txt`. Image transcripts use
+`tradevalue-logging05-query-image`; captures are in
+`/private/tmp/tradevalue-logging05-query-capture`, with the verifier's reused
+phase-2 basenames. Scripts are
+`/private/tmp/tradevalue-logging05-query-final-checks.sh` and
+`/private/tmp/tradevalue-logging05-query-image-final-checks.sh`.
+
+The semantic ledger now records 237 files: 18 empty, 20 docstring-only, **94**
+other inspected, and **105** nonempty files pending. Reviewed content is not
+blanket acceptance. Newly recorded findings include contract coverage numeric
+truthiness, duplicated worker limits and remaining role-file/narrow-type
+judgments; mutable items inside DiagnosticCollection and hostile metadata
+primary-error behavior also require resolution. Native Pydantic boundary graphs
+remain newly owned validation/serialization buffers, with immutable domain
+snapshots across layers. Framework/historical dispositions, hosted NonProd
+success/mode/correlation checks and final release acceptance remain open. No
+acceptance PR or production promotion is implied by this checkpoint.

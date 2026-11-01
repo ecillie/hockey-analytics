@@ -194,6 +194,16 @@ class PlayerPage:
     total: int
 
 
+@dataclass(slots=True, kw_only=True, frozen=True)
+class SummarySelection:
+    season: int
+    where: str = "TRUE"
+    bindings: tuple[tuple[str, str | int], ...] = ()
+    order: str = "id ASC"
+    limit: int | None = None
+    offset: int | None = None
+
+
 class TeamSummaryData(TypedDict):
     id: int
     nhlTeamId: int | None

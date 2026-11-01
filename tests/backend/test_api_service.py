@@ -5,7 +5,7 @@ from datetime import date
 
 import pytest
 
-from app.api.domain import GoalieRow
+from app.api.domain import GoalieRow, PlayerQuery
 from app.api.errors import ApiProblem
 from app.api.policy import calculate_buried_relief_cents, latest_started_season
 from app.api.repository import ApiRepository
@@ -94,10 +94,22 @@ class TestIdentityAndListing:
         assert isinstance(service.repository, ApiRepository)
         service.check_health()
 
-    def test_players_filter_and_paginate(self, service):
-        result = service.players(
-            2025, "tst", "C", "ACTIVE", " Test ", "points", "asc", 1, 2
+    @pytest.fixture
+    def player_query(self):
+        return PlayerQuery(
+            season=2025,
+            team="tst",
+            position="C",
+            roster_status="ACTIVE",
+            search=" Test ",
+            sort="points",
+            order="asc",
+            page=1,
+            page_size=2,
         )
+
+    def test_players_filter_and_paginate(self, service, player_query):
+        result = service.players(player_query)
         assert result["pagination"] == {
             "page": 1,
             "pageSize": 2,
