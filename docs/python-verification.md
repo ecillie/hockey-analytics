@@ -94,6 +94,19 @@ passed against the unchanged verified API image. The ledger has **25** pending
 test files and explicit findings in inspected sources; hosted NonProd and final
 phase-5/phase-7 acceptance remain outstanding.
 
+The migration-test checkpoint guards the admin engine before database creation,
+preserves primary setup/body/cancellation failures through database removal and
+always disposes engines. Disposable transaction-table fixtures use separate
+guarded setup/drop transactions. Migration payload examples are immutable
+descriptions; native HTTP responses are created in fixtures. OpenAPI/ML path
+tests now import without filesystem resolution, with four guarded fresh-module
+imports. Fresh `tradevalue_test_logging05_migration_ownership` passed **1,357
+tests, zero skips**, **91.20%** coverage and the **100%** API/calendar gate.
+Isolated units passed **1,307**, with 50 integrations deselected. Static,
+schema/API, clean package/export and ML gates passed; no temporary migration
+databases remained. Three files still await inspection, and findings in
+inspected tests remain open. Hosted NonProd and final acceptance are outstanding.
+
 The supported runtime is Python 3.12. Install the root uv workspace with
 `uv sync --locked --all-groups`. Runtime, ingestion, ML, and development
 requirements are generated from the same lock. Run these checks at the root:

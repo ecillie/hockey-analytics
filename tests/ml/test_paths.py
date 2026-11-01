@@ -7,7 +7,7 @@ from ml.paths import resolve_artifact_directory
 
 class TestArtifactDirectories:
     default_directory = Path("models")
-    source_directory = Path(__file__).resolve().parents[2].joinpath("ml", "models")
+    source_directory = Path(__file__).parents[2].joinpath("ml", "models")
 
     @pytest.fixture
     def outside_checkout(self, monkeypatch, tmp_path):

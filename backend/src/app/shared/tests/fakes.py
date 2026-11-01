@@ -162,6 +162,20 @@ class StageOutcome[R]:
         return self.result
 
 
+@dataclass(slots=True, kw_only=True, frozen=True)
+class MigrationCleanupScenario:
+    create: StageOutcome[None]
+    drop: StageOutcome[None]
+    primary: BaseException | None
+    events: list[str]
+
+    @property
+    def expected_failure(self) -> BaseException | None:
+        if self.create.failure is not None:
+            return self.create.failure
+        return self.primary if self.primary is not None else self.drop.failure
+
+
 class CommandFailure(RuntimeError):
     def __init__(self, *, source: str) -> None:
         super().__init__(f"{source} unavailable")

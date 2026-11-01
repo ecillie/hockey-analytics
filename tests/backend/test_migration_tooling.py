@@ -1,6 +1,7 @@
 from app.shared.tests.fakes import build_migration_history, build_migration_revision
 from pathlib import Path
 import json
+import asyncio
 from collections.abc import Generator
 from app.shared.tests.fakes import (
     CatalogDatabase,
@@ -10,11 +11,13 @@ from app.shared.tests.fakes import (
     MigrationConnection,
     MigrationCursor,
     StageOutcome,
+    MigrationCleanupScenario,
 )
-from uuid import uuid4
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
+from sqlalchemy import create_engine, event, text
+from app import database
+from app.config import AppEnvironment, DatabaseSettings
+from app.database import open_database_resources
 from backend.database import (
     migration_preflight,
     migration_smoke,
@@ -29,6 +32,8 @@ from app.shared.tests.fakes import (
 from app.shared.tests.migrations import (
     load_initial_revision,
     run_command,
+    open_migration_database,
+    MigrationDatabase,
 )
 
 ROOT = Path(__file__).parents[2]
@@ -157,26 +162,29 @@ class TestMigrationDatabaseSettings:
         params=[
             pytest.param(
                 (
-                    {
-                        "DATABASE_URL": "postgresql://primary/db",
-                        "TEST_DATABASE_URL": "postgresql://test/db",
-                    },
+                    (
+                        ("DATABASE_URL", "postgresql://primary/db"),
+                        ("TEST_DATABASE_URL", "postgresql://test/db"),
+                    ),
                     "postgresql://primary/db",
                 ),
                 id="primary",
             ),
             pytest.param(
-                ({"TEST_DATABASE_URL": "postgresql://test/db"}, "postgresql://test/db"),
+                (
+                    (("TEST_DATABASE_URL", "postgresql://test/db"),),
+                    "postgresql://test/db",
+                ),
                 id="test-fallback",
             ),
-            pytest.param(({}, None), id="missing"),
+            pytest.param(((), None), id="missing"),
         ]
     )
     def url(self, request, monkeypatch):
         values, expected = request.param
         monkeypatch.delenv("DATABASE_URL", raising=False)
         monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
-        for name, value in values.items():
+        for name, value in values:
             monkeypatch.setenv(name, value)
         return expected
 
@@ -191,13 +199,15 @@ class TestMigrationDatabaseSettings:
         assert migration_preflight.resolve_database_url() == url
 
 
-def test_schema_snapshot_render_is_deterministic():
-    rendered = schema_snapshot.render({"tables": [{"table_name": "players"}]})
+class TestSchemaSnapshotRendering:
+    @pytest.fixture
+    def catalog(self):
+        return {"tables": [{"table_name": "players"}]}
 
-    assert (
-        rendered
-        == '{\n  "tables": [\n    {\n      "table_name": "players"\n    }\n  ]\n}\n'
-    )
+    def test_schema_snapshot_render_is_deterministic(self, catalog):
+        assert schema_snapshot.render(catalog) == (
+            '{\n  "tables": [\n    {\n      "table_name": "players"\n    }\n  ]\n}\n'
+        )
 
 
 @pytest.mark.usefixtures("isolate_command_logging")
@@ -258,12 +268,12 @@ class TestSchemaSnapshot:
 @pytest.mark.parametrize(
     ("tables", "versions", "expected"),
     [
-        pytest.param([], [], None, id="empty-database"),
-        pytest.param(["players"], ["20260910_0001"], None, id="versioned-database"),
-        pytest.param(["players"], [], "no Alembic revision", id="unversioned-tables"),
+        pytest.param((), (), None, id="empty-database"),
+        pytest.param(("players",), ("20260910_0001",), None, id="versioned-database"),
+        pytest.param(("players",), (), "no Alembic revision", id="unversioned-tables"),
         pytest.param(
-            ["players"],
-            ["one", "two"],
+            ("players",),
+            ("one", "two"),
             "multiple Alembic revisions",
             id="multiple-revisions",
         ),
@@ -322,8 +332,8 @@ class TestReferenceDataSmokeAcceptsCompleteBaseline:
 
 class TestReferenceDataSmokeRejectsIncompleteBaseline:
     cases = [
-        pytest.param((["nhl"], 22), id="missing-sources"),
-        pytest.param((["capwages", "moneypuck", "nhl"], 21), id="missing-seasons"),
+        pytest.param((("nhl",), 22), id="missing-sources"),
+        pytest.param((("capwages", "moneypuck", "nhl"), 21), id="missing-seasons"),
     ]
 
     @pytest.fixture(params=cases)
@@ -369,43 +379,37 @@ class TestApiSmokeAcceptsExpectedEmptyDatabaseResponses:
 
 
 class TestApiSmokeRejectsBadStatusOrPayload:
-    cases = [
+    cases = (
+        pytest.param(((503, '{"error":"down"}'),), id="unhealthy-status"),
+        pytest.param(((200, '{"status":"wrong"}'),), id="invalid-health"),
         pytest.param(
-            [build_http_response(503, {"error": "down"})], id="unhealthy-status"
-        ),
-        pytest.param(
-            [build_http_response(200, {"status": "wrong"})], id="invalid-health"
-        ),
-        pytest.param(
-            [
-                build_http_response(200, {"status": "ok"}),
-                build_http_response(
-                    200, {"availableSeasons": [], "currentSeason": 2026}
-                ),
-            ],
+            (
+                (200, '{"status":"ok"}'),
+                (200, '{"availableSeasons":[],"currentSeason":2026}'),
+            ),
             id="missing-seasons",
         ),
         pytest.param(
-            [
-                build_http_response(200, {"status": "ok"}),
-                build_http_response(
-                    200, {"availableSeasons": [{}], "currentSeason": 2026}
-                ),
-                build_http_response(200, [{"id": 1}]),
-            ],
+            (
+                (200, '{"status":"ok"}'),
+                (200, '{"availableSeasons":[{}],"currentSeason":2026}'),
+                (200, '[{"id":1}]'),
+            ),
             id="nonempty-teams",
         ),
-    ]
+    )
 
     @pytest.fixture(params=cases)
     def scenario(self, request):
-        responses = request.param
-        client = SavedApiClient(
+        responses = tuple(
+            build_http_response(status, json.loads(payload))
+            for status, payload in request.param
+        )
+        return SavedApiClient(
             responses=dict(
                 zip(("/api/health", "/api/seasons", "/api/teams"), responses)
             )
         )
-        return client
 
     def test_api_smoke_rejects_bad_status_or_payload(self, scenario):
         client = scenario
@@ -427,25 +431,30 @@ class TestApiSmokeRejectsInvalidJson:
             migration_smoke.build_smoke_checks(client)
 
 
-def test_alembic_environment_rejects_non_postgresql_database(tmp_path):
-    result = run_command(
-        f"sqlite:///{tmp_path.joinpath('wrong.db')}",
-        "-m",
-        "alembic",
-        "-c",
-        str(ALEMBIC_CONFIG),
-        "upgrade",
-        "head",
-        "--sql",
-        success=False,
-    )
+class TestAlembicDatabaseDialect:
+    @pytest.fixture
+    def rejected_database(self, tmp_path):
+        return run_command(
+            f"sqlite:///{tmp_path.joinpath('wrong.db')}",
+            "-m",
+            "alembic",
+            "-c",
+            str(ALEMBIC_CONFIG),
+            "upgrade",
+            "head",
+            "--sql",
+            success=False,
+        )
 
-    events = [json.loads(line) for line in result.stderr.splitlines()]
-    failures = [item for item in events if item["event"] == "command.failed"]
-    assert len(failures) == 1
-    assert failures[0]["stage"] == "postgresql_required"
-    assert failures[0]["exceptions"][0]["type"] == "ConfigurationError"
-    assert "wrong.db" not in result.stderr
+    def test_alembic_environment_rejects_non_postgresql_database(
+        self, rejected_database
+    ):
+        events = [json.loads(line) for line in rejected_database.stderr.splitlines()]
+        failures = [item for item in events if item["event"] == "command.failed"]
+        assert len(failures) == 1
+        assert failures[0]["stage"] == "postgresql_required"
+        assert failures[0]["exceptions"][0]["type"] == "ConfigurationError"
+        assert "wrong.db" not in rejected_database.stderr
 
 
 @pytest.mark.integration
@@ -454,56 +463,42 @@ class TestCompleteMigrationLifecycle:
 
     @pytest.fixture
     def isolated_database(self, disposable_database_url) -> Generator[str]:
-        source_url = make_url(disposable_database_url)
-        database_name = f"tradevalue_migration_{uuid4().hex[:12]}"
-        database_url = source_url.set(database=database_name).render_as_string(
-            hide_password=False
-        )
-        admin_url = source_url.set(database="postgres")
-        admin = create_engine(
-            admin_url, isolation_level="AUTOCOMMIT", pool_pre_ping=True
-        )
-        quoted_name = admin.dialect.identifier_preparer.quote(database_name)
-
-        with admin.connect() as connection:
-            connection.execute(text(f"CREATE DATABASE {quoted_name}"))
-
-        try:
+        with open_migration_database(disposable_database_url) as database_url:
             yield database_url
-        finally:
-            with admin.connect() as connection:
-                connection.execute(
-                    text(
-                        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-                        "WHERE datname = :database_name AND pid <> pg_backend_pid()"
-                    ),
-                    {"database_name": database_name},
-                )
-                connection.execute(text(f"DROP DATABASE IF EXISTS {quoted_name}"))
-            admin.dispose()
 
-    def test_complete_migration_lifecycle_on_isolated_database(
-        self, tmp_path, isolated_database
-    ):
-        database_url = isolated_database
-        run_command(database_url, "backend/database/verify_migrations.py")
-        run_command(database_url, "backend/database/migration_preflight.py")
+    @pytest.fixture
+    def isolated_resources(self, isolated_database):
+        settings = DatabaseSettings(
+            environment=AppEnvironment.DEV, database_url=isolated_database
+        )
+        with open_database_resources(settings) as resources:
+            yield resources
 
-        isolated = create_engine(database_url)
-        with isolated.begin() as connection:
+    @pytest.fixture
+    def unversioned_preflight(self, isolated_database, isolated_resources):
+        run_command(isolated_database, "backend/database/verify_migrations.py")
+        run_command(isolated_database, "backend/database/migration_preflight.py")
+        with isolated_resources.engine.begin() as connection:
             connection.execute(text("CREATE TABLE players (id bigint PRIMARY KEY)"))
         unsafe = run_command(
-            database_url,
+            isolated_database,
             "backend/database/migration_preflight.py",
             success=False,
         )
-        unsafe_events = [json.loads(line) for line in unsafe.stderr.splitlines()]
+        with isolated_resources.engine.begin() as connection:
+            connection.execute(text("DROP TABLE players"))
+        return unsafe
+
+    def test_complete_migration_lifecycle_on_isolated_database(
+        self, tmp_path, isolated_database, isolated_resources, unversioned_preflight
+    ):
+        database_url = isolated_database
+        unsafe_events = [
+            json.loads(line) for line in unversioned_preflight.stderr.splitlines()
+        ]
         assert unsafe_events[1]["event"] == "command.verification_failed"
         assert unsafe_events[1]["stage"] == "unversioned_schema"
         assert unsafe_events[-1]["outcome"] == "failed"
-        with isolated.begin() as connection:
-            connection.execute(text("DROP TABLE players"))
-        isolated.dispose()
 
         offline_sql = run_command(
             database_url,
@@ -535,8 +530,7 @@ class TestCompleteMigrationLifecycle:
         run_command(database_url, *self.alembic, "upgrade", "head")
         run_command(database_url, "backend/database/schema_snapshot.py")
 
-        isolated = create_engine(database_url)
-        with isolated.connect() as connection:
+        with isolated_resources.engine.connect() as connection:
             assert (
                 connection.execute(
                     text("SELECT version_num FROM alembic_version")
@@ -553,4 +547,73 @@ class TestCompleteMigrationLifecycle:
                 ).scalar_one()
                 == 4
             )
-        isolated.dispose()
+
+
+class TestMigrationDatabaseOwnership:
+    cases = (
+        pytest.param("completed", id="created-dropped-disposed"),
+        pytest.param("create", id="setup-failed-disposed"),
+        pytest.param("create-drop", id="setup-primary-retained"),
+        pytest.param("body-drop", id="body-primary-retained"),
+        pytest.param("cancelled-drop", id="cancellation-retained"),
+        pytest.param("drop", id="cleanup-failed-disposed"),
+    )
+
+    @pytest.fixture(params=cases)
+    def scenario(self, request, monkeypatch):
+        mode = request.param
+        events = []
+        create = StageOutcome(
+            result=None,
+            failure=RuntimeError("creation failed")
+            if mode.startswith("create")
+            else None,
+            name="create",
+            events=events,
+        )
+        drop = StageOutcome(
+            result=None,
+            failure=RuntimeError("drop failed") if "drop" in mode else None,
+            name="drop",
+            events=events,
+        )
+        primary = None
+        if mode == "body-drop":
+            primary = RuntimeError("body failed")
+        if mode == "cancelled-drop":
+            primary = asyncio.CancelledError("body cancelled")
+        engine = create_engine("sqlite://")
+
+        def record_disposal(engine):
+            events.append("dispose")
+
+        event.listen(engine, "engine_disposed", record_disposal)
+        monkeypatch.setattr(database, "create_engine", StageOutcome(result=engine))
+        monkeypatch.setattr(MigrationDatabase, "create_database", create)
+        monkeypatch.setattr(MigrationDatabase, "drop_database", drop)
+        return MigrationCleanupScenario(
+            create=create, drop=drop, primary=primary, events=events
+        )
+
+    @pytest.fixture
+    def observed(self, scenario):
+        observed = None
+        try:
+            with open_migration_database(
+                "postgresql://unused.invalid/tradevalue_test_fixture"
+            ):
+                if scenario.primary is not None:
+                    raise scenario.primary
+        except BaseException as failure:
+            observed = failure
+        return observed
+
+    def test_cleanup_retains_primary_and_always_disposes(self, observed, scenario):
+        assert observed is scenario.expected_failure
+        assert scenario.events == ["create", "drop", "dispose"]
+        if (
+            observed is not None
+            and scenario.drop.failure is not None
+            and observed is not scenario.drop.failure
+        ):
+            assert observed.tradevalue_cleanup is scenario.drop.failure

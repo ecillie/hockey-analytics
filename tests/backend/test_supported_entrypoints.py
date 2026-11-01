@@ -26,12 +26,21 @@ from app.shared.tests.fakes import StageOutcome
 class TestInspectionHelperImports:
     @pytest.fixture(
         params=[
-            pytest.param("app.shared.tests.entrypoints", id="entrypoint-inspection"),
-            pytest.param("app.shared.tests.migrations", id="migration-inspection"),
+            pytest.param(
+                "backend/src/app/shared/tests/entrypoints.py",
+                id="entrypoint-inspection",
+            ),
+            pytest.param(
+                "backend/src/app/shared/tests/migrations.py", id="migration-inspection"
+            ),
+            pytest.param("tests/backend/test_openapi_contract.py", id="openapi-test"),
+            pytest.param("tests/ml/test_paths.py", id="model-path-test"),
         ]
     )
     def guarded_import(self, request, monkeypatch):
-        spec = importlib.util.find_spec(request.param)
+        spec = importlib.util.spec_from_file_location(
+            "guarded_import", ROOT.joinpath(request.param)
+        )
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         rejected = StageOutcome(

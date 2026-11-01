@@ -1209,3 +1209,51 @@ arrangement, fixture ownership, role/interface and framework/historical findings
 Hosted NonProd success/mode/correlation evidence and final combined acceptance
 remain outstanding. This checkpoint creates no acceptance PR or production
 promotion.
+
+## Migration test ownership and continued semantic review
+
+The disposable migration database now has an explicit context owner. Its frozen
+adapter borrows an admin engine owned by the production resource guard, with
+AUTOCOMMIT selected for CREATE/DROP DATABASE. Setup is inside the guard, removal
+is attempted after creation/body failure and cancellation, and a removal failure
+cannot replace the primary failure or prevent engine disposal. Temporary test
+engines use the same resource guard. The unversioned schema input now belongs to
+a fixture; mutable HTTP response objects are constructed from immutable examples
+inside fixtures. Disposable transaction-table setup/drop use separate guarded
+transactions/cursors, eliminating a raw connection spanning fixture yield.
+
+OpenAPI and ML path tests now derive roots from module-file metadata without
+filesystem work during import. Four fresh-module import guards reject resolution,
+scans and reads. Committed OpenAPI input loading belongs to its fixture.
+
+Verification under Python 3.12.14:
+
+- Focused checks passed **117 tests**, with the one database integration
+  deselected. Six fault scenarios verify successful cleanup, creation failure,
+  primary creation/body failure plus removal failure, cancellation plus removal
+  failure, and removal-only failure; each checks native engine disposal.
+- Fresh migrated `tradevalue_test_logging05_migration_ownership`: **1,357 passed,
+  zero skips**, **91.20%** aggregate coverage in **131.01 seconds**, with the
+  **100%** API/calendar gate. Isolated units passed **1,307**, with 50 integrations
+  deselected, in **111.42 seconds**. PostgreSQL had no remaining
+  `tradevalue_migration_` databases after the run.
+- Locked sync, Ruff lint/format, ty, structural scope, dependency exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke, clean
+  API/Vercel/ML artifact installs/exclusions and committed-model gates pass.
+- Only excluded test/support sources and documentation changed. Distributed
+  runtime/build inputs, frontend, public HTTP schema and model artifacts are
+  unchanged; the prior verified image/probe evidence still applies. This
+  checkpoint does not claim a new image build or hosted deployment success.
+
+Evidence uses `/private/tmp/tradevalue-logging05-migration-ownership-` prefixes,
+including `checks.sh`, `checks.txt`, `pytest.txt`, `units.txt`,
+`focused-final.txt` and `packages.txt`.
+
+The ledger now records 237 files: 18 empty, 20 docstring-only, **196** other
+inspected and **three** pending (`test_capspace.py`, `test_ingestion.py`,
+`test_source_ingestion.py`). Recorded findings include additional test-resource
+ownership, mutable decorator examples, scenario/host-record arrangement,
+collaborator bundles, exact host-program ownership and runtime role/interface
+judgments. Inspection is not acceptance. Hosted NonProd success/mode/correlation
+and final combined acceptance/release promotion remain outstanding; no acceptance
+PR or production promotion is created here.
