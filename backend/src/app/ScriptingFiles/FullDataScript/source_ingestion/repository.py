@@ -1,8 +1,9 @@
-"""Typed PostgreSQL helpers shared by source repositories."""
+"""Source file adapters and typed PostgreSQL persistence helpers."""
 
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import AbstractContextManager
 import json
+from pathlib import Path
 
 from psycopg2.extensions import connection as PgConnection, cursor as PgCursor
 from psycopg2.extras import Json, execute_values
@@ -16,10 +17,16 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
     split_name,
     parse_team_abbreviation,
+    parse_csv,
 )
 
 
 type TransactionFactory = Callable[[], AbstractContextManager[PgConnection]]
+
+
+def read_csv(path: Path) -> list[dict[str, object]]:
+    with path.open(newline="", encoding="utf-8-sig") as handle:
+        return parse_csv(handle.read(), source=str(path))
 
 
 def load_source_ids(cursor: PgCursor) -> dict[str, int]:

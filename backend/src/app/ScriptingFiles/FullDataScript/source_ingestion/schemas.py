@@ -177,8 +177,16 @@ class ScheduleGame(BoundaryModel):
 
 
 class ScheduleDay(BoundaryModel):
+    model_config = ConfigDict(serialize_by_alias=True)
+
     date: date
-    games: tuple[dict[str, object], ...]
+    games_snapshot: PageSnapshots = Field(
+        validation_alias="games", serialization_alias="games"
+    )
+
+    @property
+    def games(self) -> PageRows:
+        return decode_page_rows(self.games_snapshot)
 
 
 class SchedulePage(BoundaryModel):

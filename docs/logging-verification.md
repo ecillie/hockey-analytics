@@ -1026,3 +1026,62 @@ socket timeout is not an overall retry deadline. No new transport timeout
 contract is assumed. Hosted NonProd success/mode/correlation evidence and final
 release acceptance remain open; this checkpoint opens no acceptance PR and
 performs no production promotion.
+
+### Phase 5 source snapshot, count and stat-kind boundaries
+
+After `02d161a`, ScheduleDay reuses the existing immutable JSON-string snapshot
+boundary instead of retaining nested mutable game dictionaries. Input aliases
+cannot mutate validated rows; each games access returns a detached graph. Native
+JSON/model serialization retains the original `games` shape, and nonregular
+games still filter before strict game validation. A malformed nonregular row
+therefore remains ignored rather than invalidating the requested regular-season
+snapshot.
+
+Durable run counts now follow the existing inferred-count rule: nonnegative plain
+integers are valid; booleans, negative values and other invalid types use the
+supplied fallback. The internal stat equation policy takes PlayerKind; the legacy
+string boundary converts valid strings and raises PlayerKindViolation with the
+native cause for unsupported kinds. Previously an unknown string silently took
+the goalie branch. CSV opening moved from pure util to the source repository
+adapter; its sole actual caller now imports it there. AST comparison against
+`02d161a` proves the reader's complete signature/body, BOM handling, newline
+settings and native file context are unchanged. No unused compatibility wrapper
+was added; the remediation plan calls for wrappers only for actual callers.
+
+Verification under Python 3.12.14:
+
+- Before fixes, source snapshot/count regressions produced **5 failures, 8
+  passes**. Unsupported-kind regressions separately produced **3 failures**.
+  Focused final source units passed **76**, with 16 integrations deselected.
+- Fresh migrated `tradevalue_test_logging05_source_final`: **1,269 passed, zero
+  skips**, **91.01%** aggregate coverage in **129.88 seconds**, with **100%**
+  API/calendar coverage. Isolated units passed **1,219**, with 50 integrations
+  deselected, in **110.81 seconds**.
+- Locked sync, Ruff lint/format, ty, structural scope, requirements exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke, clean
+  installed API/Vercel/ML artifacts, exclusions and committed-model gates pass.
+- Distributed API/core/shared logging code, Docker/build/dependency inputs and
+  frontend source have no changes against `02d161a`. Backend artifact rules
+  explicitly exclude ScriptingFiles and test support, and fresh package checks
+  verify those exclusions. The already verified snapshots image's two-mode
+  HTTP/streaming/startup/shutdown evidence remains applicable to those unchanged
+  runtime contents; no new image or frontend build is claimed for this source-only
+  checkpoint. Final combined acceptance still requires its final candidate build.
+- Diff whitespace and prohibited-form searches pass. No new comments,
+  suppressions, dependencies, frontend, public HTTP schema or model artifacts
+  changed.
+
+Transcripts use `/private/tmp/tradevalue-logging05-source-` prefixes. The complete
+script is `/private/tmp/tradevalue-logging05-source-final-checks.sh`; the source
+move comparison is `tradevalue-logging05-source-move-check.py`. Red kind evidence
+is `tradevalue-logging05-kind-red.txt`.
+
+The ledger now records 237 files: 18 empty, 20 docstring-only, **132** other
+inspected and **67** test/support files pending. All supported runtime sources
+have received content review; their findings still require resolution. Newly
+recorded work includes failure-preserving cursor ownership in team-stint and
+cached-summary readers, caught roster HTTPError response closure, transport I/O
+in roster util.fetch_validated, immutable roster classification evidence and
+remaining typed-validator/role dispositions. Framework/historical decisions,
+hosted NonProd success/mode/correlation evidence and final release acceptance
+remain open. This checkpoint creates no acceptance PR or production promotion.

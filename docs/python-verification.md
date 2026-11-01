@@ -52,6 +52,20 @@ package/export, ML and rebuilt two-mode image gates pass. The audit now records
 **90** nonempty files pending, plus explicit findings in inspected sources;
 these results do not complete phase 5 or phase 7.
 
+The source-boundary checkpoint makes raw schedule games detached snapshots while
+preserving serialization and filtering nonregular games before strict validation.
+Durable counts accept only nonnegative plain integers; unsupported stat-kind
+strings raise a typed boundary error. CSV file opening moved unchanged to the
+repository adapter and its actual caller was updated. Fresh
+`tradevalue_test_logging05_source_final` passed **1,269 tests, zero skips**,
+**91.01%** coverage and the **100%** API/calendar selection. Isolated units passed
+**1,219**, with 50 integrations deselected. Static, schema/API, clean package,
+exports and ML gates pass. All supported runtime sources now have content review;
+**67** test/support sources and the recorded runtime findings remain unresolved.
+The previously verified API image remains applicable because distributed API
+code, build/dependency inputs and shared logging are unchanged; this checkpoint
+does not claim a new image build or hosted NonProd acceptance.
+
 The supported runtime is Python 3.12. Install the root uv workspace with
 `uv sync --locked --all-groups`. Runtime, ingestion, ML, and development
 requirements are generated from the same lock. Run these checks at the root:

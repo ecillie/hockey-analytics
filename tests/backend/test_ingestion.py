@@ -14,6 +14,7 @@ import pytest
 import psycopg2
 from psycopg2.errors import lookup
 from app.ScriptingFiles.FullDataScript import ingestion_tracking
+from app.ScriptingFiles.FullDataScript.tracking.repository import count_summary_records
 from app.ScriptingFiles.FullDataScript import (
     capspace,
     ingestion,
@@ -22,6 +23,9 @@ from app.ScriptingFiles.FullDataScript import (
 )
 from app.ScriptingFiles.FullDataScript.contracts.domain import ActivePlayer
 from app.ScriptingFiles.FullDataScript.contracts.errors import MoneyParseError
+from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
+    PlayerKindViolation,
+)
 from app.ScriptingFiles.FullDataScript.contracts.schemas.active import (
     parse_capwages_birth_date,
     parse_active_players,
@@ -51,6 +55,56 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.tests.scenarios import (
 )
 
 FIXTURES = Path(__file__).parent.joinpath("fixtures", "ingestion")
+
+
+class TestDurableRunCounts:
+    cases = (
+        pytest.param(True, 7, id="true-is-not-a-count"),
+        pytest.param(False, 7, id="false-is-not-a-count"),
+        pytest.param(-1, 7, id="negative-is-not-a-count"),
+        pytest.param(None, 7, id="null-is-not-a-count"),
+        pytest.param("3", 7, id="text-is-not-a-count"),
+        pytest.param(3.0, 7, id="float-is-not-a-count"),
+        pytest.param(0, 0, id="zero-retained"),
+        pytest.param(3, 3, id="positive-retained"),
+    )
+
+    @pytest.fixture
+    def summary(self, value):
+        return {"records_read": value}
+
+    @pytest.mark.parametrize(("value", "expected"), cases)
+    def test_only_nonnegative_integers_become_durable_counts(self, summary, expected):
+        assert count_summary_records(summary, "records_read", 7) == expected
+
+    @pytest.fixture
+    def empty_summary(self):
+        return {}
+
+    def test_missing_count_uses_the_supplied_default(self, empty_summary):
+        assert count_summary_records(empty_summary, "records_read", 7) == 7
+
+
+class TestStatKindBoundary:
+    @pytest.fixture(
+        params=[
+            pytest.param("unknown", id="unsupported-kind"),
+            pytest.param("SKATER", id="wrong-case"),
+            pytest.param("", id="empty-kind"),
+        ]
+    )
+    def kind(self, request):
+        return request.param
+
+    @pytest.fixture
+    def row(self):
+        return {}
+
+    def test_unknown_kind_is_not_interpreted_as_goalie(self, kind, row):
+        with pytest.raises(PlayerKindViolation) as failure:
+            ingestion.validate_stat_invariants(kind, row, source="fixture")
+        assert failure.value.kind == kind
+        assert isinstance(failure.value.__cause__, ValueError)
 
 
 def test_season_and_ordered_team_helpers():

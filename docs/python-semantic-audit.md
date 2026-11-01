@@ -2,7 +2,7 @@
 
 This is an incomplete file-by-file review, not phase-7 acceptance. Scope is all
 237 tracked/new Python files in the acceptance worktree, with source digests
-updated after `7e45802`. Digests identify exactly what was inspected; changed
+updated after `02d161a`. Digests identify exactly what was inspected; changed
 files require re-review.
 Generated artifacts, environments and retired `.py.txt` loaders are not source
 entries. The structural gate separately checks all supported executable roots.
@@ -10,7 +10,7 @@ entries. The structural gate separately checks all supported executable roots.
 Read `~/.codex/python-guidelines.md` before this review. Mechanical lint, format,
 type, structural, test and package results do not waive semantic decisions.
 18 empty files and 20 module-docstring-only package files have no executable
-behavior to assess. 109 other files have received the content review
+behavior to assess. 132 other files have received the content review
 recorded below; unresolved layout/boundary decisions are explicit. Every other
 nonempty file remains pending.
 
@@ -68,10 +68,14 @@ Record findings and fixes before assigning final acceptance.
   This is a specific ownership disposition, not a general mutable-value waiver.
 - Contract zero-coverage handling and shared injected worker bounds are resolved.
   Remaining legacy role-file and broad SQL tuple/naming judgments stay open.
-- Newly inspected source ingestion retains mutable ScheduleDay raw-game dictionaries,
-  file I/O in util.read_csv, a broad stat-kind string and native Pydantic validator
-  ValueErrors. Tracking count_summary_records still accepts booleans. Resolve these
-  at their actual boundaries while preserving public compatibility and filter order.
+- ScheduleDay aliasing, durable boolean/negative counts, CSV file-adapter placement
+  and broad stat-kind selection are resolved in the source-boundary checkpoint.
+  Valid legacy stat-kind strings and regular-season filtering remain compatible.
+- Remaining findings include primary-preserving cursor/error-response ownership in
+  team-stint and cached-summary readers and the roster HTTP adapter; move roster
+  fetch_validated out of pure utilities and group classification evidence as an
+  immutable per-sync value. Native Pydantic validator ValueErrors and remaining
+  option/error/helper role placements still need their exact disposition.
 
 ## Diagnostic snapshot and worker findings resolved
 
@@ -92,7 +96,7 @@ existing public worker argument and default limit remain compatible.
 
 Required framework and historical-migration dispositions above remain open.
 Do not rewrite frozen history or introduce a global-state approximation.
-The 90 remaining nonempty files still require complete semantic review;
+The 67 remaining nonempty files still require complete semantic review;
 passing mechanical and behavior gates does not accept them implicitly.
 
 ## File ledger
@@ -140,43 +144,43 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/tests/strategies.py` | `a569707f457d` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/tests/transport.py` | `3d51b48414a0` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/util.py` | `ad4626e15580` | Reviewed: pure money/season/text/date conversion with typed boundary failures and explicit missing values. Decimal rounding remains source-selected; nonfinite/negative/unrepresentable money is rejected. Snapshot decoding returns a fresh value; no resources or import-time I/O. |
-| `backend/src/app/ScriptingFiles/FullDataScript/ingestion.py` | `d7c587a7fa2b` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/ingestion.py` | `6dd0ad2ac04b` | Reviewed content: compatibility entrypoints assemble frozen options and injected native adapters only on invocation, preserve borrowed resource ownership, and track durable runs separately from transactions. Invalid stat-kind strings now fail with a typed cause. Last-good fallbacks produce warning counts and parent-owned terminal errors; session cleanup preserves primary failures. Finding: cached CapWages summary manually closes its cursor only after successful fetch; move it under explicit failure-preserving ownership and finish role placement. |
 | `backend/src/app/ScriptingFiles/FullDataScript/ingestion_tracking.py` | `17f8a92976a5` | Reviewed content: runtime-checkable named callable Protocol preserves decorator signatures and native metadata; invocation-time run context owns resources, immutable run identity is passed to workers and translated failures are rethrown once. Failure-reporting errors attach best-effort to the primary; stored summaries remain distinct from safe log counts. Concrete run typing/compatibility role remains a final seam disposition. |
-| `backend/src/app/ScriptingFiles/FullDataScript/populate_roster_status.py` | `5c7d1f03acbf` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/populate_roster_status.py` | `5c7d1f03acbf` | Reviewed: legacy native command boundary builds injected feed/repository services only during invocation, uses explicit None checks, and rolls back incomplete feeds before returning. Main owns logging/hook/exit codes and one report; no Namespace escapes its zero-option parser. Established wire names and asdict summary shape are retained. |
 | `backend/src/app/ScriptingFiles/FullDataScript/roster_status/__init__.py` | `e0395eee5ae5` | Reviewed: module docstring only; no executable behavior. |
-| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/ahl_roster_service.py` | `135c28d3585f` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/domain.py` | `0e829827ae62` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/errors.py` | `fcad4786f075` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/http_json_client.py` | `f8d5cfef77c5` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/nhl_roster_service.py` | `373a402fe733` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/policy.py` | `df96de96ad2c` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/repository.py` | `efa87742796e` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/schemas.py` | `3e4461105b5f` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/services.py` | `cf332c14f50c` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/ahl_roster_service.py` | `135c28d3585f` | Reviewed: frozen injected client/options; native schema validation, explicit season resolution and per-team bounded transport attempts produce immutable complete/partial results. Conflicting external identities fail closed; no logging, import I/O or shared mutable buffers. Existing descriptive service-module path remains compatible. |
+| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/domain.py` | `0e829827ae62` | Reviewed: frozen scalar/tuple roster identities/results/summary and injectable HTTP/feed options. Database status values derive from enum names, preserving uppercase wire values while using auto internally. Completeness derives from immutable error tuples; no import-time resources. |
+| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/errors.py` | `fcad4786f075` | Reviewed: typed JSON, feed and incomplete-sync failures build messages and retain structured context. Source reasons belong to reports/persistence and are not copied by the runtime formatter. |
+| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/http_json_client.py` | `f8d5cfef77c5` | Reviewed content: minimal runtime JsonClient, frozen HTTP options and native bounded urlopen context; JSON/JSONP is validated without eval and typed decode errors retain their cause. Finding: raised HTTPError owns an unclosed response; explicitly close caught error responses while preserving the primary failure. |
+| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/nhl_roster_service.py` | `373a402fe733` | Reviewed: frozen injected client/feed options; validated sorted team traversal produces immutable roster/error tuples and preserves incomplete feeds. Source transport failures translate once, with no logger ownership or import-time I/O. Existing descriptive service-module path remains compatible. |
+| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/policy.py` | `df96de96ad2c` | Reviewed content: LTIR/active/minors/unknown precedence is conservative on incomplete feeds and consumes only supplied evidence. Finding: six related evidence parameters should become one immutable per-sync value; only membership keys of ahl_matches are required. |
+| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/repository.py` | `efa87742796e` | Reviewed: minimal runtime repository Protocol and frozen borrowed connection adapter. Native cursor contexts close each fixed/bound query/write, immutable rows/status sets leave persistence, and outer transaction ownership remains with the sync entrypoint. Empty batches do no I/O and source IDs are preserved conservatively. |
+| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/schemas.py` | `3e4461105b5f` | Reviewed: frozen native Pydantic scalar/tuple boundary graphs and strict named feed-ID aliases. Defaults are immutable or native factories; permissive source fields stay at the external shape boundary. No resources or mutable application state at import. |
+| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/services.py` | `cf332c14f50c` | Reviewed content: frozen injected feeds/repository/context, read-only evidence gathering and safe count events precede local decisions and transaction-owned writes. Final caller rejects incomplete summaries and rolls back. Finding: classification evidence threads six parameters and should be grouped immutably without retaining the mutable match dictionary. |
 | `backend/src/app/ScriptingFiles/FullDataScript/roster_status/tests/__init__.py` | `ec5000bdb273` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/ScriptingFiles/FullDataScript/roster_status/tests/fakes.py` | `7b5dea773a5e` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/roster_status/tests/fixtures.py` | `b9523d20a965` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/util.py` | `335e1bc4e70f` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/run_all.py` | `31f350e3526a` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/roster_status/util.py` | `335e1bc4e70f` | Reviewed content: immutable identity matching inputs and local indexes fail closed on duplicate/conflicting IDs and ambiguous names/birth dates. Pure parsers normalize source models. Finding: fetch_validated performs transport I/O in the utility role; move it to the transport adapter while updating actual callers. |
+| `backend/src/app/ScriptingFiles/FullDataScript/run_all.py` | `31f350e3526a` | Reviewed: zero-option argparse command discards Namespace, main owns environment/logging/hook setup and one program report; no pointless empty options object is introduced. Typed incomplete-feed outcome has its documented exit code; uncaught cancellation remains owned by the command hook. Import is side-effect free. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/__init__.py` | `1f506475c98d` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/domain.py` | `d031d85bb39b` | Reviewed: frozen tuple-backed source rows, metric/layout values and typed summaries; layout factories create fresh immutable values, owned by each caller. Stable column/source-field ordering is explicit. Summary serialization creates a fresh compatibility report; final helper-role placement remains a naming/layout disposition. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/errors.py` | `58329739d390` | Reviewed: marker validation hierarchy and typed source/row/coverage/pagination/options failures. Raw player IDs are intentionally object-typed at the unvalidated external boundary; emitted diagnostics use only sanitized exception type/frames. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/errors.py` | `55f0215399a4` | Reviewed/fixed: typed PlayerKindViolation rejects unsupported legacy stat-kind strings without echoing input; existing source/row/coverage/pagination/options errors retain typed context and native validation hierarchy. Raw IDs remain object-typed only at the unvalidated boundary. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/http.py` | `792b4eee84ae` | Reviewed content: minimal runtime transport/client Protocols, frozen borrowed adapters and synchronized caller-owned clients. Context factories close native sessions; GET retries remain native and recovery emits counts only. Native Retry-After has an installed six-hour maximum (not the request socket timeout); no new sleep limit is assumed. Transport options/layout disposition remains explicit. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/moneypuck/__init__.py` | `92d48982cb80` | Reviewed: module docstring only; no executable behavior. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/moneypuck/domain.py` | `5cae66cc4ccf` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/moneypuck/repository.py` | `eefdd1931c74` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/moneypuck/services.py` | `5993a60acb67` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/moneypuck/domain.py` | `5cae66cc4ccf` | Reviewed: frozen file/URL/quality options with enum-selected inputs; immutable row/report snapshots leave validation before persistence. Paths and defaults are caller-owned values, not import-time resources. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/moneypuck/repository.py` | `eefdd1931c74` | Reviewed: frozen injected transaction factory; one atomic context owns native connection/cursor, parameterized identity/stat writes and operation-local enum-keyed counts/deduplication. Missing historical rows are retained, and returned WriteCounts are frozen. No import I/O or shared mutable indexes. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/moneypuck/services.py` | `6a3c0cac0f22` | Reviewed/fixed: minimal runtime repository Protocol, frozen client/repository/options injection and validation-before-write orchestration. Historical CSV calls the repository file adapter; pure parsing stays in util. Normalization produces frozen tuple/string snapshots; progress fields remain bounded counts/kind, with no source payload logs. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/__init__.py` | `817f46504c4b` | Reviewed: module docstring only; no executable behavior. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/domain.py` | `119e2b09304c` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/repository.py` | `dd3aa97acef7` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/services.py` | `197f95d02620` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/policy.py` | `3b201cbe5efe` | Reviewed content: one-invariant count/duplicate policies return typed failures; row policy validates required/numeric/season fields before local deduplication, aggregate coverage and stat equations. Raw dictionaries are local validation buffers. Finding: find_stat_violation accepts broad str rather than PlayerKind; examine legacy caller compatibility before narrowing. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/repository.py` | `0f8974afd94a` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/domain.py` | `119e2b09304c` | Reviewed: frozen season/worker/page options, enum-typed jobs and tuple-backed stats/roster snapshots. All fields have one invocation/snapshot lifetime; no mutable shared defaults or resources at import. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/repository.py` | `dd3aa97acef7` | Reviewed: frozen transaction factories own atomic native connection/cursor contexts; parameterized identity/stat/roster writes retain missing records. Local enum counts, first-profile cache and deterministic final-team selection are not shared state. Native SQL tuple shapes remain an explicit persistence-boundary disposition. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/services.py` | `197f95d02620` | Reviewed content: minimal runtime repositories, frozen dependencies, joined bounded worker executor and one owned client per job. Pagination checks stable totals, requested size, missing IDs, premature empty/overrun and maximum pages before writes. Frozen domain normalization validates stat equations. Existing option validation remains inline rather than a separate policy; finish its role disposition. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/policy.py` | `4890f14a6a56` | Reviewed/fixed: canonical stat consistency policy now accepts PlayerKind rather than arbitrary strings; legacy string conversion belongs at its caller boundary. Count/duplicate/row policies return typed violations; local deduplication and season coverage precede persistence. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/repository.py` | `e391d1cf1b3d` | Reviewed/fixed: read_csv owns its native file context with the complete original signature/body retained. Shared SQL helpers bind external values; identifier/layout fragments come from canonical layout factories. Native heterogeneous insert tuples remain persistence-edge values, and transaction ownership stays with concrete repository callers. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schedule/__init__.py` | `a935cb36a63d` | Reviewed: module docstring only; no executable behavior. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schedule/domain.py` | `b2439324edef` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schedule/repository.py` | `2ab1ac0c664a` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schedule/domain.py` | `b2439324edef` | Reviewed: frozen season/count options and tuple-backed validated game snapshots with separately owned read counts. No mutable shared state or import-time resources. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schedule/repository.py` | `2ab1ac0c664a` | Reviewed: frozen transaction factory owns one atomic native connection/cursor; bound retain-missing schedule upserts and local before/after counts become frozen summary values. Source identifiers and scores are bound values, not SQL fragments. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schedule/services.py` | `127956ea8b9a` | Reviewed content: frozen injected client/repository/options; cursor dates must advance and terminate within the requested season range, data quality validates before persistence. Regular-season game dictionaries are filtered before strict validation and mapped to frozen domain rows. ScheduleDay raw-game snapshot finding must preserve that filter order. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schemas.py` | `951eac4aa966` | Reviewed content: Pydantic boundary validation, named aliases, frozen scalar/tuple models and JSON-string stats snapshots with fresh decoded rows. Findings: ScheduleDay still retains mutable raw game dictionaries, and native validator ValueError leaves require a framework-specific disposition. Preserve filtering of non-regular-season rows before game validation. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schemas.py` | `9ff6ad1107ff` | Reviewed/fixed: ScheduleDay reuses immutable JSON-string PageSnapshots and returns detached raw game dictionaries. Input/serialization aliases and native date output remain unchanged, and nonregular rows still filter before strict game validation. Native validator ValueError leaves remain a precise framework/type disposition to resolve. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/__init__.py` | `2e3fb5387200` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/fakes.py` | `75965991228f` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/fixtures.py` | `ece7fceed4ac` | Pending semantic review. |
@@ -184,12 +188,12 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/responses.py` | `015d5898a453` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/scenarios.py` | `142c5682179b` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/strategies.py` | `b39f66564425` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/util.py` | `27e5a7886f23` | Reviewed content: pure normalization, finite Decimal conversion, stable row hashing and duplicate/malformed CSV guards; shared season calendar is reused. Finding: read_csv opens a file inside the pure utility role; move the I/O adapter with compatibility preserved. Existing numeric return union can be narrowed by overload if consumers need it. |
-| `backend/src/app/ScriptingFiles/FullDataScript/team_stints.py` | `a39bf2c13fcd` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/util.py` | `91298dbbc223` | Reviewed/fixed: file opening moved to the source repository adapter; pure CSV parsing/normalization remains here. Finite Decimal conversion, stable row hashing and shared season calendar remain unchanged. The moved internal helper has no compatibility wrapper because its sole actual caller was updated. |
+| `backend/src/app/ScriptingFiles/FullDataScript/team_stints.py` | `a39bf2c13fcd` | Reviewed content: fixed SQL reconstructs canonical missing assignments with bound season parameters; caller owns transaction and typed ordered-range failure. Finding: finally cursor.close can replace a primary execute/fetch failure; move both read/write operations under existing complete_cleanup ownership. Error/repository/SQL compatibility role placement remains explicit. |
 | `backend/src/app/ScriptingFiles/FullDataScript/tracking/__init__.py` | `9f4c5a1e1829` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/ScriptingFiles/FullDataScript/tracking/domain.py` | `f5573df5f967` | Reviewed: frozen invocation/stage/run identity and monotonic start time; fields returns a fresh mapping without mutating its parent invocation. No import-time resources or shared state. |
 | `backend/src/app/ScriptingFiles/FullDataScript/tracking/errors.py` | `dffabfa0c590` | Reviewed: typed job/source errors and batch failure with an independent mapping-proxy copy of committed progress. Cause ownership stays with the raising call site; persisted explanatory text does not enter runtime logs. |
-| `backend/src/app/ScriptingFiles/FullDataScript/tracking/repository.py` | `5286c263386e` | Reviewed content: bound SQL and scoped advisory lock ownership; durable run rows commit independently of data writes. Frozen adapter borrows connection/cursor; factory attempts unlock, cursor close and connection close while preserving primary failures. Finding: count_summary_records accepts bool through isinstance(int); assess strict count parity with count_ingested_records. Concrete adapter seam remains explicit. |
+| `backend/src/app/ScriptingFiles/FullDataScript/tracking/repository.py` | `eb4bd3d6e834` | Reviewed/fixed: durable count projection accepts exact nonnegative integers, matching the existing inferred-count rule; booleans, negatives and other invalid values use the supplied fallback. Bound durable-run SQL and advisory-lock cleanup remain scoped and primary-preserving. Concrete adapter seam remains a final typing disposition. |
 | `backend/src/app/ScriptingFiles/FullDataScript/tracking/services.py` | `8bd918e13f25` | Reviewed: fresh immutable ingestion contexts derived from supplied invocation identity; no logging configuration or resource construction. Progress uses lazy fixed text and explicit fields, with final allowlist/bounds owned by the shared formatter. |
 | `backend/src/app/ScriptingFiles/FullDataScript/tracking/tests/__init__.py` | `512cd1b444a4` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/ScriptingFiles/FullDataScript/tracking/tests/fakes.py` | `7610a1574dfb` | Reviewed: excluded source-only probes own mutable event/context observations for one fixture. Injected completion/reporting/work failures exercise cleanup and durable-run error ownership; the factory records closure in finally. They are resource probes rather than shared immutable domain values. |
@@ -309,7 +313,7 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `tests/backend/test_database_cleanup.py` | `6cd3fbacf88d` | Reviewed: fixture-scoped typed failures/probes and original-cause checks; hostile repr, overridden annotation and invalid native notes cannot mask primary or skip close. Both formats omit secrets and retain bounded secondary diagnostics. |
 | `tests/backend/test_database_transactions.py` | `2c682bdcfe33` | Pending semantic review. |
 | `tests/backend/test_historical_options.py` | `6b5661805392` | Pending semantic review. |
-| `tests/backend/test_ingestion.py` | `f2c145032c20` | Pending semantic review. |
+| `tests/backend/test_ingestion.py` | `dffb4dca8d34` | Pending semantic review. |
 | `tests/backend/test_ingestion_logging.py` | `56c6d291e880` | Pending semantic review. |
 | `tests/backend/test_lifecycle_logging.py` | `86fa51212d53` | Pending semantic review. |
 | `tests/backend/test_logging_policy.py` | `223faf441435` | Pending semantic review. |
@@ -324,7 +328,7 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `tests/backend/test_runtime_resources.py` | `2c135b804ce4` | Pending semantic review. |
 | `tests/backend/test_source_identity.py` | `fe3873e02c25` | Pending semantic review. |
 | `tests/backend/test_source_identity_postgres.py` | `d4c5cd014abc` | Pending semantic review. |
-| `tests/backend/test_source_ingestion.py` | `993c86ed1e8d` | Pending semantic review. |
+| `tests/backend/test_source_ingestion.py` | `5907bf467439` | Pending semantic review. |
 | `tests/backend/test_supported_entrypoints.py` | `5fd5eba60222` | Pending semantic review. |
 | `tests/backend/test_transaction_logging.py` | `b57666912f9e` | Pending semantic review. |
 | `tests/conftest.py` | `2084ef23201a` | Pending semantic review. |

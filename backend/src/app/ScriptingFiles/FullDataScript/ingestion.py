@@ -17,6 +17,7 @@ from typing import Iterable
 import requests
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     MissingSourceSnapshotError,
+    PlayerKindViolation,
 )
 from app.database import DatabaseTransactionFactory, open_database_transaction, init_db
 from app.ScriptingFiles.FullDataScript import capspace
@@ -221,7 +222,11 @@ def enforce_quality_thresholds(
 def validate_stat_invariants(
     kind: str, row: Mapping[str, object], *, source: str
 ) -> None:
-    if violation := find_stat_violation(kind, row, source=source):
+    try:
+        selected = PlayerKind(kind)
+    except ValueError as error:
+        raise PlayerKindViolation(kind=kind) from error
+    if violation := find_stat_violation(selected, row, source=source):
         raise violation
 
 

@@ -8,7 +8,6 @@ import csv
 import hashlib
 import io
 import json
-from pathlib import Path
 import re
 import unicodedata
 
@@ -121,8 +120,3 @@ def parse_csv(text: str, *, source: str) -> list[dict[str, object]]:
             source=source, reason="malformed CSV row has too many values"
         )
     return rows
-
-
-def read_csv(path: Path) -> list[dict[str, object]]:
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        return parse_csv(handle.read(), source=str(path))

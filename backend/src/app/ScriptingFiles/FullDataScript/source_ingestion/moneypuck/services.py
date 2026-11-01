@@ -31,12 +31,12 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.schemas import (
     MoneyPuckRow,
     validate_payload,
 )
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository import read_csv
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
     parse_number,
     parse_team_abbreviation,
     parse_csv,
     normalize_position,
-    read_csv,
     hash_source_row,
 )
 

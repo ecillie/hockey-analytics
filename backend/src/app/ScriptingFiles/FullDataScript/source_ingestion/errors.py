@@ -13,6 +13,12 @@ class IngestionValidationError(ValueError):
     pass
 
 
+class PlayerKindViolation(IngestionValidationError):
+    def __init__(self, *, kind: str) -> None:
+        super().__init__("player kind must be skater or goalie")
+        self.kind = kind
+
+
 class RowCountViolation(IngestionValidationError):
     def __init__(self, *, source: str, actual: int, minimum: int) -> None:
         self.source = source

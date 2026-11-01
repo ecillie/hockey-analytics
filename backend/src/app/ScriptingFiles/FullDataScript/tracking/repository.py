@@ -36,7 +36,7 @@ def count_summary_records(
     summary: Mapping[str, object], key: str, default: int = 0
 ) -> int:
     value = summary.get(key, default)
-    return value if isinstance(value, int) else default
+    return value if type(value) is int and value >= 0 else default
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

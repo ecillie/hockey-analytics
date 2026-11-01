@@ -3,7 +3,10 @@
 from dataclasses import replace
 from copy import deepcopy
 from pydantic import ValidationError
-from app.ScriptingFiles.FullDataScript.source_ingestion.schemas import StatsPage
+from app.ScriptingFiles.FullDataScript.source_ingestion.schemas import (
+    SchedulePage,
+    StatsPage,
+)
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.scenarios import (
     RepositoryStage,
     ClientStage,
@@ -51,6 +54,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.schedule.domain import (
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.schedule.services import (
     ScheduleService,
+    parse_schedule_page,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.fakes import (
     MemorySourceClient,
@@ -579,3 +583,46 @@ class TestStatsPageSnapshots:
     def test_serialization_retains_source_shape(self, page, expected):
         assert json.loads(page.model_dump_json()) == expected
         assert page.model_dump()["data"] == tuple(expected["data"])
+
+
+class TestSchedulePageSnapshots:
+    @pytest.fixture
+    def payload(self, source_schedule_page):
+        source_schedule_page["gameWeek"][0]["games"].append(
+            {
+                "gameType": 3,
+                "id": "not-a-regular-game",
+                "homeTeam": {"score": "invalid"},
+            }
+        )
+        return source_schedule_page
+
+    @pytest.fixture
+    def expected(self, payload):
+        return deepcopy(payload)
+
+    @pytest.fixture
+    def page(self, payload):
+        return SchedulePage.model_validate(payload)
+
+    def test_input_aliases_cannot_change_validated_games(self, page, payload, expected):
+        payload["gameWeek"][0]["games"][0]["homeTeam"]["abbrev"] = "CCC"
+        assert json.loads(page.model_dump_json()) == expected
+
+    def test_returned_games_are_detached(self, page, expected):
+        games = page.gameWeek[0].games
+        games[0]["homeTeam"]["abbrev"] = "CCC"
+        games[0]["id"] = 99
+        assert json.loads(page.model_dump_json()) == expected
+        assert page.gameWeek[0].games == tuple(expected["gameWeek"][0]["games"])
+
+    def test_serialization_retains_source_shape(self, page, expected):
+        assert json.loads(page.model_dump_json()) == expected
+        assert page.model_dump()["gameWeek"][0]["games"] == tuple(
+            expected["gameWeek"][0]["games"]
+        )
+
+    def test_nonregular_games_are_filtered_before_game_validation(self, page):
+        games = parse_schedule_page(page, source="fixture")
+        assert len(games) == 1
+        assert games[0].external_id == 1
