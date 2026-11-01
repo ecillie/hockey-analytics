@@ -1,9 +1,10 @@
 """In-memory read repository for API behavior tests."""
 
+from app.api.service import TradeValueService
+
 from dataclasses import dataclass, field
 from collections.abc import Mapping
 from operator import attrgetter
-
 from app.api.domain import (
     CapRow,
     ContractRow,
@@ -16,6 +17,7 @@ from app.api.domain import (
     SummaryRow,
     TeamRow,
 )
+from fastapi.testclient import TestClient
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -177,3 +179,15 @@ class MemoryApiRepository:
             for r in self.summaries
             if r.season == season and r.games_played is not None
         )
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class HttpScenario:
+    client: TestClient
+    repository: MemoryApiRepository
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class SeasonBoundaryScenario:
+    before: TradeValueService
+    on: TradeValueService

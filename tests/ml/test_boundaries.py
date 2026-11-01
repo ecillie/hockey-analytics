@@ -6,8 +6,7 @@ from contextlib import contextmanager
 from dataclasses import FrozenInstanceError
 from importlib import import_module
 from importlib.resources import files
-from ml.tests.fakes import PipelineResources, ReadScenario
-
+from ml.tests.fakes import PipelineResources, ReadScenario, DatasetScenario
 import numpy as np
 import pandas as pd
 import pytest
@@ -94,21 +93,26 @@ class TestDataBoundaries:
         ]
 
     def test_loaded_frames_do_not_open_database(
-        self, player_seasons, caps, counted_reads
+        self, player_seasons, caps, counted_reads, original_frames
     ):
-        before = player_seasons.copy(deep=True)
-        before_caps = caps.copy(deep=True)
         result = run_pipeline(players=player_seasons, salary_caps=caps)
         assert counted_reads.calls == []
         assert len(result) == len(player_seasons)
-        pd.testing.assert_frame_equal(before, player_seasons)
-        pd.testing.assert_frame_equal(before_caps, caps)
+        pd.testing.assert_frame_equal(original_frames.players, player_seasons)
+        pd.testing.assert_frame_equal(original_frames.caps, caps)
 
-    def test_stage_computation_does_not_mutate_input(self, player_seasons):
-        before = player_seasons.copy(deep=True)
+    @pytest.fixture
+    def original_frames(self, player_seasons, caps):
+        return DatasetScenario(
+            players=player_seasons.copy(deep=True), caps=caps.copy(deep=True)
+        )
+
+    def test_stage_computation_does_not_mutate_input(
+        self, player_seasons, original_frames
+    ):
         calculate_replacement_level(player_seasons)
         build_training_data(player_seasons)
-        pd.testing.assert_frame_equal(before, player_seasons)
+        pd.testing.assert_frame_equal(original_frames.players, player_seasons)
 
     @pytest.fixture(
         params=[
@@ -153,10 +157,13 @@ class TestDataBoundaries:
         with pytest.raises(ValueError, match="percentile"):
             calculate_replacement_level(player_seasons, invalid_percentile)
 
-    def test_options_are_immutable_and_defaults_preserve_model(self):
-        options = ModelOptions()
+    @pytest.fixture
+    def model_options(self):
+        return ModelOptions()
+
+    def test_options_are_immutable_and_defaults_preserve_model(self, model_options):
         with pytest.raises(FrozenInstanceError):
-            setattr(options, "random_state", 7)
+            setattr(model_options, "random_state", 7)
         model = build_model()
         regressor = model.named_steps["model"]
         assert (
@@ -167,21 +174,48 @@ class TestDataBoundaries:
             regressor.random_state,
         ) == (0.05, 300, 31, 1.0, 42)
 
-    def test_training_eligibility_can_be_injected(self, player_seasons):
-        result = build_features(
-            player_seasons, options=FeatureOptions(minimum_training_games=27)
-        )
+    @pytest.fixture
+    def eligibility_options(self):
+        return FeatureOptions(minimum_training_games=27)
+
+    def test_training_eligibility_can_be_injected(
+        self, player_seasons, eligibility_options
+    ):
+        result = build_features(player_seasons, options=eligibility_options)
         assert not result["eligible_for_training"].any()
 
 
 class TestArtifacts:
+    columns = list(NUMERIC_FEATURES + CATEGORICAL_FEATURES)
+
+    @pytest.fixture
+    def training_options(self):
+        return ModelOptions(max_iter=5)
+
     @pytest.fixture
     def training_data(self, player_seasons):
         return build_training_data(player_seasons)
 
     @pytest.fixture
-    def trained(self, training_data):
-        return train_model(training_data, options=ModelOptions(max_iter=5))
+    def trained(self, training_data, training_options):
+        return train_model(training_data, options=training_options)
+
+    @pytest.fixture
+    def original_training_data(self, training_data):
+        return training_data.copy(deep=True)
+
+    @pytest.fixture
+    def prediction_output(self, tmp_path):
+        return tmp_path.joinpath("predictions", "test.csv")
+
+    @pytest.fixture
+    def invalid_metadata(self, trained):
+        return {**trained.metadata, "contract_features_used": True}
+
+    @pytest.fixture
+    def working_directory(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        return tmp_path
 
     @pytest.fixture
     def paths(self, tmp_path):
@@ -191,32 +225,28 @@ class TestArtifacts:
         )
 
     def test_training_is_silent_and_has_no_artifact_side_effects(
-        self, player_seasons, tmp_path, monkeypatch, capsys
+        self, player_seasons, working_directory, training_options, capsys
     ):
-        monkeypatch.chdir(tmp_path)
-        train(player_seasons, options=ModelOptions(max_iter=5))
-        assert list(tmp_path.iterdir()) == []
+        train(player_seasons, options=training_options)
+        assert list(working_directory.iterdir()) == []
         assert capsys.readouterr().out == ""
 
     def test_explicit_artifacts_round_trip_and_evaluation_owns_data(
-        self, trained, training_data, paths, tmp_path
+        self, trained, training_data, paths, original_training_data, prediction_output
     ):
         save_model(trained.model, trained.metadata, paths)
         model, metadata = load_model(paths)
         assert metadata == trained.metadata_value
         assert paths.metadata.read_text() == trained.metadata_json
-        before = training_data.copy(deep=True)
         expected = evaluate_predictions(trained.model, trained.metadata, training_data)
         actual = evaluate_model(paths, data=training_data)
         pd.testing.assert_frame_equal(expected, actual)
-        pd.testing.assert_frame_equal(before, training_data)
-        output = tmp_path.joinpath("predictions", "test.csv")
-        save_predictions(actual, output)
-        assert len(pd.read_csv(output)) == len(actual)
-        columns = list(NUMERIC_FEATURES + CATEGORICAL_FEATURES)
+        pd.testing.assert_frame_equal(original_training_data, training_data)
+        save_predictions(actual, prediction_output)
+        assert len(pd.read_csv(prediction_output)) == len(actual)
         np.testing.assert_array_equal(
-            model.predict(training_data[columns]),
-            trained.model.predict(training_data[columns]),
+            model.predict(training_data[self.columns]),
+            trained.model.predict(training_data[self.columns]),
         )
 
     def test_metadata_property_returns_snapshot(self, trained):
@@ -226,11 +256,13 @@ class TestArtifacts:
         assert trained.metadata["numeric_features"] == list(NUMERIC_FEATURES)
         assert set(trained.metadata["metrics"]) == {"train", "validation", "test"}
 
-    def test_invalid_metadata_does_not_write_artifacts(self, trained, paths):
+    def test_invalid_metadata_does_not_write_artifacts(
+        self, trained, paths, invalid_metadata
+    ):
         with pytest.raises(ValueError):
             save_model(
                 trained.model,
-                {**trained.metadata, "contract_features_used": True},
+                invalid_metadata,
                 paths,
             )
         assert not paths.model.exists()

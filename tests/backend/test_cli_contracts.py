@@ -1,14 +1,12 @@
 """Command boundaries validate before resources and preserve output contracts."""
 
+from app.shared.tests.fakes import CommandCase
 import json
 import os
 import subprocess
 import sys
-from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
-from types import ModuleType
-
 import pytest
 from app.ScriptingFiles.FullDataScript import capspace, populate_roster_status, run_all
 from app.ScriptingFiles.FullDataScript.roster_status.errors import (
@@ -22,7 +20,6 @@ from ml.pipelines import (
     run_pipeline,
 )
 from ml.training import train_skater_value
-
 from backend import export_openapi
 from backend.database import (
     backfill_team_stints,
@@ -33,54 +30,12 @@ from backend.database import (
     verify_migrations,
 )
 from ml.evaluation import evaluate_skater_model, gate
-
-
-class CommandFailure(RuntimeError):
-    def __init__(self, *, source: str) -> None:
-        super().__init__(f"{source} unavailable")
-        self.source = source
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class FailingAction:
-    source: str = "source"
-
-    def __call__(self, *args: object, **kwargs: object) -> object:
-        raise CommandFailure(source=self.source)
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class RecordingAction:
-    events: StringIO
-    name: str
-    result: object = None
-    failure: Exception | None = None
-
-    def __call__(self, *args: object, **kwargs: object) -> object:
-        self.events.write(f"{self.name}\n")
-        if self.failure is not None:
-            raise self.failure
-        return self.result
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class RepairConnection:
-    events: StringIO
-
-    def commit(self) -> None:
-        self.events.write("commit\n")
-
-    def rollback(self) -> None:
-        self.events.write("rollback\n")
-
-    def close(self) -> None:
-        self.events.write("close\n")
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class CommandCase:
-    module: ModuleType
-    action: str
+from app.shared.tests.fakes import (
+    CommandFailure,
+    FailingAction,
+    RecordingAction,
+    RepairConnection,
+)
 
 
 class TestCommandBoundaries:

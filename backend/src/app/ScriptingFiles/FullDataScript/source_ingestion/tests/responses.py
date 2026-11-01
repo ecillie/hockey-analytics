@@ -2,8 +2,8 @@
 
 import json
 from dataclasses import dataclass, field
-
 import requests
+from contextlib import nullcontext
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -185,3 +185,56 @@ class SessionLifecycle:
 
     def close(self) -> None:
         self.closures.append(True)
+
+
+def nhl_stat_rows(kind, season, game_type, *, goals=5):
+    if kind == "skater":
+        row = {
+            "playerId": 1001,
+            "skaterFullName": "Fixture Skater",
+            "teamAbbrevs": "AAA,BBB",
+            "positionCode": "C",
+            "gamesPlayed": 10,
+            "goals": goals,
+            "assists": 7,
+            "points": goals + 7,
+            "shots": 40,
+        }
+    else:
+        row = {
+            "playerId": 2001,
+            "goalieFullName": "Fixture Goalie",
+            "teamAbbrevs": "BBB",
+            "gamesPlayed": 8,
+            "wins": 5,
+            "losses": 2,
+            "otLosses": 1,
+            "shotsAgainst": 220,
+            "saves": 207,
+            "goalsAgainst": 13,
+        }
+    return [row, dict(row)]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class FixtureStatsClient:
+    goals: int
+    csv_text: str = ""
+
+    def get_json(self, url, *, timeout=30, params=None):
+        kind = "skater" if "/skater/" in url else "goalie"
+        assert params is not None
+        season = int(params["cayenneExp"].split("=", 1)[1][:4])
+        game_type = int(params["cayenneExp"][-1])
+        return {"data": nhl_stat_rows(kind, season, game_type, goals=self.goals)}
+
+    def get_csv(self, url, *, timeout=60):
+        return self.csv_text
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class FixtureStatsFactory:
+    goals: int
+
+    def __call__(self):
+        return nullcontext(FixtureStatsClient(goals=self.goals))

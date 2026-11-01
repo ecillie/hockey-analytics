@@ -1,84 +1,23 @@
 """Smoke tests for every supported backend and ingestion entrypoint."""
 
-import ast
+from app.shared.tests.entrypoints import (
+    ROOT,
+    BACKEND,
+    APP,
+    FULL_DATA_SCRIPT,
+    LEGACY_LOADERS,
+    SUPPORTED_CLI_MODULES,
+    QUARANTINED_LOADERS,
+    supported_python_files,
+    full_data_modules,
+    imported_modules,
+    has_main_guard,
+)
 import os
-from pathlib import Path
-import py_compile
 import subprocess
 import sys
-
+import py_compile
 import pytest
-
-
-ROOT = Path(__file__).resolve().parents[2]
-BACKEND = ROOT.joinpath("backend")
-APP = BACKEND.joinpath("src", "app")
-FULL_DATA_SCRIPT = APP.joinpath("ScriptingFiles", "FullDataScript")
-LEGACY_LOADERS = BACKEND.joinpath("legacy_loaders")
-
-SUPPORTED_CLI_MODULES = frozenset(
-    {
-        "app.ScriptingFiles.FullDataScript.capspace",
-        "app.ScriptingFiles.FullDataScript.populate_roster_status",
-        "app.ScriptingFiles.FullDataScript.run_all",
-    }
-)
-QUARANTINED_LOADERS = frozenset(
-    {
-        "save_basic_player_stats.py.txt",
-        "save_contracts_to_db.py.txt",
-        "save_goalie_advanced_stats.py.txt",
-        "save_individual_contract_years.py.txt",
-        "save_nhl_regular_seasoe_schedule.py.txt",
-        "save_players_to_db.py.txt",
-        "save_previous_games_stats.py.txt",
-        "save_skater_advanced_stats.py.txt",
-    }
-)
-
-
-def supported_python_files() -> list[Path]:
-    return sorted(path for path in APP.rglob("*.py") if "__pycache__" not in path.parts)
-
-
-def full_data_modules() -> list[str]:
-    return [
-        ".".join(path.relative_to(BACKEND.joinpath("src")).with_suffix("").parts)
-        for path in sorted(FULL_DATA_SCRIPT.rglob("*.py"))
-        if path.name != "__init__.py" and "__pycache__" not in path.parts
-    ]
-
-
-def imported_modules(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    imports = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imports.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imports.add(node.module)
-    return imports
-
-
-def has_main_guard(path: Path) -> bool:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    return any(is_main_guard(node) for node in ast.walk(tree))
-
-
-def is_main_guard(node: ast.AST) -> bool:
-    if not isinstance(node, ast.If):
-        return False
-    test = node.test
-    return (
-        isinstance(test, ast.Compare)
-        and isinstance(test.left, ast.Name)
-        and test.left.id == "__name__"
-        and len(test.ops) == 1
-        and isinstance(test.ops[0], ast.Eq)
-        and len(test.comparators) == 1
-        and isinstance(test.comparators[0], ast.Constant)
-        and test.comparators[0].value == "__main__"
-    )
 
 
 def test_complete_backend_application_compiles(tmp_path):
@@ -121,18 +60,25 @@ def test_supported_cli_manifest_matches_executable_modules():
 
 
 @pytest.mark.parametrize("module", full_data_modules())
-def test_supported_ingestion_module_imports_in_fresh_interpreter(module):
-    environment = os.environ.copy()
-    environment.pop("PYTHONPATH", None)
-    completed = subprocess.run(
-        [sys.executable, "-c", f"import {module}"],
-        cwd=ROOT,
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    assert completed.returncode == 0, (
-        f"failed to import {module}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
-    )
+class TestSupportedIngestionImports:
+    @pytest.fixture
+    def environment(self):
+        environment = os.environ.copy()
+        environment.pop("PYTHONPATH", None)
+        return environment
+
+    def test_supported_ingestion_module_imports_in_fresh_interpreter(
+        self, module, environment
+    ):
+        completed = subprocess.run(
+            [sys.executable, "-c", f"import {module}"],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        assert completed.returncode == 0, (
+            f"failed to import {module}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+        )
