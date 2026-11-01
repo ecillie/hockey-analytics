@@ -1622,3 +1622,55 @@ exact framework/historical/native fault-double dispositions, hosted NonProd mode
 correlation and final combined acceptance/release promotion remain open. The
 approved API lifespan hook is unchanged. No acceptance PR or production promotion
 is made by this checkpoint.
+
+## Canonical contract adapter and service directory checkpoint
+
+The canonical repository/services role files now grow into directories. Historical
+callers keep their qualified module names; active persistence and native profile
+HTTP adapters live under repository, and active orchestration under services.
+Three former descriptive modules contain explicit compatibility bindings. Actual
+runtime callers and native parser/retry instrumentation use canonical owners.
+
+Complete AST comparison against `776d69a`, removing only imports, proves all five
+moved modules and six callers retain identical executable statements, SQL,
+signatures, defaults, worker coordination and resource cleanup. All **33** defined
+compatibility exports have exact identity with canonical objects. Canonical child
+module paths now own their definitions; established import/call paths remain.
+
+Verification under Python 3.12.14:
+
+- All **225** compared focused test IDs are unchanged; focused contract/transport/
+  parsing/tracking checks pass **225** in **0.65 seconds**.
+- The initial full run reports **one failed, 1,439 passed**: the Git source-scope
+  test still saw the unstaged removed repository.py/services.py. An exact scope
+  comparison confirms those two paths only. Staging the completed role moves
+  makes the unchanged native scope test pass; the test/checker is not weakened.
+- Fresh migrated `tradevalue_test_logging05_adapter_layout_final` then passes
+  **1,440 tests, zero skips**, **91.24%** coverage in **132.31 seconds**, with
+  **100%** API/calendar coverage. Isolated units pass **1,390**, with 50 integrations
+  deselected, in **114.39 seconds**. The existing fresh-process import-discovery
+  test gains one net case: three canonical child modules replace two ordinary
+  modules with role-package initializers excluded from that parametrization.
+- Locked sync, Ruff lint/format, ty, structural scope, dependency exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke,
+  clean API/Vercel/ML artifact installs/exclusions and committed-model gates pass.
+- Fourteen current dispositions were reviewed, including five canonical role
+  modules and three compatibility modules. All **240** source digests match the
+  staged tracked source set. No added prohibited forms or comments were found.
+  Public HTTP schema, frontend and committed model inputs are unchanged. Final
+  combined API/ingestion images, browser and hosted acceptance remain required;
+  no new image or hosted success is claimed here.
+
+Evidence uses `/private/tmp/tradevalue-logging05-adapter-layout-` prefixes:
+`compare.py`/`compare.txt`, `focus.txt`, `before-nodes.txt`/`after-nodes.txt`,
+`before-ids.txt`/`after-ids.txt`, initial `checks.sh`/`checks.txt`/`pytest.txt`,
+`final-checks.sh`/`final-checks.txt`, `final-pytest.txt`, `final-units.txt`,
+`final-schema.json` and `packages.txt`. The final script targets a separate fresh
+explicitly disposable database; initial failure artifacts are retained.
+
+The contract transport/active-service role-directory findings are resolved.
+Remaining active write-context, source/helper and compatibility-entrypoint
+judgments and precise framework/historical/native fault-double decisions remain,
+along with hosted NonProd correlation, final combined acceptance and release
+promotion. The approved API lifespan hook is unchanged. No acceptance PR or
+production promotion is made by this checkpoint.

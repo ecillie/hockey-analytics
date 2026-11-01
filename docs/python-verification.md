@@ -1,5 +1,22 @@
 # Python verification
 
+The contract-adapter layout checkpoint grows repository/services into canonical
+role directories. Active persistence/profile transport and active orchestration
+have canonical child modules; historical qualified module names and 33 exact
+compatibility bindings remain. Five moved modules and six callers retain identical
+executable AST, SQL, signatures/defaults and cleanup. All **225** compared focused
+test IDs are unchanged and pass. The initial full run caught the two unstaged
+removed paths in the unchanged Git source-scope check; staging the completed moves
+resolved it without changing the test. Fresh migrated
+`tradevalue_test_logging05_adapter_layout_final` then passed **1,440 tests, zero
+skips**, **91.24%** coverage in **132.31 seconds**, with the **100%** API/calendar
+gate. Isolated units passed **1,390**, with 50 integrations deselected, in
+**114.39 seconds**. The existing native import-discovery check gains one net case.
+Static, clean package/export, migration/schema/API and ML gates pass. All **240**
+current Python sources have matching ledger entries/digests. Active write-context,
+remaining source/helper/entrypoint roles, exact framework/historical/fault-double
+decisions and hosted/final combined release acceptance remain open.
+
 The contract-role/interface checkpoint gives four unchanged option/limit values
 their domain owner, three unchanged checks their policy owner, and four unchanged
 reporting helpers their utility owner. Runtime callers use those canonical modules;

@@ -13,7 +13,7 @@ from app.ScriptingFiles.FullDataScript.contracts.domain import (
     HistoricalContractLimits,
     ProfileHttpOptions,
 )
-from app.ScriptingFiles.FullDataScript.contracts.http import (
+from app.ScriptingFiles.FullDataScript.contracts.repository.http import (
     ProfileSessionFactory,
     fetch_profile_with_fallback,
 )

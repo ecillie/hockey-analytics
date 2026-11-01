@@ -20,15 +20,15 @@ from app.ScriptingFiles.FullDataScript.contracts.tests.postgres import (
 from app.ScriptingFiles.FullDataScript import capspace, ingestion, ingestion_tracking
 from app.ScriptingFiles.FullDataScript.contracts import repository as persistence
 from app.ScriptingFiles.FullDataScript.contracts import services as contract_services
-from app.ScriptingFiles.FullDataScript.contracts.active_repository import (
+from app.ScriptingFiles.FullDataScript.contracts.repository.active import (
     open_active_repository,
 )
-from app.ScriptingFiles.FullDataScript.contracts.active_services import (
+from app.ScriptingFiles.FullDataScript.contracts.services.active import (
     ActiveContractService,
 )
 from app.ScriptingFiles.FullDataScript.contracts.domain import Candidate, StoredContract
 from app.ScriptingFiles.FullDataScript.contracts.errors import ReconciliationFailure
-from app.ScriptingFiles.FullDataScript.contracts.http import (
+from app.ScriptingFiles.FullDataScript.contracts.repository.http import (
     BorrowedProfileSessionFactory,
     SynchronizedProfileSession,
     calculate_retry_delay,

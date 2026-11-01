@@ -26,13 +26,13 @@ from app.database import (
     init_db,
 )
 from app.ScriptingFiles.FullDataScript import capspace
-from app.ScriptingFiles.FullDataScript.contracts.active_repository import (
+from app.ScriptingFiles.FullDataScript.contracts.repository.active import (
     ContextualActiveRepositoryFactory,
 )
-from app.ScriptingFiles.FullDataScript.contracts.active_services import (
+from app.ScriptingFiles.FullDataScript.contracts.services.active import (
     ActiveContractService,
 )
-from app.ScriptingFiles.FullDataScript.contracts.http import (
+from app.ScriptingFiles.FullDataScript.contracts.repository.http import (
     ActiveProfileSession,
     ActiveSessionFactory,
     BorrowedActiveSessionFactory,

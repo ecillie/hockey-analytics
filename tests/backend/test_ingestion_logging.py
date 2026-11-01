@@ -44,9 +44,9 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.tests.fakes import (
 from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
 from app.ScriptingFiles.FullDataScript.tracking.errors import IngestionBatchError
 from app.ScriptingFiles.FullDataScript.tracking.tests.fakes import TrackingScenario
-from app.ScriptingFiles.FullDataScript.contracts import http as profile_http
+from app.ScriptingFiles.FullDataScript.contracts.repository import http as profile_http
 from app.ScriptingFiles.FullDataScript.contracts.domain import Candidate
-from app.ScriptingFiles.FullDataScript.contracts.http import (
+from app.ScriptingFiles.FullDataScript.contracts.repository.http import (
     BorrowedProfileSessionFactory,
 )
 from app.ScriptingFiles.FullDataScript.contracts.services import ProfileFetcher

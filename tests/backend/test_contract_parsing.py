@@ -6,7 +6,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 import pytest
-from app.ScriptingFiles.FullDataScript.contracts import http as profile_http
+from app.ScriptingFiles.FullDataScript.contracts.repository import http as profile_http
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
     AbsenceReason,
     Candidate,

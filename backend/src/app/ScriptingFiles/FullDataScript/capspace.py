@@ -38,16 +38,16 @@ from app.ScriptingFiles.FullDataScript.contracts.errors import (
 from app.ScriptingFiles.FullDataScript.contracts.errors import (
     CapSpaceParseError as CapSpaceParseError,
 )
-from app.ScriptingFiles.FullDataScript.contracts.http import (
+from app.ScriptingFiles.FullDataScript.contracts.repository.http import (
     BorrowedProfileSessionFactory,
     ProfileSessionFactory,
     SynchronizedProfileSession,
     open_profile_session,
 )
-from app.ScriptingFiles.FullDataScript.contracts.http import (
+from app.ScriptingFiles.FullDataScript.contracts.repository.http import (
     ProfileResponse as ProfileResponse,
 )
-from app.ScriptingFiles.FullDataScript.contracts.http import (
+from app.ScriptingFiles.FullDataScript.contracts.repository.http import (
     ProfileSession as ProfileSession,
 )
 from app.ScriptingFiles.FullDataScript.contracts.domain import HistoricalContractOptions

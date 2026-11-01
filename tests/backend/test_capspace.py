@@ -16,7 +16,7 @@ import pytest
 import requests
 from app.ScriptingFiles.FullDataScript import capspace
 from app.ScriptingFiles.FullDataScript.contracts import domain as contract_domain
-from app.ScriptingFiles.FullDataScript.contracts import http as profile_http
+from app.ScriptingFiles.FullDataScript.contracts.repository import http as profile_http
 from app.ScriptingFiles.FullDataScript.contracts import reporting as contract_reporting
 from app.ScriptingFiles.FullDataScript.contracts import (
     repository as contract_repository,
