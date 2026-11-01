@@ -195,7 +195,7 @@ def normalize_stat_row(
         raise violation
     return StatRow(
         kind=job.kind,
-        external_id=str(raw["playerId"]),
+        external_id=str(value.playerId),
         season=job.season,
         name=next(
             (

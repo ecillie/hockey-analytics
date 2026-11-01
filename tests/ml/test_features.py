@@ -10,7 +10,12 @@ from ml.features.build_features import (
     build_features,
     get_training_dataset,
 )
-from ml.features.replacement_level import calculate_replacement_level
+from ml.features.replacement_level import (
+    calculate_replacement_level,
+    print_replacement_diagnostics,
+)
+from ml.configuration import FeatureOptions
+
 from ml.pipelines.build_model_dataset import (
     FORBIDDEN_CONTRACT_COLUMNS,
     build_model_dataset,
@@ -266,3 +271,47 @@ class TestModelDataset:
         )
         assert result.loc[result["season"] == 2022, "salary_cap_fraction"].isna().all()
         assert not np.isinf(result["salary_cap_fraction"].dropna()).any()
+
+
+class TestReplacementDiagnostics:
+    @pytest.fixture(
+        params=[
+            pytest.param((None, None, 0.20), id="default"),
+            pytest.param((None, 0.75, 0.75), id="options-override"),
+            pytest.param((0.5, 0.75, 0.5), id="explicit-override-wins"),
+            pytest.param((0.0, None, 0.0), id="zero-boundary"),
+            pytest.param((1.0, None, 1.0), id="one-boundary"),
+        ]
+    )
+    def scenario(self, request, player_seasons):
+        explicit, configured, expected = request.param
+        options = (
+            FeatureOptions()
+            if configured is None
+            else FeatureOptions(replacement_percentile=configured)
+        )
+        result = calculate_replacement_level(player_seasons, explicit, options=options)
+        return result, expected
+
+    def test_diagnostics_report_the_percentile_used_for_calculation(
+        self, scenario, capsys
+    ):
+        result, expected = scenario
+        print_replacement_diagnostics(result)
+        assert f"Replacement percentile: {expected:.0%}" in capsys.readouterr().out
+        assert result.attrs["replacement_percentile"] == expected
+
+    def test_thresholds_use_the_effective_percentile(self, scenario):
+        result, expected = scenario
+        eligible = result[
+            result["eligible_for_training"]
+            & result["position_group"].notna()
+            & result["toi_per_game"].notna()
+        ]
+        actual = eligible.groupby(["season", "position_group"])[
+            "replacement_toi_per_game_threshold"
+        ].first()
+        calculated = eligible.groupby(["season", "position_group"])[
+            "toi_per_game"
+        ].quantile(expected)
+        pd.testing.assert_series_equal(actual, calculated, check_names=False)

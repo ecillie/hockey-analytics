@@ -160,3 +160,45 @@ zero skips, 91.44% aggregate coverage, and 100% API/shared-calendar coverage.
 Isolated units passed 628 tests with 47 integration tests deselected. Ruff,
 formatting, ty, model/OpenAPI/export gates, isolated wheel checks, Docker build,
 and health/seasons/teams HTTP smoke passed. No frontend boundary changed.
+
+## Options and source identity follow-up, phase 2
+
+The follow-up starts from `Release-1.0.1` at
+`30d03d65b7e7a865be71f98e4c27ef191a941941`, containing merged phase-1 PR #150.
+It addresses F02, F04, and F09 in the local remediation plan.
+
+Source quality checks compose the existing `CountPolicy` with a separate
+`DuplicateRatioPolicy`, returning count failures before ratio failures.
+Historical contract defaults live in `HistoricalContractOptions`; its owned,
+frozen `HistoricalContractLimits` supplies worker and batch ceilings to
+validation. Existing compatibility constants derive from these options and
+`ProfileHttpOptions`. CLI defaults come from one options instance. Historical
+seasons remain 2008–2025, with four workers and a batch size of 100; default
+ceilings remain eight workers and 1,000 players per batch. Candidate and coverage
+query defaults use the same authority. Explicit overrides remain supported.
+
+Replacement calculations retain their effective percentile in the returned
+DataFrame’s `attrs["replacement_percentile"]` metadata. Diagnostics use that value,
+including an explicit argument taking precedence over configured options, and
+fall back to the default for externally supplied frames without the attribute.
+Calculations and output columns remain unchanged.
+
+NHL and MoneyPuck persistence identities now use validated integer player IDs.
+MoneyPuck also canonicalizes integer grain fields during deduplication, so
+`7`, `7.0`, `"0007"`, `"7.0"`, and `"7e0"` share one identity and grain. The last
+original row still wins, with its unmodified source hash; canonicalization does
+not rewrite source payloads. Alias rows contribute to duplicate counts and can
+therefore trigger existing quality thresholds. PostgreSQL tests verify both
+skater and goalie identity linking in the existing MoneyPuck-to-NHL ingestion
+order, one stat grain per source, and repeat-ingestion idempotence.
+
+Existing persisted aliases are not merged or rewritten. Any historical data
+repair requires a separate collision audit and reviewed operation. No hosted
+data or live upstream feeds are used for verification.
+
+Local phase-2 acceptance on Python 3.12/PostgreSQL 15: 706 tests passed with
+zero skips, 91.69% aggregate coverage, and 100% API/shared-calendar coverage.
+Isolated units passed 657 tests with 49 integration tests deselected. Ruff,
+formatting, ty, model/OpenAPI/export gates, isolated wheel checks, Docker build,
+and health/seasons/teams HTTP smoke passed. Both verification containers were
+removed after acceptance.

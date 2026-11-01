@@ -40,8 +40,8 @@ from app.ScriptingFiles.FullDataScript.contracts.util import clean_text as _clea
 from psycopg2.extensions import cursor as PgCursor
 from psycopg2.extras import Json, execute_values
 
-DEFAULT_FIRST_SEASON = 2008
-DEFAULT_LAST_SEASON = 2025
+DEFAULT_FIRST_SEASON = HistoricalContractOptions().first_season
+DEFAULT_LAST_SEASON = HistoricalContractOptions().last_season
 CAPSPACE_SOURCE = ProfileSource.CAPSPACE
 
 STAT_SEASONS_CTE = """stat_seasons AS (
