@@ -597,4 +597,39 @@ Phase-3 local deliverables and acceptance gates are complete. Publication and
 required hosted checks follow. This does not complete logging phase 4/5, hosted
 capture/retention/access/limits acceptance, or the existing phase-7 semantic audit.
 No production promotion or manual PR merge is part of this acceptance.
+
+## Phase 3 publication and phase 4 start
+
+Published verified head `3453a6c10ff2a3f3a588e0c739a6bf97105299b8` as non-draft
+[#169](https://github.com/ecillie/hockey-analytics/pull/169), targeting `Dev`.
+Dev workflow `41277244180`, both Vercel previews and all required checks passed.
+Automation merged it at `2026-11-01T05:37:00Z` as
+`0d1aaa2889e193b165082af24d7104be522b6570`. No CI fixes or manual merge were
+needed. Probe containers were removed; disposable PostgreSQL remains available
+for following local verification, and the unrelated existing container is intact.
+
+Started `feature/logging-04-frontend` from freshly fetched `origin/Dev` at that
+merge. Its first checkpoint adds the shared pure browser threshold parser and
+severity policy. Missing settings default to INFO; all five standard levels accept
+case/whitespace normalization, and empty/unknown values fail without echoing the
+input. Vite validates `VITE_LOG_LEVEL` through that same parser while loading its
+configuration. The Node TypeScript project explicitly includes this shared source
+module; coverage inclusion/exclusions and thresholds remain unchanged.
+
+Under Node 24.22.2, contract validation, lint, **76 tests at 100% measured coverage**,
+and production build pass. A real build with an invalid synthetic value fails
+with only controlled choices. A normalized DEBUG build with the live API selector
+also passes. An initial combined validation accidentally applied live-API mode to
+route tests that require mock data; the successful final run uses mock mode for
+tests and switches only the build to live-API mode. Neither source behavior nor
+test expectations were changed to accommodate that environment mistake.
+
+This is an unpublished phase-4 checkpoint. Runtime console delivery, bounded safe
+fields, server request-ID correlation, API failure ownership, global listeners,
+render fallback and associated behavior tests remain. React root error callbacks
+must join that ownership model to prevent raw default console reports; the
+[React createRoot reference](https://react.dev/reference/react-dom/client/createRoot)
+and installed React DOM types confirm caught, uncaught and recoverable callbacks.
+The React best-practices skill is being used for initialization/listener and
+component review. No frontend logging or phase-4 acceptance is claimed yet.
 The dedicated checkpoint PostgreSQL container was removed after verification.
