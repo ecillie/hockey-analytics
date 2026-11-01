@@ -244,6 +244,7 @@ The official [Vercel Python runtime source](https://github.com/vercel/vercel/blo
 uses vendored Uvicorn for ASGI lifespan, with access logging disabled and
 `log_config=None`. Its root IPC handler can render raw exception text, which is
 why application/Uvicorn events use the safe stderr path without replacing the
-platform root handler. The local Docker/ASGI probes verify this ownership design;
-actual deployed log retention, limits and delivery still require phase-5 hosted
-acceptance. Do not infer those settings from a successful preview build.
+platform root handler. The local Docker/ASGI probes verify this ownership design.
+For environments with application logging enabled, validate deployed delivery,
+retention and platform limits separately; a successful preview build does not
+verify those settings. Application logging remains disabled in nonprod and prod.

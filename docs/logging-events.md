@@ -1,8 +1,9 @@
 # Logging event owners
 
-Implemented Python behavior through logging phase 3 and browser behavior in
-phase 4. Hosted retention/access/limit acceptance remains phase 5. Python diagnostics use stderr;
-requested CLI reports and offline migration SQL retain their stdout contracts.
+Python diagnostics use stderr; requested CLI reports and offline migration SQL
+retain their stdout contracts. Application log delivery is disabled for
+`ENV=nonprod` and `ENV=prod`, including browser builds made with those values.
+Dev uses the configured log levels. Native platform telemetry has its own owners.
 
 ## Browser
 
@@ -148,4 +149,4 @@ locals, SQL parameters and payloads are omitted. Records default to 8 KiB with
 bounded strings, frames and exception chains, including explicit truncation.
 Secondary cleanup diagnostics retain the primary exception. Formatting/delivery
 failures use a safe fallback without raw logging error dumps. Hosted sink limits
-and retention still require phase-5 acceptance.
+and retention are controlled by the hosting platform.
