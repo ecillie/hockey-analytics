@@ -136,9 +136,23 @@ release PR routing and manually merged Prod promotions by following
 The Vercel project root remains `backend/`, and `index.py` imports the installed
 `app.main` package. Generated `backend/requirements.txt` pins runtime dependencies
 and ends with `.` to build and install the backend distribution from that root.
-It works without a workspace lockfile or editable installation in the deployment
-context. Keep this fallback until the hosted builder's workspace discovery has
-been verified. `pyproject.toml` excludes `src/app/ScriptingFiles` from both the
+The explicit `installCommand` in `backend/vercel.json` runs
+`uv pip install --no-sources -r requirements.txt` in Vercel's build virtualenv.
+This installs only API dependencies and the non-editable backend distribution,
+without selecting the parent workspace's ML/dev groups or editable source paths.
+The normal repository workspace and lock remain unchanged.
+
+Hosted preview `dpl_7T8tHgDrXzeDUEBvrGmLwwZvhgFY` built successfully but failed at
+cold start: deferred uv installation referenced a missing `_uv/backend` workspace
+path. A custom install keeps dependencies in the function artifact instead of
+replaying that workspace lock at runtime. This follows the builder's
+[custom-install handling](https://github.com/vercel/vercel/blob/main/packages/python/src/index.ts)
+and [dependency bundling policy](https://github.com/vercel/vercel/blob/main/packages/python/src/dependency-externalizer.ts).
+Verify the hosted runtime after changing this configuration; a successful build
+alone is insufficient. `scripts/verify-packages.sh` also executes the configured
+install command in a fresh virtualenv with the parent workspace present, then
+checks imports from outside the checkout. `pyproject.toml` excludes
+`src/app/ScriptingFiles` from both the
 runtime wheel and source distribution; ignore rules exclude jobs, datasets,
 and archived loaders from upload, and `excludeFiles` removes source trees from
 the final function. Docker installs the same distribution and removes its build

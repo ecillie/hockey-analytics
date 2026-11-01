@@ -687,3 +687,41 @@ prove hosted API capture, retention, access or platform limits. Those checks and
 the complete phase-7 semantic audit remain required before release completion.
 Historical untracked `plan.md` remains untouched. Phase 4 is ready for a non-draft
 PR targeting Dev; no deployment or manual merge is performed by this record.
+
+## Phase 4 merge and phase 5 hosted dependency checkpoint
+
+Non-draft [PR #171](https://github.com/ecillie/hockey-analytics/pull/171), head
+`d67bc3fefe1b2401741462409485e92f1660dd0d`, passed Dev workflow `41278993774`,
+frontend checks and both Vercel preview builds. Automation merged it at
+`2026-11-01T06:00:38Z` as `23dcfb2e2fd865750823b6372afa059c118baff3`.
+Started `feature/logging-05-acceptance` from freshly fetched origin/Dev at that
+merge. No manual merge or CI repair was needed for phase 4.
+
+Read-only Vercel dashboard inspection found a hosted runtime failure despite the
+green backend preview build. Deployment `dpl_7T8tHgDrXzeDUEBvrGmLwwZvhgFY`, source
+`d67bc3f`, was Ready, but Runtime Logs recorded cold-start installation failures
+at `2026-11-01T06:00:34Z` and `06:00:36Z`. The platform's deferred uv sync used the
+parent workspace lock and could not find `file:///var/task/_uv/backend`. The
+application did not start, so these platform failures prove neither application
+logging nor application severity behavior. The connector returned no teams;
+existing authenticated browser access provided the dashboard evidence. No
+permissions, credentials or protection settings were changed.
+
+The backend configuration now explicitly installs generated API requirements
+with `uv pip install --no-sources -r requirements.txt` in the build virtualenv.
+The backend distribution is built normally; no repository dependency versions,
+lock, environment selectors or runtime source paths change. Vercel's builder
+source shows custom installation uses a fresh virtualenv and bundles dependencies
+instead of deferring this workspace lock to cold start. Actual hosted validation
+of the fix remains pending; do not infer success from source inspection alone.
+
+The strengthened package gate runs the configured install command with the
+parent workspace present, then imports the result outside the checkout. It
+passed with 20 API packages, the installed 18-path API and shared logger, no
+editable source dependency, and no ML, ingestion or test packages. Both wheel/
+sdist and existing API/ML isolated installs and ML metric gate passed. A first
+test-only installed-path assertion compared macOS `/var` with `/private/var`;
+resolving both paths corrected that assertion. Final transcript:
+`/private/tmp/tradevalue-logging05-packages.txt`. Full combined checks have started
+against new disposable database `tradevalue_test_logging05_candidate`; their
+results and the final semantic audit remain pending.
