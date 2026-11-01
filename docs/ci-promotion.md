@@ -2,15 +2,15 @@
 
 TradeValue uses four workflows:
 
-- `Route pull request` reads the PR title and sets its base to the highest
-  matching branch. A title starting with `Hotfix` (case insensitive) targets
-  the highest `Hotfix-x.y.z` branch. A title containing `hotfix` later fails;
-  every other title targets the highest `Release-x.y.z` branch. For example,
-  with `Release-1.0.1` and `Hotfix-1.0.2`, `Hotfix: Fix cap calculation`
-  targets `Hotfix-1.0.2`, while `Add player search` targets `Release-1.0.1`.
-  The router fails clearly when the required branch does not exist.
-- `Dev` still validates the existing integration branch. A successful direct
-  push to `Dev` opens a promotion PR into the highest `Release-x.y.z` branch.
+- `Route pull request` sends every feature-branch PR to `Dev`, regardless of
+  its title or initially selected base. Only `Dev` and versioned
+  `Release-x.y.z` / `Hotfix-x.y.z` heads are treated as promotion branches.
+  A feature PR titled `Hotfix: Fix cap calculation` still targets `Dev`.
+  Existing release/hotfix promotion PRs into `Prod` retain that destination.
+- `Dev` validates feature PRs and the integration branch. A successful push
+  to `Dev`, including a merged feature PR, promotes to the highest branch of
+  the configured type: `Release-x.y.z` or `Hotfix-x.y.z`. A manual workflow run
+  can explicitly choose either type after the same CI checks pass.
 - `Release` validates and auto-merges pull requests into `Release-x.y.z` and
   `Hotfix-x.y.z` branches. Its required check also verifies that the PR title
   matches the branch type and that the base is the latest branch of that type.
@@ -21,25 +21,79 @@ TradeValue uses four workflows:
 
 ## Release and patch branches
 
+Every PR from a feature branch must target `Dev`. Start feature branches from
+current `origin/Dev` and create their PRs with `gh pr create --base Dev`.
+Feature branches do not target release, hotfix, or production branches directly.
+This rule also applies to documentation, cleanup, remediation, and urgent-fix
+feature branches; titles never override it.
+
 Create the next ordinary release branch as `Release-x.y.z`, such as
 `Release-1.1.0`. Use the latest deployed release or `Prod` as its starting
 point, and include any intended work still present only on `Dev`. The highest
-versioned release branch receives ordinary PRs, so create a higher branch only
-when it should become the active destination. Numeric sorting means
+versioned release branch receives promotion PRs from `Dev`, so create a higher
+branch only when it should become the active promotion destination. Numeric
+sorting means
 `Release-1.10.0` follows `Release-1.9.0`.
-Dev pushes target the same highest release branch. An older Dev promotion PR
-cannot pass the release check once a newer branch becomes active.
+Dev pushes target the highest branch of the configured type. An older Dev
+promotion PR cannot pass the release check once a newer branch of that type
+becomes active.
+
+## Selecting normal or hotfix promotions
+
+Automatic promotions after a successful Dev push use the repository Actions
+variable `DEV_PROMOTION_TYPE`. Set it to `release` or `hotfix`; an unset variable
+defaults to `release`. Configure it before merging a feature PR into `Dev`:
+
+```bash
+gh variable set DEV_PROMOTION_TYPE --body hotfix
+```
+
+For a one-time choice, open **Actions → Dev → Run workflow**, select branch
+`Dev`, and choose `release` or `hotfix` from the `release_type` dropdown. The
+equivalent CLI command is:
+
+```bash
+gh workflow run dev.yml --ref Dev -f release_type=hotfix
+```
+
+The workflow runs CI before promotion. Manual runs on another branch fail
+promotion. The dropdown overrides the repository setting for that run only;
+later automatic Dev pushes use `DEV_PROMOTION_TYPE` again. Restore normal
+automatic releases after the hotfix cycle with:
+
+```bash
+gh variable set DEV_PROMOTION_TYPE --body release
+```
+
+The automation selects the highest existing numeric version of the chosen
+branch type and fails if none exists. Normal titles are
+`Promote Dev to Release-x.y.z`; hotfix titles are
+`Hotfix: Promote Dev to Hotfix-x.y.z`. The router and release validation use
+these matching titles for Dev promotions, while feature PRs always target Dev.
+
+If one Dev promotion PR is already open, the workflow reuses it. Changing type
+or selecting a newer version retargets that PR and updates its title and body.
+Any enabled auto-merge is disabled before that change; the existing Release
+workflow can enable it again only after the new destination's checks pass.
+Multiple open Dev promotion PRs cause a failure requiring manual resolution.
+No new PR is created when the chosen destination already contains Dev.
+
+A hotfix promotion includes **all pending changes on Dev**, just like a normal
+release promotion. It does not isolate the commits of a hotfix feature PR.
+Confirm that all pending Dev changes belong in the patch before choosing hotfix.
+The automation creates no release branches and never manually merges into Prod.
+
+## Dedicated hotfix branches
 
 For an urgent fix to the version already in production, branch from `Prod` as
 `Hotfix-x.y.z`, where `x.y.z` is the next patch version of the production line.
 For example, while `1.1.0` is the active release and `1.0.0` is in production,
-name the patch branch `Hotfix-1.0.1`. Start the fix PR title with `Hotfix`; the
-router selects the highest hotfix branch automatically. Start the fix's working
-branch from that hotfix branch so the PR contains only the intended patch.
-Omit `hotfix` from ordinary PR titles so they target the current release. The
-hotfix branch's push opens a `Hotfix-1.0.1 → Prod` PR for manual merge. Forward-port
-the fix to the active release with a separate PR so it is retained in
-the next ordinary release.
+name the dedicated patch branch `Hotfix-1.0.1`. Dedicated hotfix branches are
+release-management branches; a feature branch for an urgent fix still opens
+its PR into `Dev`. A `Hotfix` title does not route a feature PR to a hotfix
+branch. The dedicated hotfix branch's push opens a
+`Hotfix-1.0.1 → Prod` promotion PR for manual merge. Any feature work carrying
+the fix forward must also target `Dev` so the normal release promotion retains it.
 
 Create the hotfix branch from `Prod` only after this workflow has reached
 `Prod`; otherwise a branch made from an older `Prod` commit will not contain
@@ -171,18 +225,38 @@ and [required-status-check documentation](https://docs.github.com/en/repositorie
    auto-merge on any already open Prod PRs and retire the old `NonProd` ruleset
    after its open PRs are handled. The router starts working once it is on
    `Prod`.
-2. Open an ordinary PR with a title that omits `hotfix`. Confirm the router
-   targets the highest `Release-x.y.z` branch, `Release required` succeeds,
-   and GitHub auto-merges it into that branch.
-3. Confirm the release branch opens a PR into `Prod`, `Prod required` succeeds,
-   and a person merges it manually.
-4. Create a hotfix branch from `Prod`. Open a PR whose title starts with
-   `Hotfix` and confirm the router targets the highest hotfix branch. Confirm
-   its promotion PR into `Prod` also waits for manual merge.
+2. Open a feature PR into `Dev`. Confirm the router keeps `Dev` even if the
+   title contains `Hotfix` or the PR initially targets a release branch.
+   Confirm `Dev required` succeeds before automatic merge into `Dev`.
+3. With `release` selected, confirm `Dev` opens a promotion PR into the highest
+   `Release-x.y.z` branch and `Release required` succeeds. Then confirm the release branch opens a
+   PR into `Prod`, `Prod required` succeeds, and a person merges it manually.
+4. Create a dedicated hotfix branch from `Prod` and choose `hotfix` for a Dev
+   promotion. Confirm `Dev` targets the highest hotfix branch with a `Hotfix:`
+   title. Confirm its later promotion PR into `Prod` retains that base and waits
+   for manual merge. Every feature
+   branch used for related work must still target `Dev`.
 
 If a required job fails or is cancelled, the destination pull request remains
 open. Rerun the failed jobs or push a corrective commit. Prod promotion remains
 manual even after its checks pass.
+
+Validate the automation locally with:
+
+```bash
+bash scripts/test-pr-routing.sh
+bash scripts/test-dev-promotion.sh
+```
+
+These checks also run in reusable CI. They use a fake GitHub CLI and do not
+change real PRs. They cover feature targets and titles, both promotion types,
+numeric version selection, missing branches, existing PR reuse and retargeting,
+auto-merge reset, ambiguous promotions, and release validation. The router runs
+from the repository's
+default branch through `pull_request_target`; a router change takes effect
+after the normal promotion process delivers it to `Prod`.
+The updated manual-run input must also reach the default branch before it is
+available in GitHub's Run workflow interface.
 
 ## Database migration release gate
 
