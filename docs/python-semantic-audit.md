@@ -2,7 +2,7 @@
 
 This is an incomplete file-by-file review, not phase-7 acceptance. Scope is all
 237 tracked/new Python files in the acceptance worktree, with source digests
-updated after `c7208fc`. Digests identify exactly what was inspected; changed
+updated after `402946a`. Digests identify exactly what was inspected; changed
 files require re-review.
 Generated artifacts, environments and retired `.py.txt` loaders are not source
 entries. The structural gate separately checks all supported executable roots.
@@ -10,7 +10,7 @@ entries. The structural gate separately checks all supported executable roots.
 Read `~/.codex/python-guidelines.md` before this review. Mechanical lint, format,
 type, structural, test and package results do not waive semantic decisions.
 18 empty files and 20 module-docstring-only package files have no executable
-behavior to assess. 161 other files have received the content review
+behavior to assess. 174 other files have received the content review
 recorded below; unresolved layout/boundary decisions are explicit. Every other
 nonempty file remains pending.
 
@@ -75,11 +75,15 @@ Record findings and fixes before assigning final acceptance.
   evidence and typed native validator leaves are resolved in the resource-edge
   checkpoint. Three disposable engine fixtures also guard setup before yield,
   and their transactions reuse production ownership rather than copying it.
-- Source-inspection helper ROOT paths still canonicalize during import; defer
-  that filesystem work and use explicit None guards. The real HTTP/log verifiers
-  need exact ID/error-severity checks and stronger response-body evidence before
-  final combined acceptance. Remaining legacy option/error/helper role placement
-  and framework/historical dispositions remain explicit.
+- Inspection helpers no longer resolve/scan files during ordinary import, and
+  the real HTTP/log verifiers now enforce exact IDs, strict bodies, severity,
+  mode thresholds and absence of orphan errors. Actual logged correlation counts
+  distinguish the intentionally silent INFO health request.
+- Remaining inspected-test findings include legacy expected-input/body arrangement,
+  shared mutable decorator examples, migration test engine ownership and generated
+  host-program main setup. OpenAPI/ML path tests still resolve metadata at import.
+  Complete those with the remaining file review, legacy role/interface work and
+  precise framework/historical dispositions; green checks do not waive them.
 
 ## Diagnostic snapshot and worker findings resolved
 
@@ -100,7 +104,7 @@ existing public worker argument and default limit remain compatible.
 
 Required framework and historical-migration dispositions above remain open.
 Do not rewrite frozen history or introduce a global-state approximation.
-The 38 remaining nonempty files still require complete semantic review;
+The 25 remaining nonempty files still require complete semantic review;
 passing mechanical and behavior gates does not accept them implicitly.
 
 ## File ledger
@@ -237,18 +241,18 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `backend/src/app/shared/observability/sinks.py` | `d88c98db6900` | Reviewed: minimal runtime-checkable stream Protocol, frozen borrowed stream wrapper and one bounded fallback write on ordinary sink failure. No recursive logging/raw-record error report; cancellation/interrupt is not swallowed. Handler construction validates limits and remains owned by configured entrypoints. |
 | `backend/src/app/shared/observability/tests/__init__.py` | `0bd51b497d66` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/shared/observability/tests/app_probe.py` | `65720d0ca9e8` | Reviewed: excluded read-only probe factory adds deterministic native numeric and streaming failures to the production app only when called. Stream yields its first chunk before native conversion failure; endpoint metadata stays outside OpenAPI. No module-level app or import-time resource startup. |
-| `backend/src/app/shared/observability/tests/fakes.py` | `b86dd91a0c02` | Reviewed: source-only factories create independent native records/errors, bounded cause chains and real HTTP/SQLAlchemy payload boundaries. MetadataAccessError intentionally raises an injected fault at native attribute access to reproduce annotation failures; returning a policy violation cannot simulate that contract. Fault doubles are excluded from production artifacts; no import-time resources. |
+| `backend/src/app/shared/observability/tests/fakes.py` | `aa1939af3d10` | Re-reviewed: LogCaptureScenario binds fixture-owned artifact/report buffers and immutable mode/options. Existing independent native record/error factories, bounded cause chains and intentional metadata fault doubles remain excluded from artifacts, without import-time I/O or runtime handler installation. |
 | `backend/src/app/shared/observability/tests/fixtures.py` | `9acfed4652a5` | Reviewed: native logger/excepthook settings are isolated with pytest monkeypatch and per-fixture handler ownership; only a newly installed diagnostic handler is closed. No logging configuration or database/resource acquisition occurs at module import. |
 | `backend/src/app/shared/observability/tests/lifecycle.py` | `747a33dcdd67` | Reviewed: frozen resource/transport bindings own mutable observation buffers and native engine handles. Faults occur at explicit native construct/dispose/receive boundaries; one outer timeout bounds the real ASGI exercise. No background tasks or import-time resources. |
 | `backend/src/app/shared/observability/tests/requests.py` | `5f8a1b294d3c` | Reviewed: fixture-local ASGI scope/transport/application observations and authentic native Response/Route boundaries. Streaming and injected faults retain send order; interleaving uses native sleep(0), and outer timeout plus TaskGroup bounds concurrent exercises. Mutable scope inputs are intentional per-request buffers. |
-| `backend/src/app/shared/observability/tests/verify_http.py` | `9dbb5357811a` | Reviewed content: main-owned probe options/logging, native scoped HTTP client and interrupted-stream assertions exercise six flows and correlate response IDs. Finding: IDs are checked for length rather than exact lowercase hex, and only unexpected-error/stream body contents are asserted; strengthen accepted body/schema evidence before final combined acceptance. |
-| `backend/src/app/shared/observability/tests/verify_logs.py` | `c4c01b8e8959` | Reviewed content: main-owned options/logging and explicit local file reads; captured events match per-response IDs, routes, terminal/error counts, bounds, secret exclusion, mode filtering and startup severity/exit. Finding: assert exact error severities and identifier shape rather than relying on event names and upstream generation alone; broad dict annotations can also be narrowed. |
+| `backend/src/app/shared/observability/tests/verify_http.py` | `596cc1a1d318` | Reviewed/fixed: typed probe reports and exact lowercase 32-hex IDs reject forwarded valid caller IDs; headers include dummy authorization/cookie markers to verify non-emission. Native health/season/error bodies validate strictly, missing-route body remains exact native output, nonempty/current season is enforced, IDs are unique and streaming bytes/interruption stay exact. No import resource startup. |
+| `backend/src/app/shared/observability/tests/verify_logs.py` | `c07777b3e39b` | Reviewed/fixed: captured events/reports validate through typed native boundaries, with exact IDs, level names, per-event severities, mode thresholds and no orphan/duplicate errors. Service ready/stopped stay INFO and request errors ERROR. Correlation count now reports actual logged IDs: five at INFO with health suppressed, six at DEBUG. Local file reads/logging remain main-owned. |
 | `backend/src/app/shared/observability/util.py` | `72ebc71f109f` | Reviewed/fixed: narrow metadata guards contain BaseException from untrusted attribute access only. Missing/unreadable metadata marks exception snapshots truncated; ordinary application cancellation/interrupt remains owned by the caller. Scope and native route extraction remain request-local. |
 | `backend/src/app/shared/smoke.py` | `6aca1c758286` | Reviewed: shared explicit payload predicates and typed operational exception fields; raw response/body values are failure data, not emitted diagnostic fields. No transport effects or state. |
 | `backend/src/app/shared/tests/__init__.py` | `bb3c948c925e` | Reviewed: module docstring only; no executable behavior. |
-| `backend/src/app/shared/tests/entrypoints.py` | `7fa794d77107` | Reviewed content: immutable source/CLI/archive manifests and AST-only inspection, without executing scanned files. Finding: ROOT resolves a filesystem path at import; defer canonicalization to an explicit source-inspection boundary. Native spec/module guards should use explicit None checks and the import walker can use flat independent guards. |
+| `backend/src/app/shared/tests/entrypoints.py` | `6d2ae81cf173` | Reviewed/fixed: source roots derive from absolute module-file metadata without redundant filesystem resolution at import. AST import traversal uses independent guards and explicit None checks. Directory scans occur only in explicit inspection calls; supported-module discovery now runs through pytest collection rather than a module decorator. |
 | `backend/src/app/shared/tests/fakes.py` | `67bf73843c47` | Reviewed: source-only typed catalog/migration/HTTP/native-failure probes keep mutable observations local and return independent native result values. Callable actions read injected fields; explicit throw points reproduce forbidden network/resource activity. No resource creation or module-level mutable application state. |
-| `backend/src/app/shared/tests/migrations.py` | `ee59f171cdcc` | Reviewed content: explicit revision loading and bounded native subprocess verification preserve disposable Dev URL/environment selection and diagnostic capture. Finding: ROOT canonicalization currently performs filesystem work at import; defer it and replace the spec/loader truthiness assertion with explicit None checks. Revision execution remains an explicit fixture action. |
+| `backend/src/app/shared/tests/migrations.py` | `65a7fed2c6bd` | Reviewed/fixed: root/revision paths are pure module metadata at import and spec/loader checks are explicit. Revision loading and bounded subprocess execution remain explicit actions, preserve Dev/disposable URL selection and capture diagnostics without executing scanned source during ordinary import. |
 | `backend/src/app/shared/tests/python_rules.py` | `b1d328f47d4c` | Reviewed: frozen source/rule/line scenario values contain only immutable strings/tuples and refer to the canonical Rule enum; no executable source loading, mutable state or import I/O. |
 | `backend/src/app/shared/tests/resources.py` | `fd4837656831` | Re-reviewed/fixed: cursor/connection probes and frozen scenario holders explicitly own mutable observations and borrowed native handles. Query/close failure scripts preserve cause and cleanup identity. TransactionScenario now uses shared transaction/cursor guards; native HTTP buffers retain explicit fixture teardown. These are source-only resource probes, not immutable domain snapshots. |
 | `ml/src/ml/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
@@ -299,16 +303,16 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `tests/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
 | `tests/backend/__init__.py` | `5c6f62d24e39` | Reviewed: module docstring only; no executable behavior. |
 | `tests/backend/conftest.py` | `57e1ff60d75a` | Reviewed: immutable explicit backend concept fixture-plugin manifest only; no direct fixture construction, environment changes or I/O at import. |
-| `tests/backend/test_alembic_logging.py` | `2366bc184922` | Pending semantic review. |
+| `tests/backend/test_alembic_logging.py` | `2366bc184922` | Reviewed content: bounded native Alembic processes verify offline SQL stdout, stable failures, invalid settings before connection and preserved programmatic error/host-handler ownership. Fixture scopes are appropriate for shared level/format cases. Finding: generated programmatic host logging setup can be wrapped in explicit main, preserving its native host-ownership proof. |
 | `tests/backend/test_api.py` | `5ce9433e0198` | Pending semantic review. |
 | `tests/backend/test_api_logging.py` | `e3a420fe55f8` | Pending semantic review. |
 | `tests/backend/test_api_service.py` | `0f1f13576979` | Pending complete semantic review; updated PlayerQuery scenarios are fixture-owned. |
 | `tests/backend/test_capspace.py` | `aaf46338a807` | Pending semantic review. |
 | `tests/backend/test_capspace_postgres_integration.py` | `fc816dd7ade8` | Pending semantic review. |
-| `tests/backend/test_cli_contracts.py` | `93090bedf255` | Pending semantic review. |
-| `tests/backend/test_command_cancellation.py` | `a67078ec6e12` | Pending semantic review. |
+| `tests/backend/test_cli_contracts.py` | `93090bedf255` | Reviewed content: fixture-injected actions protect help/usage-before-resources, all supported main exits/stdout, roster orchestration order, modes, transaction cleanup and attempt budgets. Findings: some class parameter templates contain mutable argv/exception objects and should construct fresh fixture-owned values; ensure collaborator bundles remain frozen rather than shared state. |
+| `tests/backend/test_command_cancellation.py` | `a67078ec6e12` | Reviewed content: bounded fresh processes prove INFO/DEBUG, JSON/text, native cancellation/SIGINT exits, hook ownership and safe secondary cleanup metadata. Fixtures arrange error chains and source inputs. Embedded program setup remains a source-only host entrypoint; finish exact script/main ownership disposition together with other test programs. |
 | `tests/backend/test_command_logging.py` | `4a1ee6437e7f` | Pending semantic review. |
-| `tests/backend/test_config.py` | `7624d1154587` | Pending semantic review. |
+| `tests/backend/test_config.py` | `7624d1154587` | Reviewed: fixture-owned explicit environment mappings cover scoped URL precedence, escaped components, required values, pool defaults and CORS normalization. No real secrets, database connections, environment mutation or imports with configuration I/O; native expected values are fixed assertions. |
 | `tests/backend/test_container_smoke.py` | `02fdc5a44940` | Reviewed: native HTTPError/BytesIO fixtures cover handled status, invalid bytes, read/close failures, cancellation, interruption and successful/decode-failed responses; no real network. Readiness and contract specimens are read-only, observations are fixture-owned. |
 | `tests/backend/test_contract_domain.py` | `a992295230c4` | Pending semantic review. |
 | `tests/backend/test_contract_lifecycle.py` | `b823831689bb` | Pending semantic review. |
@@ -316,15 +320,15 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `tests/backend/test_contract_parsing.py` | `3a3ca5de4c15` | Pending semantic review. |
 | `tests/backend/test_database_cleanup.py` | `df836895db1a` | Re-reviewed/fixed: fixture-arranged native failure types, cursor/connection observations and 42 plan/apply/summary cases preserve primary/cause and cleanup order, including cancellation, interrupt and close-only propagation. Borrowed connections stay open; owned summary transactions commit/rollback/close correctly. Existing hostile-note and formatter regressions remain intact. |
 | `tests/backend/test_database_transactions.py` | `2c682bdcfe33` | Pending semantic review. |
-| `tests/backend/test_historical_options.py` | `6b5661805392` | Pending semantic review. |
+| `tests/backend/test_historical_options.py` | `6b5661805392` | Reviewed: frozen option/limit fixtures verify canonical defaults and actual compatibility exports, inclusive boundaries, mutation rejection and caller overrides. Parser Namespace is intentionally inspected as parser output, not passed through an application main boundary. |
 | `tests/backend/test_ingestion.py` | `dffb4dca8d34` | Pending semantic review. |
 | `tests/backend/test_ingestion_logging.py` | `56c6d291e880` | Pending semantic review. |
 | `tests/backend/test_lifecycle_logging.py` | `86fa51212d53` | Pending semantic review. |
-| `tests/backend/test_logging_policy.py` | `223faf441435` | Pending semantic review. |
+| `tests/backend/test_logging_policy.py` | `2a75b45b3c20` | Reviewed content: settings/severity/bounds/secret tests and native input faults cover owned rendering/delivery semantics. Added real-capture fixtures reject corrupted severity, IDs, orphan errors and response bodies; valid native contracts remain accepted. Finding: the older Hypothesis secret test still constructs its formatter/record input in the body; generate a complete external scenario instead. |
 | `tests/backend/test_logging_startup.py` | `762d56384b27` | Pending semantic review. |
-| `tests/backend/test_migration_tooling.py` | `33e29174d135` | Pending semantic review. |
-| `tests/backend/test_openapi_contract.py` | `205f0a706841` | Pending semantic review. |
-| `tests/backend/test_operational_errors.py` | `001eb514484d` | Pending semantic review. |
+| `tests/backend/test_migration_tooling.py` | `2e87ba82ea8f` | Reviewed content: real disposable PostgreSQL lifecycle verifies preflight, frozen checksum, offline/online upgrade, idempotence, downgrade and schema/reference contracts. Source root no longer resolves during import. Findings: legacy direct-body schema/engine arrangement, admin/temporary engine cleanup around pre-yield failures, and shared mutable response examples should move under fixture-owned resource/scenario boundaries. |
+| `tests/backend/test_openapi_contract.py` | `205f0a706841` | Reviewed content: committed parity and all 18 public operation success/error refs are checked. Finding: source ROOT still resolves during import; make it pure module metadata and move expected artifact arrangement into a fixture while retaining actual schema generation as the act. |
+| `tests/backend/test_operational_errors.py` | `001eb514484d` | Reviewed content: explicit empty-setting semantics, native failure/cancellation/cause retention, cleanup order and caller-specific smoke policies are fixture-driven. Finding: Backfill CommandOptions construction still occurs in the test body and its collaborator tuple can become a frozen scenario holder. |
 | `tests/backend/test_postgres_integration.py` | `189cc1a86e8d` | Pending complete semantic review; updated PlayerQuery scenarios are fixture-owned. |
 | `tests/backend/test_python_rules.py` | `e5fab98155b0` | Pending semantic review. |
 | `tests/backend/test_request_logging.py` | `1105df66f125` | Pending semantic review. |
@@ -333,7 +337,7 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `tests/backend/test_source_identity.py` | `fe3873e02c25` | Pending semantic review. |
 | `tests/backend/test_source_identity_postgres.py` | `d4c5cd014abc` | Pending semantic review. |
 | `tests/backend/test_source_ingestion.py` | `596ab7875b55` | Pending semantic review. |
-| `tests/backend/test_supported_entrypoints.py` | `5fd5eba60222` | Pending semantic review. |
+| `tests/backend/test_supported_entrypoints.py` | `d8b59975c75b` | Reviewed/fixed: fresh helper execution rejects path resolution/scans/reads during ordinary import. Full source compilation/archive/import checks use explicit temporary outputs and bounded subprocesses; module enumeration is a pytest collection callback. Source roots and immutable manifests preserve the supported CLI/import inventory. |
 | `tests/backend/test_transaction_logging.py` | `b57666912f9e` | Pending semantic review. |
 | `tests/conftest.py` | `2084ef23201a` | Reviewed: collection enforces integration ownership before work and otherwise applies unit isolation. Native sockets are guarded only inside unit fixtures; integration settings are scoped to a disposable named Dev database and restored by monkeypatch. Session sklearn import intentionally initializes native runtime before collection; no database connection or source network request occurs at import. |
 | `tests/ml/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
@@ -341,6 +345,6 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `tests/ml/test_boundaries.py` | `5d4dfa12759d` | Reviewed: fixtures own settings/resources/arrays and immutable class column metadata; borrowed/preloaded reader tests, snapshot mutation and artifact round trips preserve input ownership. Arrangement removed from invalid-shape acts; normal imports replace inline module discovery. |
 | `tests/ml/test_features.py` | `fcf5144a399d` | Reviewed: fixture-owned scenarios, named percentile regressions, independent position-code contract, input/index preservation and meaningful numerical/grain/leakage assertions. No external resources. |
 | `tests/ml/test_logging.py` | `ac7c5f639499` | Pending semantic review. |
-| `tests/ml/test_metadata.py` | `d29807141a1a` | Pending semantic review. |
-| `tests/ml/test_paths.py` | `f3fb2d5bd22e` | Pending semantic review. |
-| `tests/ml/test_valuation.py` | `f1f5ced5409e` | Pending semantic review. |
+| `tests/ml/test_metadata.py` | `d29807141a1a` | Reviewed content: immutable nested model metadata, exact serialization, distinct typed failure context, temporal/metric boundaries and finite Hypothesis regression inputs are covered. Native frames/artifacts are built in fixtures. Remaining mutable decorator templates should become immutable descriptions or fresh owned copies; preserve public string-key metric behavior. |
+| `tests/ml/test_paths.py` | `f3fb2d5bd22e` | Reviewed content: environment/cwd fixtures verify default artifact discovery independently of checkout location and explicit external destinations. Finding: source_directory still resolves during class definition/import; use module-file path metadata without filesystem work. |
+| `tests/ml/test_valuation.py` | `f1f5ced5409e` | Reviewed content: temporal leakage/zero-next-season, deterministic native training, model round-trip, prediction/metric direction and metadata contracts are exercised. Findings: invalid prediction arrays are constructed in decorator data, and some metric/artifact input arrangement remains in bodies; move those inputs to fixture/scenario ownership without changing behavior. |

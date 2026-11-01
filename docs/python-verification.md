@@ -80,6 +80,20 @@ schema/API, ML and rebuilt INFO/JSON + DEBUG/text image checks pass. The ledger
 now has **38** pending test files and explicit helper/verification/role findings;
 this is still a checkpoint, not final phase-5/phase-7 acceptance.
 
+The verifier checkpoint removes redundant filesystem resolution from ordinary
+inspection-helper imports and moves source discovery into explicit pytest
+collection. HTTP probes now validate native response contracts, fresh lowercase
+32-hex request IDs and replacement of valid caller IDs. Log probes enforce
+per-event severity, mode thresholds, correlation and absence of orphan errors.
+Real container captures exercise the verifier itself, including corrupt inputs
+previously accepted. Fresh `tradevalue_test_logging05_verifiers_final2` passed
+**1,349 tests, zero skips**, **91.20%** coverage and the **100%** API/calendar
+gate. Isolated units passed **1,299**, with 50 integrations deselected. Static,
+schema/API, clean package/export and ML gates passed. Two-mode container probes
+passed against the unchanged verified API image. The ledger has **25** pending
+test files and explicit findings in inspected sources; hosted NonProd and final
+phase-5/phase-7 acceptance remain outstanding.
+
 The supported runtime is Python 3.12. Install the root uv workspace with
 `uv sync --locked --all-groups`. Runtime, ingestion, ML, and development
 requirements are generated from the same lock. Run these checks at the root:

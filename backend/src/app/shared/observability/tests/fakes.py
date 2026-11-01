@@ -1,10 +1,20 @@
 """Hostile values used to verify diagnostics never inspect payloads."""
 
 import logging
+from dataclasses import dataclass
 from email.message import Message
 from urllib.error import HTTPError
 
 from sqlalchemy.exc import OperationalError
+from app.shared.observability.tests.verify_http import ProbeReport
+from app.shared.observability.tests.verify_logs import ProbeMode, ProbeOptions
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class LogCaptureScenario:
+    mode: ProbeMode
+    options: ProbeOptions
+    report: ProbeReport
 
 
 class HostileValue:

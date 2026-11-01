@@ -18,6 +18,32 @@ import subprocess
 import sys
 import py_compile
 import pytest
+import importlib.util
+from pathlib import Path
+from app.shared.tests.fakes import StageOutcome
+
+
+class TestInspectionHelperImports:
+    @pytest.fixture(
+        params=[
+            pytest.param("app.shared.tests.entrypoints", id="entrypoint-inspection"),
+            pytest.param("app.shared.tests.migrations", id="migration-inspection"),
+        ]
+    )
+    def guarded_import(self, request, monkeypatch):
+        spec = importlib.util.find_spec(request.param)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        rejected = StageOutcome(
+            result=None, failure=AssertionError("filesystem work during import")
+        )
+        for name in ("resolve", "glob", "rglob", "read_text", "open"):
+            monkeypatch.setattr(Path, name, rejected)
+        return spec.loader, module
+
+    def test_import_does_not_resolve_or_scan_files(self, guarded_import):
+        loader, module = guarded_import
+        loader.exec_module(module)
 
 
 def test_complete_backend_application_compiles(tmp_path):
@@ -34,7 +60,7 @@ def test_supported_tree_does_not_reference_removed_orm_or_legacy_loaders():
         forbidden = sorted(
             name for name in imports if name == "app.models" or ".save_" in name
         )
-        if forbidden:
+        if len(forbidden) > 0:
             failures.append(f"{source.relative_to(ROOT)}: {', '.join(forbidden)}")
 
     assert failures == []
@@ -59,7 +85,13 @@ def test_supported_cli_manifest_matches_executable_modules():
     assert executable_modules == SUPPORTED_CLI_MODULES
 
 
-@pytest.mark.parametrize("module", find_full_data_modules())
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    if "module" in metafunc.fixturenames:
+        metafunc.parametrize(
+            "module", [pytest.param(name, id=name) for name in find_full_data_modules()]
+        )
+
+
 class TestSupportedIngestionImports:
     @pytest.fixture
     def environment(self):

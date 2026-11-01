@@ -1154,3 +1154,58 @@ combined acceptance. Legacy role/interface and precise framework/historical
 choices remain open, along with hosted NonProd success/mode/correlation evidence
 and final release acceptance. No acceptance PR or production promotion is made
 by this checkpoint.
+
+## Inspection imports and acceptance-verifier checkpoint
+
+Inspection-helper roots now derive from absolute module-file metadata without
+filesystem resolution at import. Source scans run only through explicit calls;
+pytest discovers supported modules during collection. Fresh-module import
+regressions failed twice before this fix and now pass with filesystem resolution,
+scans and reads forbidden.
+
+HTTP probes now validate native health, seasons and error contracts, exact safe
+messages, current-season membership and streaming bytes/interruption. Every flow
+sends a fresh valid caller ID and dummy authorization/cookie markers; returned IDs
+must be distinct lowercase 32-hex values and replace caller IDs. Captured events
+validate typed shapes, legal level names, exact event severities, mode thresholds
+and correlation, rejecting duplicate or orphan errors. Successful health remains
+silent at INFO. The reported correlation count now counts actual logged IDs:
+**five at INFO, six at DEBUG**, rather than reporting all six HTTP flows in both
+modes.
+
+Source-only fixtures retain real local-container INFO/DEBUG captures and their
+HTTP reports. Fixture-owned copies exercise malformed IDs, body contracts and
+severity/orphan corruption. The previous verifier accepted eight corrupt captures
+that the new checks reject. Fixture artifacts contain no database URLs or emitted
+secret markers; capture timestamps and random correlation IDs are local evidence.
+
+Final verification on Python 3.12.14:
+
+- Fresh migrated `tradevalue_test_logging05_verifiers_final2`: **1,349 passed,
+  zero skips**, **91.20%** aggregate coverage in **129.90 seconds**, with the
+  **100%** API/calendar gate. Isolated units: **1,299 passed**, 50 integrations
+  deselected, in **112.61 seconds**.
+- Locked sync, Ruff lint/format, ty, structural scope, dependency exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke,
+  clean API/Vercel/ML artifacts, exclusions and committed-model gates pass.
+- The distributed API/build inputs are unchanged from `402946a`; excluded test
+  support and fixtures require no new runtime image. The verified
+  `tradevalue-logging05-resource-edges:verified` image passed strengthened probes
+  against fresh `tradevalue_test_logging05_verifiers_probe_final`, as UID 10001.
+  INFO/JSON and DEBUG/text produced **15 / 22** events and **5 / 6** logged
+  correlations across six HTTP/stream flows each. Both shut down with exit **0**;
+  invalid startup produced CRITICAL and exit **3**. Probe containers were removed.
+- No dependency, public HTTP schema, frontend or committed-model changes.
+
+Transcripts use `/private/tmp/tradevalue-logging05-verifiers-` prefixes. Final
+full verification is `tradevalue-logging05-verifiers-final2-checks.sh`; final
+image verification is `tradevalue-logging05-verifiers-image-final-checks.sh`.
+Legacy corrupt-capture evidence is `tradevalue-logging05-legacy-verifier-evidence.txt`;
+import red evidence is `tradevalue-logging05-probe-imports-red.txt`.
+
+The semantic ledger records 237 files: 18 empty, 20 docstring-only, **174** other
+inspected and **25** pending test files. Inspected sources still have explicit
+arrangement, fixture ownership, role/interface and framework/historical findings.
+Hosted NonProd success/mode/correlation evidence and final combined acceptance
+remain outstanding. This checkpoint creates no acceptance PR or production
+promotion.

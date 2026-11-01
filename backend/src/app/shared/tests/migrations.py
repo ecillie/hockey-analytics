@@ -12,7 +12,7 @@ def load_initial_revision():
     spec = importlib.util.spec_from_file_location(
         "tradevalue_initial_revision", INITIAL_REVISION
     )
-    assert spec and spec.loader
+    assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -43,7 +43,7 @@ def run_command(database_url: str, *arguments: str, success=True):
     return result
 
 
-ROOT = Path(__file__).resolve().parents[5]
+ROOT = Path(__file__).parents[5]
 INITIAL_REVISION = ROOT.joinpath(
     "backend", "migrations", "versions", "20260910_0001_initial_schema.py"
 )

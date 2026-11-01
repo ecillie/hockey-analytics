@@ -31,7 +31,7 @@ from app.shared.tests.migrations import (
     run_command,
 )
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).parents[2]
 ALEMBIC_CONFIG = ROOT.joinpath("backend", "alembic.ini")
 INITIAL_REVISION = ROOT.joinpath(
     "backend", "migrations", "versions", "20260910_0001_initial_schema.py"
