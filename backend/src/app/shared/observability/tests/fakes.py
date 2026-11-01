@@ -40,12 +40,15 @@ def generate_formatting_scenarios() -> SearchStrategy[FormattingScenario]:
     )
 
 
+@dataclass(slots=True, kw_only=True, frozen=True)
 class HostileValue:
+    message: str = "diagnostics evaluated a payload"
+
     def __str__(self) -> str:
-        raise AssertionError("diagnostics evaluated a payload")
+        raise AssertionError(self.message)
 
     def __repr__(self) -> str:
-        raise AssertionError("diagnostics evaluated a payload")
+        raise AssertionError(self.message)
 
 
 class MetadataAccessError(RuntimeError):
@@ -69,12 +72,16 @@ def build_exception_record(secret: str) -> logging.LogRecord:
     return record
 
 
+@dataclass(slots=True, kw_only=True, frozen=True)
 class BrokenStream:
+    write_message: str = "secret sink failure"
+    flush_message: str = "secret flush failure"
+
     def write(self, value: str) -> int:
-        raise OSError("secret sink failure")
+        raise OSError(self.write_message)
 
     def flush(self) -> None:
-        raise OSError("secret flush failure")
+        raise OSError(self.flush_message)
 
 
 def parse_source_number() -> int:

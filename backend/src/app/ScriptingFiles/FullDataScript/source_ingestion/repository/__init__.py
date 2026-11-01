@@ -22,6 +22,8 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
 
 
 type TransactionFactory = Callable[[], AbstractContextManager[PgConnection]]
+type StatSqlValue = int | float | str | Json | None
+type StatSqlRow = tuple[StatSqlValue, ...]
 
 
 def read_csv(path: Path) -> list[dict[str, object]]:
@@ -179,7 +181,7 @@ def write_stats(
     cursor: PgCursor,
     layout: StatLayout,
     source_id: int,
-    values: tuple[tuple[object, ...], ...],
+    values: tuple[StatSqlRow, ...],
 ) -> tuple[int, int]:
     dimensions = (
         "player_id",
@@ -231,7 +233,7 @@ def build_stat_values(
     source_id: int,
     *,
     advanced: bool,
-) -> tuple[object, ...]:
+) -> StatSqlRow:
     team_id = team_ids.get(row.teams[0]) if len(row.teams) == 1 else None
     scope = "TEAM" if team_id is not None else "TOTAL"
     dimension = row.situation if advanced else row.game_type

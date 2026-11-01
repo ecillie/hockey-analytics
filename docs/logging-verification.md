@@ -1658,7 +1658,7 @@ Verification under Python 3.12.14:
   modules and three compatibility modules. All **240** source digests match the
   staged tracked source set. No added prohibited forms or comments were found.
   Public HTTP schema, frontend and committed model inputs are unchanged. Final
-  combined API/ingestion images, browser and hosted acceptance remain required;
+  combined API image and source-ingestion/CLI checks, browser and hosted acceptance remain required;
   no new image or hosted success is claimed here.
 
 Evidence uses `/private/tmp/tradevalue-logging05-adapter-layout-` prefixes:
@@ -1851,3 +1851,61 @@ compatibility-entrypoint and exact framework/historical/native fault-double
 judgments, hosted NonProd mode/correlation and final combined acceptance/release
 promotion remain open. The approved API lifespan hook is unchanged. No acceptance
 PR or production promotion is made by this checkpoint.
+
+## Native fault adapters and combined local verification checkpoint
+
+HostileValue and BrokenStream now use frozen, slotted, keyword-only data
+adapters with immutable message fields. Their native methods read those fields
+and preserve the original default failures. Existing logging, cleanup, request
+and lifespan tests pass (**274 tests**); this does not approve the separate
+raise-only native fault-operation exception. The exact twelve operations and
+native conversion probe are listed as pending T1 in the semantic audit.
+
+The source statistics SQL boundary now names StatSqlValue and StatSqlRow.
+Cells are constrained to int, float, str, native Json or None; variable metric
+arity follows the immutable selected layout. Bound values, SQL, transaction
+ownership and function bodies are unchanged. Three ledger dispositions were
+re-reviewed; all **245** tracked Python source digests match.
+
+Read-only historical revision probes demonstrate import-time path resolution,
+generic checksum failure, and three primary failures masked by cursor-close
+failure. The revision and schema remain untouched. The database guide's
+prohibition on editing an applied revision conflicts with fixing those Python
+findings; H1 records the pending owner choice. F1/F2/T1 likewise remain pending
+under plan §4.1. These requests introduce no blanket exemption or weakened gate.
+
+Local combined evidence:
+
+- A newly migrated `tradevalue_test_logging05_sql_types` database passes all
+  **1,565 tests, zero skips**, in **136.71 seconds**, with **91.44%** aggregate
+  coverage and **100%** API/calendar coverage. Locked sync, Ruff lint/format,
+  ty, structural checks, exports, OpenAPI, migration history/preflight/catalog,
+  API smoke and ML metric checks pass. Clean API/Vercel/ML package installs and
+  artifact exclusions pass after the final SQL annotation edit. The separate
+  no-database unit run passes **1,515 tests**, with **50 integration tests
+  deselected**, in **114.55 seconds**.
+- The rebuilt API image `tradevalue-logging05-boundaries:candidate` runs as UID
+  **10001** against a fresh disposable probe database. INFO/DEBUG probes produce
+  **15/22 events**, **5/6 correlated requests**, unchanged HTTP bodies/statuses,
+  interrupted streaming and clean shutdown. Invalid startup produces CRITICAL
+  and exit **3**. The subsequent annotation edit is in source ingestion, which
+  the verified API package excludes.
+- Node 24 frontend lint, contract, production build and all **163 tests** pass
+  with **100%** statement/branch/function/line coverage. Fresh INFO/DEBUG
+  production builds pass real headless Chrome probes: **29/54 records**, one
+  correlated HTTP failure per mode, retry recovery, cancellation suppression,
+  root/global deduplication, bounded repeated failures and **zero page errors**.
+  The frontend source tree remains unchanged.
+
+Evidence prefixes are `/private/tmp/tradevalue-logging05-boundaries-` for the
+initial full checks, focus, image build/probes/capture and browser run, and
+`/private/tmp/tradevalue-logging05-sql-types-` for the final full checks and clean
+packages. The historical read-only probe uses
+`/private/tmp/tradevalue-logging05-historical-boundary-probe.py` and `.txt`.
+The artifact manifest has one API Dockerfile: combined acceptance means that
+API image plus ingestion/CLI verification, not a separate ingestion image.
+
+This checkpoint leaves source-helper/compatibility-entrypoint judgments,
+explicit owner decisions, hosted NonProd mode/correlation, final acceptance PR
+and release promotion open. No acceptance PR, manual merge or production
+approval is performed here.

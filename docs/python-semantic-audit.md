@@ -3,7 +3,7 @@
 File-by-file content inspection is complete; findings remain unresolved. This is
 not phase-7 acceptance. Scope is all
 245 tracked/new Python files in the acceptance worktree, with source digests
-updated after `54b5e18`. Digests identify exactly what was inspected; changed
+updated after `c25413f`. Digests identify exactly what was inspected; changed
 files require re-review.
 Generated artifacts, environments and retired `.py.txt` loaders are not source
 entries. The structural gate separately checks all supported executable roots.
@@ -20,6 +20,47 @@ framework-executed bootstrap, intentional source-only failing test doubles,
 remaining source/entrypoint role layout, and frozen historical migration compatibility.
 The previously approved API lifespan logging hook is the only recorded owner
 approval; this ledger creates no additional blanket exception.
+
+## Exact owner decisions awaiting response
+
+Plan §4.1 requires an explicit owner decision for a remaining framework
+exception; passing checks do not grant one. The approved API lifespan logging
+hook remains the only approved exception. The following requests are pending:
+
+| ID | Exact boundary | Proposed bounded disposition |
+| --- | --- | --- |
+| F1 | `backend/index.py`: `app = create_runtime_app()` | Retain Vercel's native exported ASGI application and its factory's environment/dotenv settings bootstrap at framework load. This permits that exported mutable framework application and that bootstrap only. Database resources and handler configuration remain owned by the approved lifespan hook; ordinary library imports remain pure. |
+| F2 | `backend/migrations/env.py`: framework-load `main()` call and success return | Retain Alembic's native loader entry: run the command adapter when Alembic loads env.py, return control on success, and raise SystemExit only for a nonzero exit code. A conventional `__main__` guard would prevent Alembic from executing migrations. This permits neither import bootstrap in ordinary libraries nor new logging owners. |
+| T1 | Source-only native fault operations listed below | Retain intentionally throwing native operations and fail-fast resource guards in excluded test support. Returning an exception would change the native operation's contract and stop exercising the failure. Application invariant policies still return violations; this permits no production raise-only helper. |
+| H1 | `backend/migrations/versions/20260910_0001_initial_schema.py` | Separate question pending: allow Python-only ownership/error/import fixes, or explicitly retain the exact historical revision with its confirmed findings. The database guide says never to edit an applied revision. SQL and revision metadata remain unchanged under either option. |
+
+T1 is limited to these twelve sole-raise operations:
+
+- `contracts/tests/fakes.py`: `reject_resource_access`, `FailingRun.succeed`,
+  `FailingRun.fail`, `FailedTrackingScenario.ingest`,
+  `FailedControlConnection.cursor`.
+- `app/shared/observability/tests/fakes.py`: `HostileValue.__str__`,
+  `HostileValue.__repr__`, `MetadataAccessError.__dict__`, `BrokenStream.write`,
+  `BrokenStream.flush`.
+- `app/shared/tests/fakes.py`: `FailingAction.__call__`, `reject_network_access`.
+
+The same request includes `parse_source_number` in observability test support,
+which deliberately calls native `int` on invalid text to produce a real
+conversion traceback. HostileValue and BrokenStream now use frozen, slotted,
+keyword-only dataclasses with immutable failure-message fields; their methods
+read those fields and retain their original default failures. These are fault
+adapters, not invariant checks. Test support remains excluded from distributable
+API/ML artifacts. No allowlist, skipped test or weakened structural check is
+introduced by this request.
+
+H1's read-only probe confirms import-time Path.resolve, a generic checksum
+RuntimeError, and cursor-close errors masking RuntimeError, cancellation and
+interrupt primaries. All six cleanup cases close once. The historical source
+SHA-256 remains
+`7e09b5e51a3748cd7fdc6c0438c3dccf66490eb188a9501f931d89e21d0f5490`;
+the frozen schema checksum remains
+`b29d0567ee3a17cb95abe37b00de0cf3589e809fb65019f67bd1e6b74509d2b5`.
+Neither revision nor schema was edited while this conflict awaits resolution.
 
 Review each nonempty file for state ownership and immutability, class/method
 placement, Protocol/framework inheritance, narrow types, guards/loop exits, typed
@@ -377,10 +418,10 @@ require fixes or precise decisions. Passing gates does not accept them implicitl
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/__init__.py` | `817f46504c4b` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/domain.py` | `119e2b09304c` | Reviewed: frozen season/worker/page options, enum-typed jobs and tuple-backed stats/roster snapshots. All fields have one invocation/snapshot lifetime; no mutable shared defaults or resources at import. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/policy.py` | `ac3016ebbb4b` | Reviewed/fixed: frozen NhlStatsOptionsPolicy owns the unchanged ordered-range/positive-worker/page-size/page-budget invariant and returns the original typed OptionsViolation or None. It performs no I/O. Actual service boundary tests prove invalid options create no client or persisted snapshot. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/repository.py` | `8a55343c6fc7` | Reviewed: frozen transaction factories own atomic native connection/cursor contexts; parameterized identity/stat/roster writes retain missing records. Local enum counts, first-profile cache and deterministic final-team selection are not shared state. Native SQL tuple shapes remain an explicit persistence-boundary disposition. Re-reviewed/fixed: stats and roster cursor scopes are guarded inside their existing transaction factories. Complete AST comparison preserves all SQL, signatures and other behavior; cancellation/query failures survive close failure. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/repository.py` | `8a55343c6fc7` | Re-reviewed: frozen transaction factories own atomic connection/cursor contexts. Stats batches use canonical StatSqlRow values; variable metric arity follows the selected immutable layout. Whitelisted identifiers and bound values retain original SQL behavior. Local enum counts, first-profile cache and deterministic final-team selection remain per-call. Guarded cursor cleanup preserves primary errors/cancellation; transaction lifetime is unchanged. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/services.py` | `f4d8caa0009b` | Re-reviewed/fixed: the service raises the value returned by the canonical NHL options policy before worker/client acquisition; client imports canonical repository.http. AST comparison preserves the original condition/error constructor and all other executable statements, worker/row validation, pagination and persistence behavior. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/policy.py` | `4890f14a6a56` | Reviewed/fixed: canonical stat consistency policy now accepts PlayerKind rather than arbitrary strings; legacy string conversion belongs at its caller boundary. Count/duplicate/row policies return typed violations; local deduplication and season coverage precede persistence. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/repository/__init__.py` | `e391d1cf1b3d` | Re-reviewed/fixed: the shared persistence/file role is now a directory, preserving the exact qualified module and complete AST. Bound SQL, file ownership, native batch tuples and concrete caller transaction ownership are unchanged. The transport adapter has a canonical sibling owner; native SQL tuple boundary judgment remains explicit. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/repository/__init__.py` | `8a20aa59c2c2` | Re-reviewed/fixed: canonical persistence/file role retains its qualified module and SQL/resource behavior. StatSqlValue narrows batch cells to int, float, str, native Json or None; StatSqlRow names the variable-length tuple derived from the selected immutable layout. Json adaptation stays local to persistence. No unconstrained object cells remain in this batch handoff; the concrete caller owns transactions. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/repository/http.py` | `8f66a73d7e49` | Re-reviewed/fixed: open_owned_http_session registers native Session exit with ExitStack before native entry, then complete_cleanup preserves a primary while invoking exit once. All three owned source/profile factories use it. The setup factory guard remains unchanged; native request/retry/recovery/configuration and borrowed adapter bodies are identical. This Session-specific wrapper preserves known native no-suppression semantics and makes no generic context-manager claim. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schedule/__init__.py` | `a935cb36a63d` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schedule/domain.py` | `b2439324edef` | Reviewed: frozen season/count options and tuple-backed validated game snapshots with separately owned read counts. No mutable shared state or import-time resources. |
@@ -442,7 +483,7 @@ require fixes or precise decisions. Passing gates does not accept them implicitl
 | `backend/src/app/shared/observability/sinks.py` | `d88c98db6900` | Reviewed: minimal runtime-checkable stream Protocol, frozen borrowed stream wrapper and one bounded fallback write on ordinary sink failure. No recursive logging/raw-record error report; cancellation/interrupt is not swallowed. Handler construction validates limits and remains owned by configured entrypoints. |
 | `backend/src/app/shared/observability/tests/__init__.py` | `0bd51b497d66` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/shared/observability/tests/app_probe.py` | `65720d0ca9e8` | Reviewed: excluded read-only probe factory adds deterministic native numeric and streaming failures to the production app only when called. Stream yields its first chunk before native conversion failure; endpoint metadata stays outside OpenAPI. No module-level app or import-time resource startup. |
-| `backend/src/app/shared/observability/tests/fakes.py` | `db0318c07923` | Re-reviewed/fixed: Hypothesis generates complete fresh FormattingScenario records/formatters over the original nonempty Unicode secret space and both formats. Native error/cause/notes remain unraised record inputs and no formatter is configured at import. Existing independent hostile metadata/fault and capture probes remain excluded from artifacts with per-fixture state. |
+| `backend/src/app/shared/observability/tests/fakes.py` | `77fe41b6b6b5` | Re-reviewed/fixed: HostileValue and BrokenStream are frozen slotted keyword-only data adapters; native methods read immutable failure-message fields and preserve default failures. Existing hostile metadata, generated FormattingScenario values and capture ownership remain. The exact T1 throwing-operation decision above is pending; passing tests do not waive it. |
 | `backend/src/app/shared/observability/tests/fixtures.py` | `9acfed4652a5` | Reviewed: native logger/excepthook settings are isolated with pytest monkeypatch and per-fixture handler ownership; only a newly installed diagnostic handler is closed. No logging configuration or database/resource acquisition occurs at module import. |
 | `backend/src/app/shared/observability/tests/lifecycle.py` | `f79c39a28fbf` | Re-reviewed/fixed: LifecycleObservation now retains its actual captured records as well as the native failure/host record. This prevents call-phase resets from making no-false-stopped assertions vacuous. Frozen scenario/resource bindings and bounded native ASGI exercise remain unchanged; native log objects are fixture-owned handles. |
 | `backend/src/app/shared/observability/tests/requests.py` | `0a29e894792c` | Re-reviewed/fixed: frozen HTTP, streaming, propagated-host and concurrent request observations replace positional collaborator bundles. CapturedRecords preserves each actual log set across pytest phases; scope/transport aliases preserve native ASGI shapes. HostFilters contains distinct reported-filter instances so cross-instance duplicate consumption remains tested. Shared input state is deliberately aliased fixture data; native TaskGroup and timeout behavior are unchanged. |
