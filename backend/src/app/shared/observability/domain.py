@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum, auto
+from time import monotonic_ns
 
 
 class LogLevel(IntEnum):
@@ -16,6 +17,23 @@ class LogLevel(IntEnum):
 class LogFormat(StrEnum):
     JSON = auto()
     TEXT = auto()
+
+
+class RequestOutcome(StrEnum):
+    COMPLETED = auto()
+    INCOMPLETE = auto()
+    FAILED = auto()
+    CANCELLED = auto()
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class RequestContext:
+    request_id: str
+    started_ns: int
+
+    @property
+    def duration_ms(self) -> float:
+        return (monotonic_ns() - self.started_ns) / 1_000_000
 
 
 class LoggingSettingsError(ValueError):

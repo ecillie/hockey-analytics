@@ -174,3 +174,46 @@ retained in its dashboard and cleanup is limited to 500 ms. Hosted retention,
 access, sink limits and captured-mode acceptance remain phase-5 rollout gates.
 The earlier phase-7 semantic acceptance remains outstanding and is not waived.
 No production promotion or manual PR merge is part of this work.
+
+## Phase 1 publication and phase 2 start
+
+Published exact verified phase-1 head
+`64418853ecf8e2bb4466d00235007169c1c53c94` as non-draft PR
+[#165](https://github.com/ecillie/hockey-analytics/pull/165), targeting `Dev`.
+Dev workflow `41263896315`, both Vercel previews, and all required checks passed.
+Repository automation merged it at `2026-11-01T02:10:27Z` as
+`9f355daf841074a7eee403816589de048c499fe1`. No pipeline fixes or manual merge
+were needed. All phase-1 verification containers were removed; the unrelated
+existing container was untouched.
+
+After confirming the merge, fetched Dev and started `feature/logging-02-api`
+from `9f355da`. Its initial implementation adds a streaming ASGI correlation
+component, immutable per-request context and monotonic duration, generated
+response request IDs, controlled route-template fields, and final outcome
+summaries. Caller/upstream request IDs are replaced. The component copies the
+per-request state mapping before adding its context and keeps summary state
+local to each call, without a module-level ContextVar or request registry.
+
+Six targeted scenarios pass: immediate chunk delivery without body buffering,
+original exception/cancellation identity, quiet successful health probes with
+failed probes retained, and interleaved requests with independent IDs even when
+input scopes share a state mapping. Concurrent test work uses an awaited
+`asyncio.TaskGroup`; its `tasks.create_task` call is structured concurrency,
+not a fire-and-forget task. Raw bodies, paths, query strings and caller IDs do
+not enter serialized diagnostics.
+
+This is a phase-2 checkpoint, not API acceptance. The component is not yet
+installed around the application middleware stack. CORS exposure, ownership of
+error diagnostics and framework propagation, startup/shutdown events, host
+access/error-log coordination, complete response-path coverage, and final
+container/Vercel checks remain before a phase-2 PR. The historical local
+`plan.md` remains untracked and unchanged.
+
+Phase-2 checkpoint verification: Ruff lint/format, ty and structural rules
+passed. On newly provisioned PostgreSQL 15 database
+`tradevalue_test_logging02_checkpoint`, the complete Python suite passed
+**839 tests, zero skips**, **91.75%** aggregate coverage in **39.05 seconds**;
+the API/shared-calendar gate remains **100%**. No frontend or serialized API
+boundary changed at this checkpoint. Final phase-2 package, frontend, container,
+and hosted acceptance gates remain pending the middleware integration above.
+The dedicated checkpoint PostgreSQL container was removed after verification.

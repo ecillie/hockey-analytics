@@ -106,6 +106,15 @@ def collect_context(
         "rolled_back",
     )
     context: DiagnosticFields = {}
+    if "route" in record.__dict__:
+        route = record.__dict__["route"]
+        context["route"] = (
+            route
+            if type(route) is str
+            and len(route) <= limits.string_characters
+            and re.fullmatch(r"/[a-zA-Z0-9_{}:./-]*", route) is not None
+            else "invalid"
+        )
     for key in identifiers:
         if key in record.__dict__:
             context[key] = safe_identifier(record.__dict__[key], limits)
@@ -159,6 +168,7 @@ def render_bounded_diagnostic(
         (
             "exceptions",
             "exceptions_truncated",
+            "route",
             "source",
             "stage",
             "outcome",
