@@ -1257,3 +1257,57 @@ collaborator bundles, exact host-program ownership and runtime role/interface
 judgments. Inspection is not acceptance. Hosted NonProd success/mode/correlation
 and final combined acceptance/release promotion remain outstanding; no acceptance
 PR or production promotion is created here.
+
+## Shared adapter cursor ownership and completed source inspection
+
+Eleven cursor scopes across six runtime adapters now use the existing shared
+primary-preserving guard: four borrowed roster-status operations, MoneyPuck
+persistence, NHL stats/roster persistence, schedule persistence, historical
+coverage reporting and the historical/active contract repository factories.
+The existing transaction factory retains connection ownership; roster callers
+retain their borrowed connections. A failed query or cancellation now remains
+primary if cursor close also fails. Complete AST comparison permits only the
+cursor-acquisition/import substitution in all six modules, preserving every
+other statement, signature and SQL value.
+
+The source-only contract scenario context owns its explicitly configured
+connection before seeding. Rollback, trigger removal and close are attempted
+independently, including setup failure, and cleanup cannot mask the primary.
+Both native PostgreSQL lifecycle fixtures use it. Legacy empty-ID input mutation
+belongs to a fixture. Backfill/advisory-lock fixtures use production transaction
+and cursor guards; source-identity repositories use a frozen named holder and
+one fixture-bound transaction factory with explicit disposable Dev settings.
+
+The last three source files have content-inspection dispositions. The ledger
+records **237 files: 18 empty, 20 docstring-only and 199 other inspected**, with
+no pending file inspection. Findings remain open in inspected sources, including
+fixture resources, shared mutable parameter descriptions, body arrangement,
+collaborator bundles, runtime roles/interfaces and exact framework/historical
+boundaries. Inspection does not complete phase 7 or waive any finding.
+
+Verification under Python 3.12.14:
+
+- New adapter fault checks against the preceding runtime code produced **33
+  failures, 33 passes**. A native-behavior cursor probe reproduces close replacing
+  an original query failure/cancellation/interrupt. Updated code passes all 66
+  cases, including exact cause/secondary identity and connection ownership.
+- Six contract-fixture fault cases cover setup/body failure, cancellation,
+  interruption and rollback/removal/close faults, retaining the original cause
+  and attempting every cleanup. Focused cleanup/contract units passed **208**.
+- Fresh migrated `tradevalue_test_logging05_adapter_cursors`: **1,429 passed,
+  zero skips**, **91.26%** aggregate coverage in **130.66 seconds**, with the
+  **100%** API/calendar gate. Isolated units passed **1,379**, with 50 integrations
+  deselected, in **112.47 seconds**.
+- Locked sync, Ruff lint/format, ty, structural scope, dependency exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke,
+  clean API/Vercel/ML artifact installs/exclusions and committed-model gates pass.
+- Source-based ingestion adapters changed only cursor ownership. API image/build
+  inputs, frontend, public HTTP schema and model artifacts are unchanged; the
+  verified API image/probe evidence still applies. No new image or hosted success
+  is claimed by this checkpoint.
+
+Evidence uses `/private/tmp/tradevalue-logging05-adapter-cursors-` prefixes:
+`red.txt`, `focused-final.txt`, `compare.py`/`compare.txt`, `checks.sh`/`checks.txt`,
+`pytest.txt`, `units.txt` and `packages.txt`. Hosted NonProd mode/correlation and
+final combined acceptance/release promotion remain outstanding. No acceptance PR
+or production promotion is created here.

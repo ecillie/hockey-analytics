@@ -6,6 +6,7 @@ from collections import Counter
 from collections.abc import Callable, Generator, Iterable, Mapping
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
+from app.database import open_database_cursor
 from decimal import Decimal
 from types import MappingProxyType
 from typing import Protocol, runtime_checkable
@@ -627,7 +628,7 @@ def load_coverage_report(
         raise violation
     with (
         open_database_transaction() as connection,
-        connection.cursor() as cursor,
+        open_database_cursor(connection) as cursor,
     ):
         report = count_contract_coverage(cursor, first_season, last_season)
         range_params = (first_season, last_season, first_season, last_season)
@@ -761,7 +762,7 @@ def open_contract_repository(
 ) -> Generator[ContractRepository]:
     with (
         open_database_transaction(context=context) as connection,
-        connection.cursor() as cursor,
+        open_database_cursor(connection) as cursor,
     ):
         yield PostgresContractRepository(cursor=cursor)
 

@@ -107,6 +107,22 @@ schema/API, clean package/export and ML gates passed; no temporary migration
 databases remained. Three files still await inspection, and findings in
 inspected tests remain open. Hosted NonProd and final acceptance are outstanding.
 
+The adapter-cursor checkpoint completes content inspection of all **237** Python
+files; unresolved findings still prevent semantic acceptance. Eleven runtime
+cursor scopes now share primary-preserving cleanup. Complete AST comparison of
+six adapters permits only the guard/import changes, retaining SQL and other
+behavior. Contract scenario setup is guarded before seed/read/write work, and
+cleanup independently attempts rollback, trigger removal and close. Explicit
+disposable settings now also bind backfill, advisory-lock and source-identity
+fixtures. The previous cursor contexts failed 33 of 66 fault checks; all 208
+focused cleanup/contract checks pass with the shared guard. Fresh
+`tradevalue_test_logging05_adapter_cursors` passed **1,429 tests, zero skips**,
+**91.26%** coverage and the **100%** API/calendar gate. Package/export, schema/API,
+static and ML checks passed; isolated units passed **1,379**, with 50 integrations
+deselected. These remain separate evidence from final acceptance. Existing
+test-scenario/resource, runtime role/interface and framework/historical findings,
+hosted NonProd evidence and final release acceptance remain outstanding.
+
 The supported runtime is Python 3.12. Install the root uv workspace with
 `uv sync --locked --all-groups`. Runtime, ingestion, ML, and development
 requirements are generated from the same lock. Run these checks at the root:

@@ -4,7 +4,19 @@ import json
 from dataclasses import replace
 from pathlib import Path
 from threading import Barrier, Lock
+import asyncio
 import pytest
+from app.config import AppEnvironment, DatabaseSettings
+from app.shared.tests.fakes import StageOutcome
+from app.shared.tests.resources import ResourceFailureScenario, ResourceProbe
+from app.ScriptingFiles.FullDataScript.contracts.tests import (
+    postgres as contract_postgres,
+)
+from app.ScriptingFiles.FullDataScript.contracts.tests.postgres import (
+    ContractDatabaseScenario,
+    HistoricalFixtureSession,
+    open_contract_scenario,
+)
 from app.ScriptingFiles.FullDataScript import capspace, ingestion, ingestion_tracking
 from app.ScriptingFiles.FullDataScript.contracts import repository as persistence
 from app.ScriptingFiles.FullDataScript.contracts import services as contract_services
@@ -509,3 +521,91 @@ class TestProfileOptionsBeforeOwnership:
         with pytest.raises(ContractOptionError):
             fetcher.fetch_profiles((candidate,), workers=1)
         assert probe.opened == []
+
+
+class TestContractFixtureOwnership:
+    cases = (
+        pytest.param(("seed", "rollback"), id="setup-primary-rollback-failed"),
+        pytest.param(("seed", "remove"), id="setup-primary-trigger-removal-failed"),
+        pytest.param(("body", "close"), id="body-primary-close-failed"),
+        pytest.param(("cancelled", "remove"), id="cancellation-retained"),
+        pytest.param(("interrupted", "rollback"), id="interrupt-retained"),
+        pytest.param((None, "close"), id="close-only-failure"),
+    )
+
+    @pytest.fixture(params=cases)
+    def scenario(self, request, monkeypatch):
+        stage, cleanup = request.param
+        failures: dict[str, BaseException] = {cleanup: RuntimeError("cleanup failed")}
+        cause = ValueError("original cause")
+        primary = None
+        if stage == "cancelled":
+            primary = asyncio.CancelledError("cancelled")
+        if stage == "interrupted":
+            primary = KeyboardInterrupt("interrupted")
+        if stage in ("seed", "body"):
+            primary = RuntimeError("primary failed")
+        if primary is not None:
+            primary.__cause__ = cause
+        if stage == "seed" and primary is not None:
+            failures["seed"] = primary
+        probe = ResourceProbe(failures=failures)
+        monkeypatch.setattr(
+            contract_postgres, "connect_database", probe.create_resource
+        )
+        monkeypatch.setattr(
+            contract_postgres,
+            "seed_contract_batch",
+            StageOutcome(
+                result=None,
+                name="seed",
+                events=probe.events,
+                failure=failures.get("seed"),
+            ),
+        )
+        monkeypatch.setattr(
+            ContractDatabaseScenario,
+            "remove_batch_failure",
+            StageOutcome(
+                result=None,
+                name="remove",
+                events=probe.events,
+                failure=failures.get("remove"),
+            ),
+        )
+        return ResourceFailureScenario(
+            probe=probe,
+            primary=None if stage == "seed" else primary,
+            expected=primary if primary is not None else failures[cleanup],
+            cause=cause,
+            settings=DatabaseSettings(
+                environment=AppEnvironment.DEV,
+                database_url="postgresql://unused.invalid/tradevalue_test_fixture",
+            ),
+        )
+
+    @pytest.fixture
+    def observed(self, scenario):
+        observed = None
+        try:
+            with open_contract_scenario(
+                scenario.settings,
+                HistoricalFixtureSession(body=""),
+                cleanup_batch_failure=True,
+            ):
+                if scenario.primary is not None:
+                    raise scenario.primary
+        except BaseException as failure:
+            observed = failure
+        return observed
+
+    def test_cleanup_attempts_every_resource_and_retains_primary(
+        self, observed, scenario
+    ):
+        assert observed is scenario.expected
+        assert scenario.probe.events == ["seed", "rollback", "remove", "close"]
+        if observed is not scenario.probe.failures.get("close"):
+            assert observed.__cause__ is scenario.cause
+            assert observed.tradevalue_cleanup is next(
+                value for key, value in scenario.probe.failures.items() if key != "seed"
+            )

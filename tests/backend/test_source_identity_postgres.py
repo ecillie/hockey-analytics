@@ -2,7 +2,8 @@
 
 import pytest
 
-from app.database import open_database_transaction
+from app.config import AppEnvironment, DatabaseSettings
+from app.database import open_database_cursor, open_database_transaction
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     PlayerKind,
     select_stat_layout,
@@ -32,6 +33,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.policy import (
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.scenarios import (
     IdentityPersistence,
+    IdentityRepositories,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.identities import (
     build_identity_rows,
@@ -40,14 +42,25 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.tests.identities import 
 
 @pytest.mark.integration
 class TestCanonicalPersistence:
+    @pytest.fixture
+    def transaction(self, disposable_database_url):
+        settings = DatabaseSettings(
+            environment=AppEnvironment.DEV, database_url=disposable_database_url
+        )
+
+        def open_transaction(*, context=None):
+            return open_database_transaction(settings, context=context)
+
+        return open_transaction
+
     @pytest.fixture(
         params=[
             pytest.param(PlayerKind.SKATER, id="skater"),
             pytest.param(PlayerKind.GOALIE, id="goalie"),
         ]
     )
-    def scenario(self, request, disposable_database_url):
-        with open_database_transaction() as connection, connection.cursor() as cursor:
+    def scenario(self, request, transaction):
+        with transaction() as connection, open_database_cursor(connection) as cursor:
             cursor.execute(
                 "TRUNCATE teams, players, ingestion_runs RESTART IDENTITY CASCADE"
             )
@@ -86,22 +99,23 @@ class TestCanonicalPersistence:
         )
 
     @pytest.fixture
-    def repositories(self):
-        return PostgresMoneyPuckRepository(
-            transaction=open_database_transaction
-        ), PostgresNhlStatsRepository(transaction=open_database_transaction)
+    def repositories(self, transaction):
+        return IdentityRepositories(
+            moneypuck=PostgresMoneyPuckRepository(transaction=transaction),
+            nhl=PostgresNhlStatsRepository(transaction=transaction),
+        )
 
     def test_aliases_share_one_player_and_one_stat_grain_across_repeat_ingestion(
-        self, scenario, repositories
+        self, scenario, repositories, transaction
     ):
-        puck, nhl = repositories
+        puck, nhl = repositories.moneypuck, repositories.nhl
         assert puck.persist(scenario.moneypuck).counts.records_created == 1
         assert puck.persist(scenario.moneypuck).counts.records_created == 0
         first = nhl.persist(scenario.nhl)
         assert first.counts.records_created == 1
         assert first.counts.records_skipped == 4
         assert nhl.persist(scenario.nhl).counts.records_created == 0
-        with open_database_transaction() as connection, connection.cursor() as cursor:
+        with transaction() as connection, open_database_cursor(connection) as cursor:
             cursor.execute("SELECT count(*) FROM players")
             assert cursor.fetchone() == (1,)
             cursor.execute(

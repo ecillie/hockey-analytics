@@ -11,7 +11,8 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.tests.responses import (
     NhlRosterSession,
 )
 import pytest
-import psycopg2
+from app.config import AppEnvironment, DatabaseSettings
+from app.database import open_database_cursor, open_database_transaction
 from psycopg2.errors import lookup
 from app.ScriptingFiles.FullDataScript import ingestion_tracking
 from app.ScriptingFiles.FullDataScript.tracking.repository import count_summary_records
@@ -563,9 +564,17 @@ class TestSetBasedTeamStintBackfillIsIdempotent:
     def source_session(self):
         return MoneyPuckSession()
 
+    @pytest.fixture
+    def backfill_connection(self, migrated_database, disposable_database_url):
+        settings = DatabaseSettings(
+            environment=AppEnvironment.DEV, database_url=disposable_database_url
+        )
+        with open_database_transaction(settings) as connection:
+            yield connection
+
     @pytest.mark.integration
     def test_set_based_team_stint_backfill_is_idempotent(
-        self, migrated_database, disposable_database_url, source_session
+        self, migrated_database, backfill_connection, source_session
     ):
 
         ingestion.ingest_moneypuck(
@@ -575,26 +584,22 @@ class TestSetBasedTeamStintBackfillIsIdempotent:
             maximum_duplicate_ratio=0.5,
         )
 
-        connection = psycopg2.connect(disposable_database_url)
-        try:
-            assert team_stints.plan_team_stint_backfill(connection) == {
-                "canonical_assignments": 4,
-                "missing_assignments": 4,
-            }
-            assert team_stints.apply_team_stint_backfill(connection) == {
-                "canonical_assignments": 4,
-                "missing_assignments": 4,
-                "inserted_assignments": 4,
-            }
-            connection.commit()
-            assert team_stints.apply_team_stint_backfill(connection) == {
-                "canonical_assignments": 4,
-                "missing_assignments": 0,
-                "inserted_assignments": 0,
-            }
-            connection.commit()
-        finally:
-            connection.close()
+        assert team_stints.plan_team_stint_backfill(backfill_connection) == {
+            "canonical_assignments": 4,
+            "missing_assignments": 4,
+        }
+        assert team_stints.apply_team_stint_backfill(backfill_connection) == {
+            "canonical_assignments": 4,
+            "missing_assignments": 4,
+            "inserted_assignments": 4,
+        }
+        backfill_connection.commit()
+        assert team_stints.apply_team_stint_backfill(backfill_connection) == {
+            "canonical_assignments": 4,
+            "missing_assignments": 0,
+            "inserted_assignments": 0,
+        }
+        backfill_connection.commit()
 
         with migrated_database.connect() as connection:
             rows = connection.execute(
@@ -1022,17 +1027,17 @@ class TestIngestionRunTrackingAndConcurrentRunLock:
 
     @pytest.fixture
     def lock_connection(self, migrated_database, disposable_database_url):
-        connection = psycopg2.connect(disposable_database_url)
-        try:
-            with connection.cursor() as cursor:
+        settings = DatabaseSettings(
+            environment=AppEnvironment.DEV, database_url=disposable_database_url
+        )
+        with open_database_transaction(settings) as connection:
+            with open_database_cursor(connection) as cursor:
                 cursor.execute(
                     "SELECT pg_advisory_lock(%s)",
                     (ingestion_tracking.advisory_lock_key("overlap_fixture"),),
                 )
             connection.commit()
             yield connection
-        finally:
-            connection.close()
 
     @pytest.mark.integration
     def test_ingestion_run_tracking_and_concurrent_run_lock(
@@ -1042,7 +1047,7 @@ class TestIngestionRunTrackingAndConcurrentRunLock:
             ingestion_tracking.ConcurrentIngestionError, match="already running"
         ):
             fixture_stage()
-        with lock_connection.cursor() as cursor:
+        with open_database_cursor(lock_connection) as cursor:
             cursor.execute(
                 "SELECT pg_advisory_unlock(%s)",
                 (ingestion_tracking.advisory_lock_key("overlap_fixture"),),

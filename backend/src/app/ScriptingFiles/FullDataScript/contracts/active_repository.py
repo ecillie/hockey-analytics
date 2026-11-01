@@ -4,6 +4,7 @@ from collections import defaultdict
 from collections.abc import Callable, Generator, Mapping
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
+from app.database import open_database_cursor
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
@@ -282,7 +283,7 @@ def open_active_repository(
 ) -> Generator[ActiveContractRepository]:
     with (
         open_database_transaction(context=context) as connection,
-        connection.cursor() as cursor,
+        open_database_cursor(connection) as cursor,
     ):
         yield PostgresActiveContractRepository(cursor=cursor)
 

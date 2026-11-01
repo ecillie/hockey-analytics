@@ -23,6 +23,12 @@ class CursorProbe:
     failures: Mapping[str, BaseException]
     events: list[str]
 
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, kind: object, failure: object, traceback: object) -> None:
+        self.close()
+
     def execute(self, query: object, parameters: object = None) -> None:
         self.events.append("execute")
         if (failure := self.failures.get("execute")) is not None:
@@ -33,6 +39,9 @@ class CursorProbe:
         if (failure := self.failures.get("fetchone")) is not None:
             raise failure
         return self.row
+
+    def executemany(self, query: object, parameters: object) -> None:
+        self.execute(query, parameters)
 
     def close(self) -> None:
         self.events.append("cursor.close")

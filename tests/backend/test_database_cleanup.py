@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from datetime import date
 from itertools import product
 
 import pytest
@@ -20,6 +21,34 @@ from app.shared.tests.fakes import StageOutcome
 from app.shared.observability.tests.fakes import HostileValue
 from app.shared.observability.domain import LogFormat, LoggingSettings
 from app.shared.observability.formatting import SafeFormatter
+from app.ScriptingFiles.FullDataScript.contracts import repository as contracts
+from app.ScriptingFiles.FullDataScript.contracts import (
+    active_repository as active_contracts,
+)
+from app.ScriptingFiles.FullDataScript.roster_status.domain import RosterStatus
+from app.ScriptingFiles.FullDataScript.roster_status.repository import (
+    PostgresRosterRepository,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import (
+    MoneyPuckSnapshot,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.repository import (
+    PostgresMoneyPuckRepository,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.domain import (
+    NhlStatsSnapshot,
+    NhlRosterSnapshot,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.repository import (
+    PostgresNhlStatsRepository,
+    PostgresNhlRosterRepository,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.schedule.domain import (
+    ScheduleSnapshot,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.schedule.repository import (
+    PostgresScheduleRepository,
+)
 
 
 class TestOwnedCursorQueries:
@@ -310,3 +339,106 @@ class TestEngineCleanup:
         assert len(notes) == int(
             resources.primary is not None and "dispose" in resources.probe.failures
         )
+
+
+class TestAdapterCursorFailures:
+    operations = (
+        "roster-players",
+        "roster-ltir",
+        "roster-statuses",
+        "roster-identities",
+        "moneypuck",
+        "nhl-stats",
+        "nhl-roster",
+        "schedule",
+        "contract-report",
+        "contract-context",
+        "active-context",
+    )
+
+    @pytest.fixture(params=[pytest.param(name, id=name) for name in operations])
+    def operation(self, request):
+        return request.param
+
+    @pytest.fixture(
+        params=[
+            pytest.param(kind, id=kind.__name__)
+            for kind in (RuntimeError, asyncio.CancelledError, KeyboardInterrupt)
+        ]
+    )
+    def primary(self, request):
+        failure = request.param("query_secret")
+        failure.__cause__ = ValueError("cause_secret")
+        return failure
+
+    @pytest.fixture(
+        params=[pytest.param(False, id="closed"), pytest.param(True, id="close-failed")]
+    )
+    def scenario(self, request, primary, monkeypatch):
+        cleanup = OSError("close_secret") if request.param else None
+        failures = {"execute": primary}
+        if cleanup is not None:
+            failures["cursor.close"] = cleanup
+        events = []
+        cursor = CursorProbe(row=(1,), failures=failures, events=events)
+        connection = ResourceProbe(failures={}, cursor_resource=cursor, events=events)
+        monkeypatch.setattr(database, "connect_database", connection.create_resource)
+        return CursorFailureScenario(
+            connection=connection,
+            primary=primary,
+            cleanup=cleanup,
+            cause=primary.__cause__,
+        )
+
+    @pytest.fixture
+    def observed(self, operation, scenario):
+        observed = None
+        roster = PostgresRosterRepository(connection=scenario.connection)
+        try:
+            if operation == "roster-players":
+                roster.load_players()
+            if operation == "roster-ltir":
+                roster.load_active_ltir_player_ids(date(2026, 1, 1))
+            if operation == "roster-statuses":
+                roster.bulk_update_statuses({7: RosterStatus.ACTIVE})
+            if operation == "roster-identities":
+                roster.save_ahl_external_ids(((7, "7", "Fixture Player"),))
+            if operation == "moneypuck":
+                PostgresMoneyPuckRepository(
+                    transaction=database.open_database_transaction
+                ).persist(MoneyPuckSnapshot(rows=(), quality=()))
+            if operation == "nhl-stats":
+                PostgresNhlStatsRepository(
+                    transaction=database.open_database_transaction
+                ).persist(NhlStatsSnapshot(rows=()))
+            if operation == "nhl-roster":
+                PostgresNhlRosterRepository(
+                    transaction=database.open_database_transaction
+                ).persist(NhlRosterSnapshot(season=2025, teams=(), players=()))
+            if operation == "schedule":
+                PostgresScheduleRepository(
+                    transaction=database.open_database_transaction
+                ).persist(ScheduleSnapshot(season=2025, games=(), records_read=0))
+            if operation == "contract-report":
+                contracts.load_coverage_report()
+            if operation == "contract-context":
+                with contracts.open_contract_repository():
+                    raise scenario.primary
+            if operation == "active-context":
+                with active_contracts.open_active_repository():
+                    raise scenario.primary
+        except BaseException as failure:
+            observed = failure
+        return observed
+
+    def test_primary_and_connection_ownership_survive_cursor_cleanup(
+        self, observed, operation, scenario
+    ):
+        assert observed is scenario.primary
+        assert observed.__cause__ is scenario.cause
+        assert scenario.connection.events.count("cursor.close") == 1
+        assert scenario.connection.events.count("close") == (
+            0 if operation.startswith("roster-") else 1
+        )
+        if scenario.cleanup is not None:
+            assert observed.tradevalue_cleanup is scenario.cleanup

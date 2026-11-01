@@ -9,6 +9,12 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.domain import (
 )
 from typing import TypedDict
 from app.ScriptingFiles.FullDataScript.roster_status.tests.fakes import FixedRosterFeed
+from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.repository import (
+    PostgresMoneyPuckRepository,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.repository import (
+    PostgresNhlStatsRepository,
+)
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -46,6 +52,12 @@ class IdentityPersistence:
     expected_nhl_hash: str
     advanced_table: str
     basic_table: str
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class IdentityRepositories:
+    moneypuck: PostgresMoneyPuckRepository
+    nhl: PostgresNhlStatsRepository
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
