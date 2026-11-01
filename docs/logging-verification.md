@@ -2058,3 +2058,55 @@ at 9abe26f. Dev validation 41318341617, release validation 41319067993,
 post-release validation 41319870064 and production-PR validation 41319876296
 all passed. The last verified production PR #122 remained OPEN with all checks
 green and autoMergeRequest null. No manual production approval was performed.
+
+## Authorized historical-migration Python patch implemented
+
+The owner instructed implementation of the Python patch after the explanation
+of H1 and its uses in database setup/rollback/CI. The exact applied-revision
+exception is recorded in the database guide. All four audit decisions now have
+explicit dispositions; the three approved native boundaries remain unchanged.
+
+The initial revision uses pure module-file path metadata, returns its frozen
+checksum invariant through SchemaChecksumPolicy/SchemaChecksumError, and owns
+the SQL cursor through shared primary-preserving cleanup. Upgrade/downgrade
+function AST and revision metadata are unchanged. The schema checksum remains
+`b29d0567ee3a17cb95abe37b00de0cf3589e809fb65019f67bd1e6b74509d2b5`;
+original and new generated SQL both hash to
+`8fd51c72cd8b223a47441e93acae6c7e5d6a13c47251d72326dc7b161d6a0920`.
+No schema/data change or new revision is introduced.
+
+The first full verification caught an import-path defect in the reviewed
+proposal: direct `python backend/database/verify_migrations.py` cannot import a
+new helper under the uninstalled backend package. The checksum helpers now live
+in installed `app.shared.migrations` role files. A permanent native subprocess
+regression removes PYTHONPATH and verifies the actual direct-script command;
+clean-wheel verification also imports the installed policy. No path bootstrap
+or extra runtime dependency is added.
+
+Final verification:
+
+- Fresh `tradevalue_test_h1_final_681b0ea`: **1,605 passed**, zero skips,
+  **156.54 seconds**, **91.85%** aggregate and **100%** API/calendar coverage.
+  No-database units: **1,555 passed**, 50 integrations deselected,
+  **125.06 seconds**. Locked sync, Ruff lint/format, ty, structural rules,
+  exports, OpenAPI, migration history/preflight/catalog, API smoke and ML metric
+  gates pass. Clean API/Vercel/ML package checks and the rebuilt API image pass.
+- The named regression cases retain original primary/cause identity and one
+  close across 16 execution/cleanup modes, capture actual import guard results,
+  assert typed checksum fields, and cover the direct script. Against the exact
+  original revision, **11 selected expectations fail** and ten controls pass.
+- Fresh migration-only venv and separate disposable database: direct history
+  validation, preflight, byte-identical offline SQL, empty/no-op upgrade,
+  downgrade/re-upgrade, current head, catalog snapshots and API smoke all pass
+  with the deployment workflow's minimal dependency group.
+- All **248** tracked/new Python source digests match the semantic ledger.
+  Frozen revision metadata, schema bytes and upgrade/downgrade AST match the
+  baseline. No added prohibited forms/comments were found. Existing dev-only
+  logging, frontend code, public HTTP schema and model inputs are unchanged.
+
+Evidence uses `/private/tmp/tradevalue-h1-final-` for final checks, baseline
+counterexamples, packages/image and metadata proof; the strict minimal migration
+run uses `/private/tmp/tradevalue-h1-minimal-final-`. The first import failure is
+preserved in `/private/tmp/tradevalue-h1-first-import-checks.txt`. The original
+revision used by counterexamples is an isolated Git-extracted copy with SHA-256
+`7e09b5e51a3748cd7fdc6c0438c3dccf66490eb188a9501f931d89e21d0f5490`.

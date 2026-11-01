@@ -2,6 +2,9 @@ from app.shared.tests.fakes import build_migration_history, build_migration_revi
 from pathlib import Path
 import json
 import asyncio
+import os
+import subprocess
+import sys
 from collections.abc import Generator
 from app.shared.tests.fakes import (
     CatalogDatabase,
@@ -24,6 +27,8 @@ from backend.database import (
     schema_snapshot,
     verify_migrations,
 )
+from app.shared.migrations.errors import SchemaChecksumError
+from app.shared.tests.resources import CursorFailureScenario, CursorProbe, ResourceProbe
 from app.shared.tests.fakes import (
     RevisionScenario,
     SnapshotScenario,
@@ -63,8 +68,38 @@ class TestFrozenRevision:
         return revision
 
     def test_frozen_initial_schema_rejects_edits(self, changed_revision):
-        with pytest.raises(RuntimeError, match="frozen initial-schema snapshot"):
+        with pytest.raises(
+            SchemaChecksumError, match="frozen initial-schema snapshot"
+        ) as failure:
             changed_revision._schema_body()
+        assert failure.value.path == changed_revision.SCHEMA_PATH
+        assert failure.value.expected == changed_revision.SCHEMA_SHA256
+        assert failure.value.actual != failure.value.expected
+
+    @pytest.fixture
+    def import_guarded_revision(self, monkeypatch):
+        revision = None
+        failure = None
+        with monkeypatch.context() as guard:
+            guard.setattr(
+                Path,
+                "resolve",
+                StageOutcome(
+                    result=None,
+                    failure=AssertionError("revision import resolved a path"),
+                ),
+            )
+            try:
+                revision = load_initial_revision()
+            except AssertionError as error:
+                failure = error
+        return StageOutcome(result=revision, failure=failure)
+
+    def test_revision_import_does_not_resolve_filesystem_paths(
+        self, import_guarded_revision
+    ):
+        assert import_guarded_revision.failure is None
+        assert import_guarded_revision.result.revision == "20260910_0001"
 
     @pytest.fixture(
         params=[pytest.param(True, id="offline"), pytest.param(False, id="online")]
@@ -97,7 +132,101 @@ class TestFrozenRevision:
         assert execution.cursor.closures == [True]
 
 
+class TestInitialRevisionCleanup:
+    failures = (
+        pytest.param(None, id="success"),
+        pytest.param(RuntimeError, id="error"),
+        pytest.param(asyncio.CancelledError, id="cancelled"),
+        pytest.param(KeyboardInterrupt, id="interrupted"),
+    )
+
+    @pytest.fixture(params=failures)
+    def primary_kind(self, request):
+        return request.param
+
+    @pytest.fixture(params=failures)
+    def cleanup_kind(self, request):
+        return request.param
+
+    @pytest.fixture
+    def revision(self):
+        return load_initial_revision()
+
+    @pytest.fixture
+    def scenario(self, revision, primary_kind, cleanup_kind, monkeypatch):
+        primary = None if primary_kind is None else primary_kind("query failed")
+        cleanup = None if cleanup_kind is None else cleanup_kind("close failed")
+        cause = ValueError("original cause")
+        failures = {}
+        if primary is not None:
+            primary.__cause__ = cause
+            failures["execute"] = primary
+        if cleanup is not None:
+            failures["cursor.close"] = cleanup
+        events = []
+        cursor = CursorProbe(row=(), failures=failures, events=events)
+        connection = ResourceProbe(failures={}, events=events, cursor_resource=cursor)
+        monkeypatch.setattr(
+            revision.op,
+            "get_context",
+            StageOutcome(result=MigrationContext(as_sql=False)),
+        )
+        monkeypatch.setattr(
+            revision.op,
+            "get_bind",
+            StageOutcome(result=MigrationBind(connection=connection)),
+        )
+        return CursorFailureScenario(
+            connection=connection, primary=primary, cleanup=cleanup, cause=cause
+        )
+
+    def test_close_preserves_primary_identity_and_original_cause(
+        self, revision, scenario
+    ):
+        observed = None
+        try:
+            revision._execute_script("SELECT 1;")
+        except BaseException as failure:
+            observed = failure
+        assert observed is scenario.expected_failure
+        assert scenario.connection.events == ["cursor", "execute", "cursor.close"]
+        if scenario.primary is not None:
+            assert scenario.primary.__cause__ is scenario.cause
+
+
 class TestMigrationHistory:
+    @pytest.fixture
+    def direct_script(self):
+        environment = dict(os.environ)
+        environment.pop("PYTHONPATH", None)
+        return subprocess.run(
+            [
+                sys.executable,
+                str(ROOT.joinpath("backend", "database", "verify_migrations.py")),
+            ],
+            cwd=ROOT,
+            env=environment
+            | {
+                "ENV": "dev",
+                "LOG_LEVEL": "INFO",
+                "LOG_FORMAT": "json",
+                "TRADEVALUE_ENV_FILE": os.devnull,
+            },
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+
+    def test_direct_history_command_loads_revisions_without_pythonpath(
+        self, direct_script
+    ):
+        assert direct_script.returncode == 0, direct_script.stderr
+        assert (
+            direct_script.stdout
+            == "Migration history has one linear head and valid revision metadata.\n"
+        )
+
     @pytest.fixture(
         params=[
             pytest.param(
