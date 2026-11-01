@@ -1,5 +1,12 @@
 """Shared source normalization and stable snapshot serialization."""
 
+from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
+    MoneyPuckSummary,
+    NhlStatsSummary,
+    RosterSummary,
+    ScheduleSummary,
+)
+
 from datetime import date
 from app.shared.calendar import get_latest_started_season
 from decimal import Decimal, InvalidOperation
@@ -120,3 +127,27 @@ def parse_csv(text: str, *, source: str) -> list[dict[str, object]]:
             source=source, reason="malformed CSV row has too many values"
         )
     return rows
+
+
+def serialize_summary(
+    summary: MoneyPuckSummary | NhlStatsSummary | RosterSummary | ScheduleSummary,
+) -> dict[str, int | str]:
+    if isinstance(summary, RosterSummary):
+        return {"teams": summary.teams, "active_players": summary.active_players}
+    dimensions = (
+        {"games": summary.games}
+        if isinstance(summary, ScheduleSummary)
+        else {"skater": summary.skater, "goalie": summary.goalie}
+    )
+    if isinstance(summary, MoneyPuckSummary):
+        dimensions["players"] = summary.players
+    if isinstance(summary, NhlStatsSummary):
+        dimensions["team_stints"] = summary.team_stints
+    return {
+        **dimensions,
+        "records_read": summary.counts.records_read,
+        "records_created": summary.counts.records_created,
+        "records_updated": summary.counts.records_updated,
+        "records_skipped": summary.counts.records_skipped,
+        "reconciliation_policy": "retain_missing",
+    }

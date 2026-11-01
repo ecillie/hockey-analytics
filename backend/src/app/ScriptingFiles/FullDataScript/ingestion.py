@@ -15,19 +15,23 @@ from pathlib import Path
 from typing import Iterable
 
 import requests
+from app.ScriptingFiles.FullDataScript.source_ingestion.util import serialize_summary
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
-    MissingSourceSnapshotError,
+    MissingSourceSnapshotError as MissingSourceSnapshotError,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     PlayerKindViolation,
 )
 from app.database import (
     DatabaseTransactionFactory,
-    open_database_cursor,
     open_database_transaction,
     init_db,
 )
+from app.database import open_database_cursor as open_database_cursor
 from app.ScriptingFiles.FullDataScript import capspace
 from app.ScriptingFiles.FullDataScript.contracts.repository.active import (
     ContextualActiveRepositoryFactory,
+    load_capwages_summary as load_capwages_summary,
 )
 from app.ScriptingFiles.FullDataScript.contracts.services.active import (
     ActiveContractService,
@@ -54,7 +58,6 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     PlayerKind,
-    serialize_summary,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     IngestionValidationError as IngestionValidationError,
@@ -158,32 +161,6 @@ def track_active_contracts(
         repository_factory=ContextualActiveRepositoryFactory(context=context),
         context=context,
     ).run(options)
-
-
-def load_capwages_summary() -> dict[str, int]:
-    with (
-        open_database_transaction() as connection,
-        open_database_cursor(connection) as cursor,
-    ):
-        cursor.execute(
-            """SELECT
-                   (SELECT count(DISTINCT external.player_id)
-                      FROM player_external_ids external WHERE external.source_id = source.id),
-                   (SELECT count(*) FROM contracts WHERE contracts.source_id = source.id),
-                   (SELECT count(*) FROM contract_seasons
-                      JOIN contracts ON contracts.id = contract_seasons.contract_id
-                     WHERE contracts.source_id = source.id)
-               FROM data_sources source WHERE source.code = 'capwages'"""
-        )
-        players, contracts, contract_seasons = cursor.fetchone()
-    if contracts == 0:
-        raise MissingSourceSnapshotError(source="CapWages")
-    return {
-        "players": players,
-        "contracts": contracts,
-        "contract_seasons": contract_seasons,
-        "cached": 1,
-    }
 
 
 def validate_and_deduplicate_rows(

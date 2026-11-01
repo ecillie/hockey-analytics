@@ -10,6 +10,9 @@ from typing import Protocol, runtime_checkable
 
 from app.database import open_database_transaction
 from app.shared.observability.domain import DiagnosticContext
+from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
+    MissingSourceSnapshotError,
+)
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
     ActiveContractSnapshot,
     ActivePlayer,
@@ -290,3 +293,29 @@ class ContextualActiveRepositoryFactory:
 
     def __call__(self) -> AbstractContextManager[ActiveContractRepository]:
         return open_active_repository(context=self.context)
+
+
+def load_capwages_summary() -> dict[str, int]:
+    with (
+        open_database_transaction() as connection,
+        open_database_cursor(connection) as cursor,
+    ):
+        cursor.execute(
+            """SELECT
+                   (SELECT count(DISTINCT external.player_id)
+                      FROM player_external_ids external WHERE external.source_id = source.id),
+                   (SELECT count(*) FROM contracts WHERE contracts.source_id = source.id),
+                   (SELECT count(*) FROM contract_seasons
+                      JOIN contracts ON contracts.id = contract_seasons.contract_id
+                     WHERE contracts.source_id = source.id)
+               FROM data_sources source WHERE source.code = 'capwages'"""
+        )
+        players, contracts, contract_seasons = cursor.fetchone()
+    if contracts == 0:
+        raise MissingSourceSnapshotError(source="CapWages")
+    return {
+        "players": players,
+        "contracts": contracts,
+        "contract_seasons": contract_seasons,
+        "cached": 1,
+    }

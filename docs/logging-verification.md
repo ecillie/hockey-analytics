@@ -1909,3 +1909,57 @@ This checkpoint leaves source-helper/compatibility-entrypoint judgments,
 explicit owner decisions, hosted NonProd mode/correlation, final acceptance PR
 and release promotion open. No acceptance PR, manual merge or production
 approval is performed here.
+
+## Source roles resolved; remaining acceptance dependencies
+
+The summary serializer now has its canonical pure-helper owner in source
+util.py. The published domain function is a thin compatibility call with a
+call-time import to avoid a cycle. The retained CapWages summary query now lives
+in contracts repository active.py; both published ingestion query names are
+exact canonical bindings. The complete moved function ASTs, including SQL, are
+identical to `13c959d`. Eight comparison cases cover all four summary variants,
+zero/nonzero values and fresh report ownership after mutation. Both fresh
+domain/util import orders pass. The semantic audit records why unchanged frozen
+value factories and supported composition/CLI boundaries retain their roles;
+the remaining source helper/entrypoint findings are resolved.
+
+Verification after these moves:
+
+- Focused ingestion/source/cleanup checks: **357 passed**, zero skips, with the
+  explicit disposable integration URL. An earlier invocation without that URL
+  skipped 16 integration cases and is not used as acceptance evidence.
+- Fresh `tradevalue_test_logging05_roles_13c959d`: **1,565 passed**, zero skips,
+  **132.93 seconds**, **91.45%** aggregate coverage and **100%** API/calendar
+  coverage. A first attempted database name was already occupied and its smoke
+  check failed; that terminal attempt is not counted as fresh-database proof.
+- No-database units: **1,515 passed**, 50 integration cases deselected,
+  **116.87 seconds**. Locked sync, Ruff lint/format, ty, structural checks,
+  dependency exports, OpenAPI, migration history/preflight/catalog, API smoke,
+  clean API/Vercel/ML installs/exclusions and ML metric gates pass. All **245**
+  tracked source digests match; five role dispositions were re-reviewed.
+- Only source-ingestion code and its compatibility boundaries changed. API
+  runtime, frontend, public HTTP schema and committed model inputs are unchanged
+  from the preceding combined API-image/browser checkpoint.
+
+Evidence uses `/private/tmp/tradevalue-logging05-roles-13c959d-` for final full
+checks, `/private/tmp/tradevalue-logging05-source-final-` for focused/package
+checks, and `/private/tmp/tradevalue-logging05-source-roles-compare.py`/`.txt`
+for exact AST and old/current report comparisons.
+
+Read-only hosted revalidation still shows ENV only in Production,
+PROD_DATABASE_URL in Production/Preview, and no NonProd database variable. No
+values were revealed or settings changed. The Vercel connector lists no teams
+and returns 403 for the known project scope; the authenticated browser supplies
+the settings evidence. PR #122 remains OPEN from Release-1.0.1 to Prod with
+autoMergeRequest null; no phase-five PR exists.
+
+| Remaining requirement | Required dependency |
+| --- | --- |
+| Final Python semantic acceptance | Pending explicit F1/F2/T1 owner decisions and H1 applied-revision conflict resolution, scoped in the semantic audit. |
+| Hosted INFO/DEBUG behavior and frontend/backend correlation | Approved NonProd target and branch-scoped configuration; existing Production credentials are not a test target. |
+| Non-draft phase-five PR to Dev, hosted CI and normal promotion | Complete the preceding semantic/hosted gates first; automatic merge must not accept unfinished work. |
+| Final production approval | Preserve the normal owner/manual approval gate. |
+
+The API lifespan logging hook remains approved and unchanged. No additional
+exceptions have been inferred from passing checks or from the automatic goal
+continuations. The existing owner questions remain pending.

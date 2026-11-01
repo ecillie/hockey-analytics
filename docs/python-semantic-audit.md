@@ -3,7 +3,7 @@
 File-by-file content inspection is complete; findings remain unresolved. This is
 not phase-7 acceptance. Scope is all
 245 tracked/new Python files in the acceptance worktree, with source digests
-updated after `c25413f`. Digests identify exactly what was inspected; changed
+updated after `13c959d`. Digests identify exactly what was inspected; changed
 files require re-review.
 Generated artifacts, environments and retired `.py.txt` loaders are not source
 entries. The structural gate separately checks all supported executable roots.
@@ -17,7 +17,7 @@ Inspection does not accept the recorded findings.
 
 Open release decisions include Vercel's exported ASGI application, Alembic's
 framework-executed bootstrap, intentional source-only failing test doubles,
-remaining source/entrypoint role layout, and frozen historical migration compatibility.
+and frozen historical migration compatibility.
 The previously approved API lifespan logging hook is the only recorded owner
 approval; this ledger creates no additional blanket exception.
 
@@ -111,9 +111,9 @@ Record findings and fixes before assigning final acceptance.
 - Contract zero-coverage handling and shared injected worker bounds are resolved.
   Canonical option/policy/reporting owners, exact contract SQL tuple types,
   the abstract durable-run seam and public schema helper are now resolved below.
-  Contract repository/service directories are now resolved below. Remaining
-  source helper and compatibility-entrypoint
-  judgments stay explicit; these fixes do not waive them.
+  Contract repository/service directories, source helpers and compatibility
+  entrypoint roles are resolved below. Framework/historical/native fault
+  decisions remain separate.
 - ScheduleDay aliasing, durable boolean/negative counts, CSV file-adapter placement
   and broad stat-kind selection are resolved in the source-boundary checkpoint.
   Valid legacy stat-kind strings and regular-season filtering remain compatible.
@@ -242,8 +242,41 @@ regressions fail before the fix and now raise the typed error before acquiring a
 cursor. Repair accepts a minimal runtime-checkable query Protocol; two falsy
 injected-query cases preserve bounds/result and commit-or-rollback/close ownership.
 Existing CLI defaults, help/parser/main and report semantics remain unchanged.
-Remaining source helper/entrypoint, framework/historical/fault-double and hosted
-decisions are separate from these resolved findings.
+Framework/historical/fault-double and hosted decisions are separate from these
+resolved findings. The final source helper/entrypoint review follows below.
+
+## Source helper and compatibility entrypoint roles resolved
+
+The summary serializer's unchanged implementation now lives in source_ingestion
+util.py. Internal ingestion calls use that canonical pure helper. The published
+domain.serialize_summary function remains a thin compatibility call; its local
+import avoids a domain/util import cycle while retaining the original public
+function name and all frozen value class modules. Both fresh-process import
+orders succeed. Eight old/current comparisons across all four summary variants
+retain values and fresh report ownership, including after one returned report
+is mutated. All actual value/layout factories remain module-level frozen-value
+factories, as the class guidelines prescribe; they acquire no resources and
+hold no mutable state.
+
+The retained CapWages summary query moved unchanged into contracts repository
+active.py. Both ingestion.load_capwages_summary and existing_capwages_summary
+are exact bindings to the canonical query. Its complete function AST, SQL,
+transaction/cursor lifetime, typed missing-snapshot error and fresh result shape
+match the prior implementation. Native cleanup and ingestion integration tests
+exercise the same resource owners after the move.
+
+The remaining capspace.py and ingestion.py functions are the supported inbound
+composition and compatibility boundaries retained by the plan. They preserve
+published keyword shapes, assemble frozen options and injected dependencies,
+raise violations returned by canonical policies, and delegate source/business
+work to canonical services/repositories. run_all coordinates stages and the
+retained-snapshot fallback at that application edge. Historical command options,
+argparse/stdout handling and main-only logging stay at the CLI edge. Per-call
+report assembly and compatibility exports do not create another business-rule
+owner. The moved SQL was the remaining direct persistence implementation in
+that composition module. Existing public imported resource/error names remain
+explicit compatibility bindings. No new framework or logging exception is
+granted by these role decisions.
 
 ## Ingestion scenarios and startup ownership findings resolved
 
@@ -362,7 +395,7 @@ require fixes or precise decisions. Passing gates does not accept them implicitl
 | `backend/migrations/env.py` | `68e8ae9c844a` | Reviewed content: thin Alembic-executed main adapter; success returns to framework, failures exit. Load-time bootstrap disposition remains open. |
 | `backend/migrations/versions/20260910_0001_initial_schema.py` | `7e09b5e51a37` | Reviewed content: frozen checksum/schema and revision metadata; external reads/SQL only during revision execution. Historical generic guard error, else branch and cleanup contract require frozen-migration disposition; do not rewrite history silently. |
 | `backend/migrations/versions/20260920_0002_capspace_source.py` | `935a3ecabd9c` | Reviewed: immutable revision metadata and fixed SQL only in upgrade/downgrade; history preservation included in frozen-migration disposition. |
-| `backend/src/app/ScriptingFiles/FullDataScript/capspace.py` | `59f079d89351` | Re-reviewed: transport imports target canonical repository.http; historical service/repository qualified names remain unchanged as role packages. Complete executable AST is identical. Public command/parser, options, resource factories, compatibility exports and program/diagnostic contracts remain; remaining compatibility-entrypoint role judgments are explicit. |
+| `backend/src/app/ScriptingFiles/FullDataScript/capspace.py` | `59f079d89351` | Re-reviewed: supported inbound contract command/composition boundary preserves public keywords, frozen options, policy calls, dependency assembly and compatibility exports. Canonical services/repositories own contract business work and persistence. Per-call public report assembly, argparse/stdout and main-only logging belong to this edge. No executable changes or additional framework exception. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/__init__.py` | `78dc82a8112a` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/active_repository.py` | `0068b88a19d9` | Re-reviewed/fixed: the two published keyword writer boundaries preserve their prior call shapes and assemble immutable write values before delegating. Remaining repository/factory exports retain canonical identity. Legacy comparisons cover 216 contract and 24 season cases with identical outcomes, exact SQL and bound values, including null/zero caps, existing rows, nullable teams, entry-level types and cap violations. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/active_services.py` | `6892196dc012` | Re-reviewed/fixed: explicit compatibility exports point to the exact canonical services.active orchestration/future resolver. Actual runtime callers use the canonical owner; no duplicate service implementation or import resource work remains. |
@@ -373,7 +406,7 @@ require fixes or precise decisions. Passing gates does not accept them implicitl
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/policy.py` | `60e66722bf58` | Re-reviewed/fixed: ActiveSeasonCapPolicy owns the existing nullable greater-than-one percentage invariant and returns the same typed contextual error. The SQL writer raises at the same point after reading the cap. Existing option/worker/identity/reconciliation policies remain unchanged. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/reporting.py` | `07e9be700146` | Re-reviewed/fixed: explicit compatibility bindings refer to the canonical pure utility helpers and SourceProfileRecords alias. Actual runtime callers import util directly; compatibility identity is checked. No duplicate implementation, resources or import-time I/O remains here. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/repository/__init__.py` | `4822efeff4ad` | Re-reviewed/fixed: the canonical repository role is now a directory; the historical adapter retains the identical qualified module, complete executable AST, SQL constants, typed batch tuples, immutable contexts, reconciliation and primary-preserving factories. Active and transport adapters have sibling owners. Native borrowed cursor/write-context data remains local to persistence. |
-| `backend/src/app/ScriptingFiles/FullDataScript/contracts/repository/active.py` | `f47e8d7ac18e` | Re-reviewed/fixed: canonical SQL writers consume immutable contract/season write values and the named exact count pair. Team lookup stays local to snapshot preparation, and the mutable name index stays inside its save operation. Legacy transcript comparisons preserve all SQL/bindings/outcomes; real integration proves idempotence/upserts/rollback. Borrowed cursor and guarded transaction factories are unchanged. |
+| `backend/src/app/ScriptingFiles/FullDataScript/contracts/repository/active.py` | `4789c39e0175` | Re-reviewed/fixed: canonical active persistence now also owns the retained snapshot summary query, with complete prior function AST and SQL unchanged. Both ingestion query exports bind this function. Typed missing-snapshot behavior and guarded native transaction/cursor lifetime remain. Existing immutable contract/season write values, local lookup/index buffers, exact SQL counts and primary-preserving factories are unchanged. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/repository/http.py` | `9d15e51aee29` | Re-reviewed/fixed: both owned profile factories use the shared Session-specific lifetime guard. Entry and body failure/cancellation/interruption retain original identity/cause while cleanup is attempted once and retained only as secondary; sole cleanup failures propagate. Exact AST comparison preserves every other request/retry/parser/configuration and borrowed-factory statement. Native session protocols and identity fallback remain unchanged. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/schemas/__init__.py` | `8c25f29beb35` | Reviewed: explicit public document imports and established tag helper aliases; dependencies now inspected. No I/O or mutable application state at import. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/schemas/active.py` | `da783f50d133` | Reviewed: source-boundary parsing validates index/profile shape and slug, minimum row coverage, native date conversion and contiguous seasons. Empty/duplicate seasons fail in parse_mapping_contract before min/index operations. Parsed contracts leave the boundary as frozen values. |
@@ -389,7 +422,7 @@ require fixes or precise decisions. Passing gates does not accept them implicitl
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/tests/strategies.py` | `33ef74d9b01c` | Reviewed/fixed: Hypothesis builds frozen CurrencyExample/SeasonExample values over the original finite Decimal and inclusive year spaces. Instance-derived formatted inputs and expected cents/year are arranged outside test bodies. No shared mutable examples, resource work or import I/O. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/tests/transport.py` | `3d7ade0e7332` | Re-reviewed/fixed: retry scenario names native session/sleep collaborators and immutable expected status/error/delays. ParserCalls holds fixture-owned native wrap-through instrumentation, preserving actual parse behavior/counts without replacing a repository. Mutable observations and generated source HTML remain local fixture resources, not claimed immutable production values. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/util.py` | `8fa8b5eb4c35` | Re-reviewed/fixed: four unchanged pure profile snapshot/grouping/metrics/count helpers now share the canonical utility role with money/season/text/date conversion. Source grouping and Counter values are local serialization/report outputs, distinct from immutable domain values. Original source snapshots remain freshly decoded; imports perform no environment, resource or database work. |
-| `backend/src/app/ScriptingFiles/FullDataScript/ingestion.py` | `8a8ede222845` | Re-reviewed: source client/session imports target the canonical repository.http implementation. Complete executable AST is unchanged, including actual native factory alias, owned/borrowed transport selection, guarded cached summaries and parent terminal diagnostics. Compatibility-entrypoint role judgment remains explicit. |
+| `backend/src/app/ScriptingFiles/FullDataScript/ingestion.py` | `57597a28c409` | Re-reviewed/fixed: retained summary SQL moved unchanged to canonical contracts repository.active, with both published query names exact bindings. Internal summary serialization uses canonical source util. Remaining functions form the planned source composition/compatibility edge: frozen options, injected/borrowed resource factories, canonical policy/service calls, stage coordination and retained-snapshot fallback. Public imported resource/error names remain explicit bindings. No new logging/configuration owner. |
 | `backend/src/app/ScriptingFiles/FullDataScript/ingestion_tracking.py` | `84afd241f897` | Re-reviewed/fixed: failure reporting depends on the minimal runtime-checkable IngestionRun Protocol, exposing only read-only run_id, succeed and fail. The decorator has no concrete PostgreSQL dependency. Complete executable AST is unchanged after imports/types; native callable signatures/metadata, immutable context, stored counts, original failures and best-effort secondary reporting remain. |
 | `backend/src/app/ScriptingFiles/FullDataScript/populate_roster_status.py` | `5c7d1f03acbf` | Reviewed: legacy native command boundary builds injected feed/repository services only during invocation, uses explicit None checks, and rolls back incomplete feeds before returning. Main owns logging/hook/exit codes and one report; no Namespace escapes its zero-option parser. Established wire names and asdict summary shape are retained. |
 | `backend/src/app/ScriptingFiles/FullDataScript/roster_status/__init__.py` | `e0395eee5ae5` | Reviewed: module docstring only; no executable behavior. |
@@ -408,7 +441,7 @@ require fixes or precise decisions. Passing gates does not accept them implicitl
 | `backend/src/app/ScriptingFiles/FullDataScript/roster_status/util.py` | `2bd2b5dd6205` | Reviewed/fixed: transport fetching moved unchanged to the HTTP adapter; this role now contains only pure schema-to-domain parsing, normalization and conservative identity matching. Duplicate/conflicting IDs and ambiguous names/birth dates still fail closed. |
 | `backend/src/app/ScriptingFiles/FullDataScript/run_all.py` | `31f350e3526a` | Reviewed: zero-option argparse command discards Namespace, main owns environment/logging/hook setup and one program report; no pointless empty options object is introduced. Typed incomplete-feed outcome has its documented exit code; uncaught cancellation remains owned by the command hook. Import is side-effect free. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/__init__.py` | `1f506475c98d` | Reviewed: module docstring only; no executable behavior. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/domain.py` | `8b7233618612` | Re-reviewed/fixed: unchanged frozen SourceHttpOptions now has its canonical domain owner; all original defaults/native retry settings remain. Existing tuple-backed rows, layouts and typed summaries retain their behavior. Fresh compatibility summary serialization remains an explicit helper-role disposition. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/domain.py` | `bc8ddfd8a127` | Re-reviewed/fixed: frozen rows/options/layouts and pure module-level frozen-value factories retain original class modules, fields and defaults. The public serializer is now only a compatibility call to canonical util; a call-time import prevents the domain/util cycle without import I/O. All four summary variants retain old values and fresh report ownership. No business orchestration or resource construction added. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/errors.py` | `2b5354017443` | Reviewed/fixed: IntegerValueViolation and TeamAbbreviationViolation are typed ValueError-compatible leaves retaining input context without echoing it in their fixed messages. Existing source/row/kind/coverage errors preserve their native hierarchy and typed context. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/http.py` | `6bea216923a9` | Re-reviewed/fixed: explicit compatibility bindings retain the domain options class and canonical repository.http transport functions, Protocols and factories. All ten previously defined objects have exact canonical identity. No duplicated transport implementation or import resource acquisition remains. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/moneypuck/__init__.py` | `92d48982cb80` | Reviewed: module docstring only; no executable behavior. |
@@ -435,7 +468,7 @@ require fixes or precise decisions. Passing gates does not accept them implicitl
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/responses.py` | `015d5898a453` | Reviewed: source-only response/session templates build fresh native JSON/CSV graphs on request. Frozen primitive configuration has no shared mutable buffers; lifecycle observations are per fixture. Native throw points and nullcontext factories simulate actual transport/borrowed-client boundaries, without network or import I/O. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/scenarios.py` | `983aa1f28622` | Re-reviewed/fixed: SessionCloseProbe owns fixture-native session/callback/secondary-failure and close observations; its forwarding method is identical to the prior setup observer. Frozen setup/lifetime bindings separate fresh primary/cause and owner/entry-mode fields from the native resource. The lifetime act enters the actual owner and optionally raises its prepared body failure; expected-failure selection distinguishes primary from sole cleanup. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/strategies.py` | `b39f66564425` | Reviewed: pure named optional-number Hypothesis strategy deliberately includes nonfinite/missing numeric boundaries; no shared mutable examples or resource state. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/util.py` | `91298dbbc223` | Reviewed/fixed: file opening moved to the source repository adapter; pure CSV parsing/normalization remains here. Finite Decimal conversion, stable row hashing and shared season calendar remain unchanged. The moved internal helper has no compatibility wrapper because its sole actual caller was updated. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/util.py` | `79d95d939ca6` | Re-reviewed/fixed: canonical pure summary serializer moved here with identical complete function AST. Eight old/current cases across all four variants verify equal values and detached native report dictionaries. Existing pure CSV parsing/normalization, finite Decimal conversion, row hashing and shared calendar behavior remain unchanged; persistence/file ownership stays in repository. |
 | `backend/src/app/ScriptingFiles/FullDataScript/team_stints/__init__.py` | `98389c81d214` | Reviewed/fixed: exact compatibility bindings retain the original team-stints import path for parameter building, plan/apply queries and typed range error. SQL, policy and errors have canonical owners; import performs no external I/O or resource construction. |
 | `backend/src/app/ScriptingFiles/FullDataScript/team_stints/errors.py` | `1bd52deaf535` | Reviewed/fixed: SeasonRangeError moved unchanged, with exact exception class AST, keyword fields and message. The compatibility package exports the same canonical object. |
 | `backend/src/app/ScriptingFiles/FullDataScript/team_stints/policy.py` | `ecaafe28b861` | Reviewed/fixed: frozen SeasonRangePolicy returns the existing typed failure only when both optional bounds are present and reversed. The caller raises before resource acquisition. Unbounded, one-sided, equal and ordered ranges preserve native behavior. |
