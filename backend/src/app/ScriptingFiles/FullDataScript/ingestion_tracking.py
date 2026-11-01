@@ -3,7 +3,6 @@
 from collections.abc import Callable, Mapping
 from functools import wraps
 from dataclasses import replace
-import asyncio
 from typing import Protocol, cast, runtime_checkable
 
 from app.ScriptingFiles.FullDataScript.tracking.errors import (
@@ -19,6 +18,8 @@ from app.ScriptingFiles.FullDataScript.tracking.services import (
 )
 from app.ScriptingFiles.FullDataScript.tracking.util import collect_ingestion_counts
 from app.shared.observability.domain import LogLevel
+from app.shared.observability.util import is_expected_cancellation
+from app.shared.cleanup import retain_cleanup_failure
 from app.ScriptingFiles.FullDataScript.tracking.repository import (
     open_ingestion_run,
     PostgresIngestionRun,
@@ -54,6 +55,7 @@ def tracked_ingestion[**P, R: Mapping[str, object]](
                     )
                     cast(dict[str, object], kwargs)["context"] = context
                 report_ingestion_progress(context, event="ingestion.started")
+                summary: R | None = None
                 try:
                     summary = function(*args, **kwargs)
                     run.succeed(summary)
@@ -62,11 +64,11 @@ def tracked_ingestion[**P, R: Mapping[str, object]](
                     progress = (
                         collect_ingestion_counts(primary.committed_summary)
                         if isinstance(primary, IngestionBatchError)
+                        else collect_ingestion_counts(summary)
+                        if summary is not None
                         else {}
                     )
-                    cancelled = isinstance(
-                        primary, (asyncio.CancelledError, KeyboardInterrupt)
-                    )
+                    cancelled = is_expected_cancellation(primary)
                     report_ingestion_progress(
                         context,
                         event="ingestion.finished",
@@ -102,7 +104,7 @@ def report_ingestion_failure(run: PostgresIngestionRun, primary: BaseException) 
     try:
         run.fail(primary)
     except BaseException as reporting:
-        primary.add_note(f"Ingestion failure reporting also failed: {reporting!r}")
+        retain_cleanup_failure(primary, reporting)
 
 
 advisory_lock_key = build_advisory_lock_key

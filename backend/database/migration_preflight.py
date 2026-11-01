@@ -15,6 +15,7 @@ from app.shared.observability.errors import LoggingSettingsError
 from app.shared.observability.services import (
     configure_logging,
     start_command,
+    configure_command_exceptions,
     finish_command,
 )
 from app.shared.environment import resolve_database_url
@@ -73,6 +74,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(str(error))
     configure_logging(settings)
     context = start_command("migration_preflight")
+    configure_command_exceptions(context)
     try:
         result = execute_command(context=context)
     except Exception:

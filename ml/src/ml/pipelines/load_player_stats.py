@@ -13,6 +13,7 @@ from ml.observability.services import report_ml_progress
 from app.shared.observability.services import (
     configure_logging,
     start_command,
+    configure_command_exceptions,
     finish_command,
 )
 from sqlalchemy import Connection, text
@@ -377,6 +378,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(str(error))
     configure_logging(settings)
     context = start_command("ml.load_player_stats")
+    configure_command_exceptions(context)
     try:
         player_stats = load_player_stats()
         report_ml_progress(

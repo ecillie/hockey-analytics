@@ -131,8 +131,42 @@ class TestDurableContext:
         assert events[-1]["fetched"] == 8
         assert events[-1]["outcome"] == "completed"
 
+    @pytest.fixture
+    def status_failure(self, monkeypatch):
+        scenario = TrackingScenario(completion_failure=RuntimeError("status_secret"))
+        monkeypatch.setattr(ingestion_tracking, "open_ingestion_run", scenario.open_run)
+        return scenario
+
+    def test_status_failure_preserves_completed_work_counts(
+        self, status_failure, context, capture
+    ):
+        operation = ingestion_tracking.tracked_ingestion("nhl", "stats")(
+            status_failure.ingest
+        )
+        with pytest.raises(RuntimeError) as raised:
+            operation(context=context)
+        assert raised.value is status_failure.completion_failure
+        assert status_failure.events == ["work", "succeeded", "failed", "closed"]
+        events = [
+            json.loads(line.removeprefix("event "))
+            for line in capture.getvalue().splitlines()
+        ]
+        assert events[-1]["outcome"] == "failed"
+        assert events[-1]["committed"] == 5
+        assert events[-1]["fetched"] == 8
+        assert "status_secret" not in capture.getvalue()
+
 
 class TestTrackedFailures:
+    @pytest.fixture(
+        params=[
+            pytest.param(False, id="status-recorded"),
+            pytest.param(True, id="status-report-failed"),
+        ]
+    )
+    def reporting_failure(self, request):
+        return RuntimeError("reporting_secret") if request.param else None
+
     @pytest.fixture(
         params=[
             pytest.param("error", id="failed"),
@@ -156,9 +190,10 @@ class TestTrackedFailures:
         return RuntimeError("payload_secret")
 
     @pytest.fixture
-    def scenario(self, failure, monkeypatch):
+    def scenario(self, failure, reporting_failure, monkeypatch):
         scenario = TrackingScenario(
-            failure=failure, reporting_failure=RuntimeError("reporting_secret")
+            failure=failure,
+            reporting_failure=reporting_failure,
         )
         monkeypatch.setattr(ingestion_tracking, "open_ingestion_run", scenario.open_run)
         return scenario
@@ -176,13 +211,17 @@ class TestTrackedFailures:
             operation(context=context)
         assert raised.value is failure
         assert scenario.events == ["work", "failed", "closed"]
-        assert "reporting_secret" in failure.__notes__[0]
+        if scenario.reporting_failure is not None:
+            assert "reporting_secret" in failure.__notes__[0]
         events = [
             json.loads(line.removeprefix("event "))
             for line in capture.getvalue().splitlines()
         ]
         finished = [item for item in events if item["event"] == "ingestion.finished"]
-        cancelled = isinstance(failure, asyncio.CancelledError)
+        cancelled = (
+            isinstance(failure, asyncio.CancelledError)
+            and scenario.reporting_failure is None
+        )
         assert len(finished) == (0 if cancelled and level is LogLevel.INFO else 1)
         if finished:
             assert finished[0]["outcome"] == ("cancelled" if cancelled else "failed")

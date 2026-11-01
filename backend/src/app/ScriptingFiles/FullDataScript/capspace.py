@@ -57,7 +57,7 @@ from app.ScriptingFiles.FullDataScript.contracts.options import (
 )
 from app.ScriptingFiles.FullDataScript.contracts.repository import (
     ContractRepositoryFactory,
-    open_contract_repository,
+    open_contract_repository as open_contract_repository,
 )
 from app.ScriptingFiles.FullDataScript.contracts.repository import (
     load_coverage_report as coverage_report,
@@ -83,6 +83,9 @@ from app.ScriptingFiles.FullDataScript.contracts.util import (
 )
 from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingestion
 from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
+from app.ScriptingFiles.FullDataScript.contracts.repository import (
+    ContextualContractRepositoryFactory,
+)
 from app.ScriptingFiles.FullDataScript.tracking.services import build_ingestion_context
 from app.config import load_environment
 from app.shared.observability.domain import CommandOutcome, read_logging_settings
@@ -90,6 +93,7 @@ from app.shared.observability.errors import LoggingSettingsError
 from app.shared.observability.services import (
     configure_logging,
     start_command,
+    configure_command_exceptions,
     finish_command,
 )
 from app.shared.cli import ExitCode
@@ -151,7 +155,7 @@ def run_historical_contracts(
     *,
     options: HistoricalContractOptions,
     dry_run: bool,
-    repository_factory: ContractRepositoryFactory = open_contract_repository,
+    repository_factory: ContractRepositoryFactory | None = None,
     context: IngestionContext | None = None,
 ) -> dict[str, int]:
     if violation := find_option_violation(options):
@@ -162,7 +166,9 @@ def run_historical_contracts(
             session=SynchronizedProfileSession(session=session)
         )
     service = HistoricalContractService(
-        repository_factory=repository_factory,
+        repository_factory=ContextualContractRepositoryFactory(context=context)
+        if repository_factory is None
+        else repository_factory,
         fetcher=ProfileFetcher(session_factory=session_factory, context=context),
         context=context,
     )
@@ -334,6 +340,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(str(error))
     configure_logging(settings)
     context = start_command("historical_contracts")
+    configure_command_exceptions(context)
     try:
         summary = execute_historical_command(
             options,

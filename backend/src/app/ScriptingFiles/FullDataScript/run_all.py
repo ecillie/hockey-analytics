@@ -20,6 +20,7 @@ from app.shared.observability.errors import LoggingSettingsError
 from app.shared.observability.services import (
     configure_logging,
     start_command,
+    configure_command_exceptions,
     finish_command,
 )
 from app.ScriptingFiles.FullDataScript.tracking.services import build_ingestion_context
@@ -40,6 +41,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(str(error))
     configure_logging(settings)
     context = start_command("ingestion")
+    configure_command_exceptions(context)
     try:
         summary = run_all(context=context)
         init_db()

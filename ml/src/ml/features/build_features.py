@@ -12,6 +12,7 @@ from ml.observability.services import report_ml_progress
 from app.shared.observability.services import (
     configure_logging,
     start_command,
+    configure_command_exceptions,
     finish_command,
 )
 
@@ -273,6 +274,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(str(error))
     configure_logging(settings)
     context = start_command("ml.build_features")
+    configure_command_exceptions(context)
     try:
         feature_data = build_features()
         report_ml_progress(

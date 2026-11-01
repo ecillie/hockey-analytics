@@ -18,6 +18,7 @@ from app.shared.observability.errors import LoggingSettingsError
 from app.shared.observability.services import (
     configure_logging,
     start_command,
+    configure_command_exceptions,
     finish_command,
 )
 from sklearn.compose import ColumnTransformer
@@ -352,6 +353,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(str(error))
     configure_logging(settings)
     context = start_command("ml.train_skater_value")
+    configure_command_exceptions(context)
     try:
         directory = resolve_artifact_directory("TRADEVALUE_MODEL_DIR", Path("models"))
         train_skater_model(

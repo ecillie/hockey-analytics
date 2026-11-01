@@ -1,12 +1,14 @@
 """Restore command logger ownership after in-process boundary tests."""
 
 import logging
+import sys
 
 import pytest
 
 
 @pytest.fixture
 def isolate_command_logging(monkeypatch, caplog):
+    monkeypatch.setattr(sys, "excepthook", sys.excepthook)
     namespaces = (
         "app",
         "backend",

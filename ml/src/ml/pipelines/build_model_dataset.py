@@ -11,6 +11,7 @@ from ml.observability.services import report_ml_progress
 from app.shared.observability.services import (
     configure_logging,
     start_command,
+    configure_command_exceptions,
     finish_command,
 )
 
@@ -172,6 +173,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(str(error))
     configure_logging(settings)
     context = start_command("ml.build_model_dataset")
+    configure_command_exceptions(context)
     try:
         dataset = build_model_dataset()
         report_ml_progress(

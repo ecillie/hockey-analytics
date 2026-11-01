@@ -478,4 +478,60 @@ rendering outside the environment callback, which must be accounted for rather
 than assuming a handler change alone sanitizes that path. No phase-3 PR or release
 completion is claimed. Frontend, hosted capture and the phase-7 semantic audit
 remain later acceptance work.
+
+### Phase 3 transaction and command-lifecycle checkpoint
+
+Transaction observation now occurs in the DB-API owner immediately after commit
+or rollback returns, with an explicit rollback-failed outcome when needed. A
+minimal runtime-checkable context protocol keeps the serving database module
+independent of ingestion packages. Frozen factories carry context into default
+source, active-contract and historical-contract repositories and roster status
+transactions. Injected factories keep their own ownership. Transaction events do
+not claim row writes: a committed transaction can be read-only, and rollback row
+counts are omitted when they are unknown.
+
+The shared cleanup helper preserves existing notes and retains the first cleanup
+exception as safe metadata. Additional cleanup detail is marked truncated rather
+than silently discarded or serialized through unrestricted note text. A separate
+flag preserves the distinction between repeated cancellation and genuine cleanup
+failure even when diagnostics are truncated. The API lifespan adapter uses the
+same retention behavior. Original exception identity, cause and cleanup ordering
+remain unchanged in resource tests.
+
+Every application command now installs a frozen process-owned exception hook
+from its `main()`, after logging setup and invocation creation. This hook handles
+only exceptions that reach the interpreter; ordinary handled failures still use
+their existing translation path. It emits one safe diagnostic and completion
+summary, while allowing cancellation to propagate normally. Pure cancellation is
+DEBUG-only; additional cleanup/status failures remain ERROR. Library functions
+do not log a traceback and re-raise it. API bootstrap and ordinary imports do not
+install this command hook, and in-process tests restore the original hook.
+
+Fresh-process tests cover task cancellation, keyboard interruption, cancellation
+plus a genuine cleanup failure, and repeated cleanup cancellations in INFO/DEBUG
+and JSON/text. No raw exception values reach stderr. CPython preserves task
+cancellation status 1 and SIGINT termination (subprocess `-SIGINT`, shell 130).
+Bounded multiple-cleanup diagnostics are explicitly truncated. Tracking tests
+also prove that a failed durable-status update retains known completed work
+counts rather than dropping them from the failed run summary.
+
+Transaction fault tests cover successful commit, work failure, commit failure,
+rollback failure, expected cancellation and close failure after commit, preserving
+original identity and reporting only actual outcomes. Real PostgreSQL tests verify
+committed and rolled-back data against their events. Existing historical-batch,
+ingestion, resource and API lifecycle checks still pass.
+
+Final checkpoint on newly provisioned, migrated PostgreSQL database
+`tradevalue_test_logging03_transactions`: **1,159 passed, zero skips**, **91.41%**
+aggregate coverage in **130.17 seconds**; API/calendar remains **100%**. Isolated
+units passed **1,109 tests**, with 50 integration cases deselected, in **113.14
+seconds**. Ruff lint/format, ty, structural rules, dependency/OpenAPI parity,
+isolated package installs/boundaries and the ML gate passed. Diff review found
+no added forbidden constructs or comments.
+
+Phase 3 remains unpublished. Alembic framework reconciliation and final combined
+phase/container/CI acceptance remain before the PR. Its existing bootstrap must
+account for framework-caught CommandError output as well as uncaught failures;
+changing handlers alone does not cover both paths. Frontend, hosted rollout and
+the outstanding phase-7 semantic audit remain later acceptance requirements.
 The dedicated checkpoint PostgreSQL container was removed after verification.

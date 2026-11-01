@@ -58,6 +58,28 @@ player rows or upstream URLs. Roster feed progress and classification remain
 distinct from successful transaction completion. Session cleanup preserves the
 original failure/cancellation and retains secondary failure notes.
 
+Commands install a process-owned unhandled-exception hook from `main()` after
+logging configuration. Ordinary imports and the API lifespan hook do not replace
+`sys.excepthook`. An uncaught cancellation still propagates through resource cleanup
+and retains its interpreter exit behavior; only its diagnostic/finished events
+are DEBUG. Keyboard interrupts retain SIGINT status (130 in a shell). A genuine
+secondary cleanup or status-reporting failure remains visible at ERROR even when
+the primary exception is cancellation. Handled execution failures retain their
+existing single diagnostic and exit code. Existing cleanup notes stay attached;
+safe diagnostics include the first retained cleanup type/frames and explicitly
+mark further cleanup detail as truncated, without serializing note text.
+
+`transaction.committed` follows a successful database commit;
+`transaction.rolled_back` follows a successful rollback. `transaction.rollback_failed`
+reports that rollback itself failed, while the original exception still propagates.
+These are transaction outcomes, including read-only transactions, rather than row
+write counts. They never infer a rollback row count from attempted input rows.
+Default source and contract repository factories carry invocation/run context into
+these boundaries; an explicitly injected repository/transaction factory retains
+ownership of its own resource instrumentation. If durable run-status persistence
+fails after work returned successfully, the failed job summary retains that work's
+known completed counters.
+
 | Command after `uv run python` | Options |
 | --- | --- |
 | `backend/export_openapi.py` | `--check`, `--output PATH` |

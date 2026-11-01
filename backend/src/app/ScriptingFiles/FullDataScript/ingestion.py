@@ -18,10 +18,10 @@ import requests
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     MissingSourceSnapshotError,
 )
-from app.database import open_database_transaction, init_db
+from app.database import DatabaseTransactionFactory, open_database_transaction, init_db
 from app.ScriptingFiles.FullDataScript import capspace
 from app.ScriptingFiles.FullDataScript.contracts.active_repository import (
-    open_active_repository,
+    ContextualActiveRepositoryFactory,
 )
 from app.ScriptingFiles.FullDataScript.contracts.active_services import (
     ActiveContractService,
@@ -148,7 +148,7 @@ def track_active_contracts(
         )
     return ActiveContractService(
         session_factory=session_factory,
-        repository_factory=open_active_repository,
+        repository_factory=ContextualActiveRepositoryFactory(context=context),
         context=context,
     ).run(options)
 
@@ -265,7 +265,11 @@ def ingest_moneypuck(
         else options
     )
     repository = (
-        PostgresMoneyPuckRepository(transaction=open_database_transaction)
+        PostgresMoneyPuckRepository(
+            transaction=DatabaseTransactionFactory(
+                transaction=open_database_transaction, context=context
+            )
+        )
         if repository is None
         else repository
     )
@@ -290,7 +294,11 @@ def ingest_nhl_rosters(
     context: IngestionContext | None = None,
 ) -> dict[str, int | str]:
     repository = (
-        PostgresNhlRosterRepository(transaction=open_database_transaction)
+        PostgresNhlRosterRepository(
+            transaction=DatabaseTransactionFactory(
+                transaction=open_database_transaction, context=context
+            )
+        )
         if repository is None
         else repository
     )
@@ -337,7 +345,11 @@ def ingest_nhl_stats(
         else options
     )
     repository = (
-        PostgresNhlStatsRepository(transaction=open_database_transaction)
+        PostgresNhlStatsRepository(
+            transaction=DatabaseTransactionFactory(
+                transaction=open_database_transaction, context=context
+            )
+        )
         if repository is None
         else repository
     )
@@ -379,7 +391,11 @@ def ingest_schedule(
     context: IngestionContext | None = None,
 ) -> dict[str, int | str]:
     repository = (
-        PostgresScheduleRepository(transaction=open_database_transaction)
+        PostgresScheduleRepository(
+            transaction=DatabaseTransactionFactory(
+                transaction=open_database_transaction, context=context
+            )
+        )
         if repository is None
         else repository
     )

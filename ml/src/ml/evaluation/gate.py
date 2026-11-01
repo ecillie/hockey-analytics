@@ -20,6 +20,7 @@ from app.shared.observability.errors import LoggingSettingsError
 from app.shared.observability.services import (
     configure_logging,
     start_command,
+    configure_command_exceptions,
     finish_command,
 )
 
@@ -154,6 +155,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(str(error))
     configure_logging(settings)
     context = start_command("ml.metric_gate")
+    configure_command_exceptions(context)
     try:
         execute_command(context=context)
     except Exception:

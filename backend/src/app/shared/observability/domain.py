@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum, auto
 from time import monotonic_ns
-from typing import Literal
+from typing import Literal, Protocol, runtime_checkable
 from app.shared.observability.errors import LoggingSettingsError
 
 
@@ -19,6 +19,31 @@ class LogLevel(IntEnum):
 class LogFormat(StrEnum):
     JSON = auto()
     TEXT = auto()
+
+
+@runtime_checkable
+class DiagnosticContext(Protocol):
+    @property
+    def fields(self) -> dict[str, object]: ...
+
+
+class TransactionOutcome(StrEnum):
+    STARTED = auto()
+    COMMITTED = auto()
+    ROLLED_BACK = auto()
+    ROLLBACK_FAILED = auto()
+
+    @property
+    def level(self) -> LogLevel:
+        if self is TransactionOutcome.STARTED:
+            return LogLevel.DEBUG
+        if self is TransactionOutcome.ROLLBACK_FAILED:
+            return LogLevel.WARNING
+        return LogLevel.INFO
+
+    @property
+    def event(self) -> str:
+        return f"transaction.{self.value}"
 
 
 class RequestOutcome(StrEnum):

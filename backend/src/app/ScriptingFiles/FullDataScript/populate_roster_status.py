@@ -41,6 +41,7 @@ from app.shared.observability.errors import LoggingSettingsError
 from app.shared.observability.services import (
     configure_logging,
     start_command,
+    configure_command_exceptions,
     finish_command,
 )
 from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
@@ -68,7 +69,7 @@ def sync_roster_status(
             season_id=os.environ.get("AHL_SEASON_ID"),
         )
         ahl_service = AhlRosterService(http_client=JsonHttpClient(), options=options)
-    with open_database_transaction() as connection:
+    with open_database_transaction(context=context) as connection:
         service = RosterStatusService(
             repository=PostgresRosterRepository(connection=connection),
             nhl_service=nhl_service,
@@ -102,6 +103,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(str(error))
     configure_logging(settings)
     context = start_command("roster_status")
+    configure_command_exceptions(context)
     try:
         init_db()
         summary = sync_roster_status(

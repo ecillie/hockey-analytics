@@ -12,9 +12,12 @@ class RecordingRun:
     events: list[str]
     run_id: int = 17
     reporting_failure: BaseException | None = None
+    completion_failure: BaseException | None = None
 
     def succeed(self, summary: Mapping[str, object]) -> None:
         self.events.append("succeeded")
+        if self.completion_failure is not None:
+            raise self.completion_failure
 
     def fail(self, failure: BaseException) -> None:
         self.events.append("failed")
@@ -26,6 +29,7 @@ class RecordingRun:
 class TrackingScenario:
     failure: BaseException | None = None
     reporting_failure: BaseException | None = None
+    completion_failure: BaseException | None = None
     contexts: list[IngestionContext | None] = field(default_factory=list)
     events: list[str] = field(default_factory=list)
 
@@ -33,7 +37,9 @@ class TrackingScenario:
     def open_run(self, **kwargs: object) -> Generator[RecordingRun]:
         try:
             yield RecordingRun(
-                events=self.events, reporting_failure=self.reporting_failure
+                events=self.events,
+                reporting_failure=self.reporting_failure,
+                completion_failure=self.completion_failure,
             )
         finally:
             self.events.append("closed")

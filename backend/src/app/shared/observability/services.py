@@ -2,6 +2,8 @@
 
 import logging
 import sys
+from dataclasses import dataclass
+from types import TracebackType
 from time import monotonic_ns
 from uuid import uuid4
 from starlette.types import Scope
@@ -11,6 +13,8 @@ from app.shared.observability.domain import (
     InvocationContext,
     LogLevel,
     LoggingSettings,
+    DiagnosticContext,
+    TransactionOutcome,
 )
 from app.shared.observability.formatting import SafeFormatter
 from app.shared.observability.errors import (
@@ -22,7 +26,11 @@ from app.shared.observability.policy import (
     RequestFailureFilter,
     LifecycleReportFilter,
 )
-from app.shared.observability.util import build_request_fields, get_request_context
+from app.shared.observability.util import (
+    build_request_fields,
+    get_request_context,
+    is_expected_cancellation,
+)
 from app.shared.cleanup import retain_cleanup_failure
 from app.shared.observability.sinks import (
     DiagnosticStream,
@@ -34,6 +42,26 @@ from app.shared.observability.sinks import (
 logger = logging.getLogger(__name__)
 
 
+def report_transaction_outcome(
+    context: DiagnosticContext | None,
+    outcome: TransactionOutcome,
+    *,
+    failure: BaseException | None = None,
+) -> None:
+    if context is None:
+        return
+    level = (
+        LogLevel.DEBUG
+        if failure is not None and is_expected_cancellation(failure)
+        else outcome.level
+    )
+    logger.log(
+        level,
+        "Transaction outcome",
+        extra=context.fields | {"event": outcome.event, "outcome": outcome.value},
+    )
+
+
 def start_command(source: str) -> InvocationContext:
     context = InvocationContext(
         invocation_id=uuid4().hex, source=source, started_ns=monotonic_ns()
@@ -43,7 +71,8 @@ def start_command(source: str) -> InvocationContext:
 
 
 def finish_command(context: InvocationContext, outcome: CommandOutcome) -> None:
-    logger.info(
+    logger.log(
+        LogLevel.DEBUG if outcome is CommandOutcome.CANCELLED else LogLevel.INFO,
         "Command finished",
         extra=context.fields
         | {
@@ -56,10 +85,34 @@ def finish_command(context: InvocationContext, outcome: CommandOutcome) -> None:
 
 def retain_lifespan_cleanup(primary: BaseException, cleanup: BaseException) -> None:
     retain_cleanup_failure(primary, cleanup)
-    try:
-        primary.__dict__["tradevalue_cleanup"] = cleanup
-    except Exception:
-        pass
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class CommandExceptionHook:
+    context: InvocationContext
+
+    def __call__(
+        self,
+        kind: type[BaseException],
+        error: BaseException,
+        traceback: TracebackType | None,
+    ) -> None:
+        cancelled = is_expected_cancellation(error)
+        logger.log(
+            LogLevel.DEBUG if cancelled else LogLevel.ERROR,
+            "Command stopped",
+            exc_info=(kind, error, traceback),
+            extra=self.context.fields
+            | {"event": "command.cancelled" if cancelled else "command.failed"},
+        )
+        finish_command(
+            self.context,
+            CommandOutcome.CANCELLED if cancelled else CommandOutcome.FAILED,
+        )
+
+
+def configure_command_exceptions(context: InvocationContext) -> None:
+    sys.excepthook = CommandExceptionHook(context=context)
 
 
 def report_request_error(scope: Scope, error: Exception) -> None:
