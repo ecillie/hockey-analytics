@@ -41,6 +41,7 @@ def observed_lifespan(scenario, primary, caplog):
             (),
             None,
         ),
+        records=tuple(caplog.records),
     )
 
 
@@ -183,8 +184,12 @@ class TestLifespanFailures:
         assert "secret" not in json.dumps(payload)
         assert not any(
             getattr(record, "event", None) == "service.stopped"
-            for record in caplog.records
+            for record in observed_lifespan.records
         )
+        assert sum(
+            getattr(record, "event", None) == "service.ready"
+            for record in observed_lifespan.records
+        ) == int(operation == "dispose")
         if operation == "dispose":
             assert application.state.database is None
 

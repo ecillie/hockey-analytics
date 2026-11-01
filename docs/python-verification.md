@@ -164,6 +164,19 @@ deselected; static, package/export, schema/API and ML checks passed. Other
 role/interface and exact framework/historical findings, hosted NonProd
 and final combined acceptance remain open.
 
+The HTTP/host observation checkpoint names response/app/record and concurrent
+request collaborators and retains actual fixture-phase logs with observations.
+This corrects a vacuous earlier lifespan check: eight injected false stopped
+events passed the preceding capture and are all rejected now. A ready-count
+control covers successful startup. Generated command/Alembic hosts use explicit
+main/module guards and native stream/handler ownership. The 38 compared HTTP
+test IDs are unchanged; direct HTTP/request/lifespan checks passed **56**. Fresh
+`tradevalue_test_logging05_http_observations` passed **1,439 tests, zero skips**,
+**91.26%** coverage and the **100%** API/calendar gate. Isolated units passed
+**1,389**, with 50 integrations deselected. Static, package/export, schema/API and
+ML checks passed. Other recorded test/host-program, role/interface and exact
+framework/historical findings, hosted NonProd and final acceptance remain open.
+
 The supported runtime is Python 3.12. Install the root uv workspace with
 `uv sync --locked --all-groups`. Runtime, ingestion, ML, and development
 requirements are generated from the same lock. Run these checks at the root:

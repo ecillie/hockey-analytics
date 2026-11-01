@@ -9,6 +9,7 @@ import textwrap
 import pytest
 
 from app.shared.observability.domain import LogFormat
+from app.shared.tests.fakes import ProcessFieldObservation
 
 
 @pytest.fixture(
@@ -119,7 +120,7 @@ class TestAlembicInvalidSettings:
             "DATABASE_URL": "postgresql://user:password_secret@127.0.0.1:1/tradevalue_test",
         }
         environment[request.param] = "invalid_secret"
-        return subprocess.run(
+        process = subprocess.run(
             [
                 sys.executable,
                 "-m",
@@ -134,12 +135,13 @@ class TestAlembicInvalidSettings:
             text=True,
             timeout=20,
             check=False,
-        ), request.param
+        )
+        return ProcessFieldObservation(process=process, field=request.param)
 
     def test_invalid_settings_fail_before_connection_without_echo(self, completed):
-        process, field = completed
+        process = completed.process
         assert process.returncode == 255
-        assert field in process.stdout + process.stderr
+        assert completed.field in process.stdout + process.stderr
         assert "secret" not in process.stdout + process.stderr
         assert "OperationalError" not in process.stdout + process.stderr
         assert "Traceback" not in process.stderr
@@ -157,24 +159,32 @@ class TestAlembicProgrammaticOwnership:
         from alembic.util import CommandError
         from backend.database.migrations import services
         from app.shared.tests.fakes import StageOutcome
+        from contextlib import ExitStack, closing
+        from app.shared.cli import ExitCode
 
-        kind = sys.argv[1]
-        failure = asyncio.CancelledError("private_secret") if kind == "cancelled" else CommandError("private_secret") if kind == "framework" else RuntimeError("private_secret")
-        services.execute_migrations = StageOutcome(result=None, failure=failure)
-        output = StringIO()
-        handler = logging.StreamHandler(output)
-        root = logging.getLogger()
-        root.addHandler(handler)
-        snapshot = (tuple(root.handlers), root.level, sys.excepthook)
-        observed = None
-        try:
-            command.upgrade(Config("backend/alembic.ini"), "head")
-        except BaseException as error:
-            observed = error
-        assert observed is failure
-        assert (tuple(root.handlers), root.level, sys.excepthook) == snapshot
-        assert output.getvalue() == ""
-        print(json.dumps({"identity": True, "host_preserved": True}))
+        def main() -> int:
+            with ExitStack() as resources:
+                kind = sys.argv[1]
+                failure = asyncio.CancelledError('private_secret') if kind == 'cancelled' else CommandError('private_secret') if kind == 'framework' else RuntimeError('private_secret')
+                services.execute_migrations = StageOutcome(result=None, failure=failure)
+                output = resources.enter_context(StringIO())
+                handler = resources.enter_context(closing(logging.StreamHandler(output)))
+                root = logging.getLogger()
+                root.addHandler(handler)
+                resources.callback(root.removeHandler, handler)
+                snapshot = (tuple(root.handlers), root.level, sys.excepthook)
+                observed = None
+                try:
+                    command.upgrade(Config('backend/alembic.ini'), 'head')
+                except BaseException as error:
+                    observed = error
+                assert observed is failure
+                assert (tuple(root.handlers), root.level, sys.excepthook) == snapshot
+                assert output.getvalue() == ''
+                print(json.dumps({'identity': True, 'host_preserved': True}))
+            return ExitCode.SUCCESS
+        if __name__ == '__main__':
+            raise SystemExit(main())
     """)
 
     @pytest.fixture(

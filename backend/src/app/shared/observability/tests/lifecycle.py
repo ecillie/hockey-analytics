@@ -12,6 +12,7 @@ from starlette.types import ASGIApp, Message
 from app.config import DatabaseSettings
 from app.database import DatabaseResources
 from app.shared.tests.resources import ResourceProbe
+from app.shared.observability.tests.requests import CapturedRecords
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -59,6 +60,7 @@ class LifecycleScenario:
 class LifecycleObservation:
     failure: BaseException
     record: logging.LogRecord
+    records: CapturedRecords
 
 
 async def exercise_lifespan(

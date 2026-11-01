@@ -7,6 +7,22 @@ import httpx
 from io import StringIO
 from pathlib import Path
 from types import ModuleType
+from subprocess import CompletedProcess
+
+
+type LoggingField = Literal["LOG_LEVEL", "LOG_FORMAT"]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ProcessFieldObservation:
+    process: CompletedProcess[str]
+    field: LoggingField
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ProcessOutputObservation:
+    diagnostics: ProcessFieldObservation
+    output: Path
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

@@ -16,8 +16,25 @@ from app.shared.observability.tests.requests import (
     RequestScenario,
     build_request_scope,
     exercise_concurrent_requests,
+    ConcurrentRequestScenario,
+    HostFilters,
+    HostObservation,
 )
 from app.shared.observability.tests.fakes import MetadataAccessError
+
+
+@pytest.fixture
+def formatter():
+    return SafeFormatter()
+
+
+@pytest.fixture
+def host_filters():
+    return HostFilters(
+        failure=RequestFailureFilter(),
+        reported=ReportedRequestFilter(),
+        next_reported=ReportedRequestFilter(),
+    )
 
 
 class TestHostileRequestMetadata:
@@ -60,10 +77,12 @@ class TestHostileRequestMetadata:
             (type(primary), primary, None),
         )
 
-    def test_host_filters_and_formatter_remain_safe(self, host_record):
-        assert RequestFailureFilter().filter(host_record) is True
-        assert ReportedRequestFilter().filter(host_record) is True
-        payload = json.loads(SafeFormatter().format(host_record))
+    def test_host_filters_and_formatter_remain_safe(
+        self, host_record, formatter, host_filters
+    ):
+        assert host_filters.failure.filter(host_record) is True
+        assert host_filters.reported.filter(host_record) is True
+        payload = json.loads(formatter.format(host_record))
         assert payload["severity"] == "ERROR"
         assert payload["exceptions_truncated"] is True
         assert "secret" not in json.dumps(payload)
@@ -79,7 +98,7 @@ class TestRequestCorrelation:
         )
 
     def test_request_id_and_streaming_body_are_preserved_without_payload_logs(
-        self, scenario, caplog
+        self, scenario, caplog, formatter
     ):
         scenario.run()
         messages = scenario.application.transport.messages
@@ -97,7 +116,7 @@ class TestRequestCorrelation:
         assert caplog.records[-1].request_id == header
         assert caplog.records[-1].outcome == "completed"
         assert caplog.records[-1].duration_ms >= 0
-        payload = json.loads(SafeFormatter().format(caplog.records[-1]))
+        payload = json.loads(formatter.format(caplog.records[-1]))
         assert payload["route"] == "/api/probe/{key}"
         assert "secret" not in json.dumps(payload)
 
@@ -137,9 +156,8 @@ class TestRequestCorrelation:
         )
         assert all(record.exc_info is None for record in caplog.records)
 
-    def test_propagated_failures_keep_correlation_at_the_host_boundary(
-        self, failed_scenario, failure, caplog
-    ):
+    @pytest.fixture
+    def propagated_record(self, failed_scenario, failure, caplog):
         with pytest.raises(type(failure)):
             failed_scenario.run()
         record = logging.LogRecord(
@@ -151,9 +169,14 @@ class TestRequestCorrelation:
             (),
             (type(failure), failure, failure.__traceback__),
         )
-        assert RequestFailureFilter().filter(record) is True
-        payload = json.loads(SafeFormatter().format(record))
-        assert payload["request_id"] == caplog.records[-1].request_id
+        return HostObservation(record=record, records=tuple(caplog.records))
+
+    def test_propagated_failures_keep_correlation_at_the_host_boundary(
+        self, propagated_record, failure, formatter, host_filters
+    ):
+        assert host_filters.failure.filter(propagated_record.record) is True
+        payload = json.loads(formatter.format(propagated_record.record))
+        assert payload["request_id"] == propagated_record.records[-1].request_id
         assert payload["status"] == 200
         assert payload["event"] == (
             "request.cancelled"
@@ -163,7 +186,7 @@ class TestRequestCorrelation:
         assert payload["severity"] == (
             "DEBUG" if isinstance(failure, asyncio.CancelledError) else "ERROR"
         )
-        assert record.levelno == (
+        assert propagated_record.record.levelno == (
             logging.DEBUG
             if isinstance(failure, asyncio.CancelledError)
             else logging.ERROR
@@ -203,25 +226,33 @@ class TestConcurrentRequestContext:
             scope["state"] = shared_state
         transports = (RecordingTransport(), RecordingTransport())
         application = RequestApplication(transport=transports[0])
-        return application, scopes, transports, shared_state
+        return ConcurrentRequestScenario(
+            application=application,
+            scopes=scopes,
+            transports=transports,
+            shared_state=shared_state,
+        )
 
     def test_interleaved_requests_get_distinct_contexts_without_mutating_shared_state(
         self, scenario, caplog
     ):
-        application, scopes, transports, shared_state = scenario
-        asyncio.run(exercise_concurrent_requests(application, scopes, transports))
+        asyncio.run(
+            exercise_concurrent_requests(
+                scenario.application, scenario.scopes, scenario.transports
+            )
+        )
         ids = {
             dict(transport.messages[0]["headers"])[b"x-request-id"].decode()
-            for transport in transports
+            for transport in scenario.transports
         }
         assert len(ids) == 2
         assert {record.request_id for record in caplog.records} == ids
         assert {
             context.request_id
-            for scope in scopes
+            for scope in scenario.scopes
             if (context := get_request_context(scope)) is not None
         } == ids
-        assert shared_state == {"existing": "preserved"}
+        assert scenario.shared_state == {"existing": "preserved"}
 
 
 class TestReportedHostDuplicates:
@@ -248,13 +279,15 @@ class TestReportedHostDuplicates:
         )
 
     def test_matching_report_is_consumed_once_without_hiding_a_later_host_error(
-        self, record
+        self, record, host_filters
     ):
-        assert ReportedRequestFilter().filter(record) is False
-        assert ReportedRequestFilter().filter(record) is True
+        assert host_filters.reported.filter(record) is False
+        assert host_filters.next_reported.filter(record) is True
 
-    def test_unrelated_host_record_does_not_consume_the_pending_report(self, record):
+    def test_unrelated_host_record_does_not_consume_the_pending_report(
+        self, record, host_filters
+    ):
         record.msg = "Unrelated host failure"
-        assert ReportedRequestFilter().filter(record) is True
+        assert host_filters.reported.filter(record) is True
         record.msg = "Exception in ASGI application\n"
-        assert ReportedRequestFilter().filter(record) is False
+        assert host_filters.next_reported.filter(record) is False

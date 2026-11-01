@@ -9,6 +9,7 @@ import textwrap
 import pytest
 
 from app.shared.observability.domain import LogFormat, LogLevel
+from app.shared.tests.fakes import ProcessFieldObservation, ProcessOutputObservation
 
 
 class TestOpenApiLogging:
@@ -17,13 +18,16 @@ class TestOpenApiLogging:
         from backend import export_openapi
         from app.shared.tests.fakes import FailingAction
 
-        mode, output = sys.argv[1:]
-        if mode == "failure":
-            export_openapi._schema_text = FailingAction()
-        arguments = ["--output", output]
-        if mode == "stale":
-            arguments.append("--check")
-        raise SystemExit(export_openapi.main(arguments))
+        def main() -> int:
+            mode, output = sys.argv[1:]
+            if mode == 'failure':
+                export_openapi._schema_text = FailingAction()
+            arguments = ['--output', output]
+            if mode == 'stale':
+                arguments.append('--check')
+            return export_openapi.main(arguments)
+        if __name__ == '__main__':
+            raise SystemExit(main())
     """)
 
     @pytest.fixture(
@@ -120,16 +124,19 @@ class TestInvalidCommandLogging:
             timeout=20,
             check=False,
         )
-        return process, output, request.param
+        return ProcessOutputObservation(
+            diagnostics=ProcessFieldObservation(process=process, field=request.param),
+            output=output,
+        )
 
     def test_invalid_settings_fail_before_writing_without_echo(self, completed):
-        process, output, field = completed
+        process = completed.diagnostics.process
         assert process.returncode == 2
         assert process.stdout == ""
-        assert field in process.stderr
+        assert completed.diagnostics.field in process.stderr
         assert "invalid_secret" not in process.stderr
         assert "Traceback" not in process.stderr
-        assert not output.exists()
+        assert not completed.output.exists()
 
 
 class TestOperationalFailureLogging:
@@ -138,10 +145,13 @@ class TestOperationalFailureLogging:
         import sys
         from app.shared.tests.fakes import FailingAction
 
-        module_name, action = sys.argv[1:]
-        command = importlib.import_module(module_name)
-        setattr(command, action, FailingAction())
-        raise SystemExit(command.main([]))
+        def main() -> int:
+            module_name, action = sys.argv[1:]
+            command = importlib.import_module(module_name)
+            setattr(command, action, FailingAction())
+            return command.main([])
+        if __name__ == '__main__':
+            raise SystemExit(main())
     """)
 
     @pytest.fixture(
@@ -289,20 +299,21 @@ class TestOperationalFailureLogging:
             "PYTHONWARNINGS": "ignore:Using `httpx` with `starlette.testclient` is deprecated:UserWarning",
         }
         environment[request.param] = "invalid_secret"
-        return subprocess.run(
+        process = subprocess.run(
             [sys.executable, "-c", self.script, *command],
             env=environment,
             capture_output=True,
             text=True,
             timeout=20,
             check=False,
-        ), request.param
+        )
+        return ProcessFieldObservation(process=process, field=request.param)
 
     def test_invalid_settings_fail_before_the_work_boundary(self, invalid_completed):
-        completed, field = invalid_completed
+        completed = invalid_completed.process
         assert completed.returncode == 2
         assert completed.stdout == ""
-        assert field in completed.stderr
+        assert invalid_completed.field in completed.stderr
         assert "invalid_secret" not in completed.stderr
         assert "source unavailable" not in completed.stderr
         assert "Traceback" not in completed.stderr

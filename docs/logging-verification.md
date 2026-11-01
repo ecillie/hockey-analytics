@@ -1453,3 +1453,55 @@ retain inspection records; other explicit test/host-program, runtime
 role/interface and exact framework/historical findings remain open, along with
 hosted NonProd mode/correlation and final combined acceptance/release promotion.
 No acceptance PR or production promotion is made by this checkpoint.
+
+## HTTP/host observations and phase-correct log evidence
+
+Native HTTP, streaming, propagated-host and concurrent request observations now
+have named frozen bindings. Expected statuses and formatter/filter/host-record
+setup belong to fixtures. Distinct reported-filter instances preserve the
+cross-instance duplicate-consumption test, and the deliberate shared ASGI state
+alias remains intact. The actual response bytes, cancellation/failure identity,
+CORS, method/health behavior and safe correlation assertions are unchanged.
+
+The refactor exposed a verification gap: pytest resets call-phase caplog records
+after setup. The preceding lifespan no-stopped assertion therefore inspected an
+empty call-phase list. Observations now retain their actual captured record tuple;
+propagated-host correlation and no-false-stopped assertions read that tuple, and
+a ready-count control checks successful startup. A temporary mutation logs a
+false service.stopped while rethrowing each native lifespan failure. The preceding
+capture accepted all eight mutations; the corrected tests reject all eight.
+Earlier green capture evidence alone did not establish this property.
+
+Generated OpenAPI/operational/Alembic drivers now use explicit main/module guards.
+API/Alembic host probes use native ExitStack ownership for observation streams
+and handlers, unregister host/root attachments before closing and retain their
+host-state and native error/cancellation identity checks. Finished-process,
+logging-field and output-path observations replace positional result bundles.
+
+Verification under Python 3.12.14:
+
+- All **38** compared HTTP/request test IDs are unchanged. Direct HTTP/request/
+  lifespan checks passed **56** in **3.15 seconds**. Temporary false-stopped
+  mutation evidence is **eight accepted before / eight rejected after**, with
+  current source restored before full verification. No permanent cases merely
+  duplicate the fixture changes.
+- Fresh migrated `tradevalue_test_logging05_http_observations`: **1,439 passed,
+  zero skips**, **91.26%** aggregate coverage in **130.70 seconds**, with the
+  **100%** API/calendar gate. Isolated units passed **1,389**, with 50 integrations
+  deselected, in **112.60 seconds**.
+- Locked sync, Ruff lint/format, ty, structural scope, dependency exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke,
+  clean API/Vercel/ML artifact installs/exclusions and committed-model gates pass.
+- Only excluded test/support sources and documentation changed. Installed
+  application code, frontend, public HTTP schema and committed models remain
+  unchanged. The final combined candidate image build and hosted acceptance
+  remain required; no new image/hosted success is claimed here.
+
+Evidence uses `/private/tmp/tradevalue-logging05-http-observations-` prefixes:
+`direct-final.txt`, `before-nodes.txt`/`final-nodes.txt`, `mutant.py`/`mutant.txt`,
+`mutant-before.txt`/`mutant-after.txt`, `checks.sh`/`checks.txt`, `pytest.txt`,
+`units.txt` and `packages.txt`. Eight current source dispositions were reviewed;
+all 237 files retain inspection records. Other explicit test/host-program,
+runtime role/interface and exact framework/historical findings remain open,
+along with hosted NonProd mode/correlation and final acceptance/release
+promotion. No acceptance PR or production promotion is made by this checkpoint.
