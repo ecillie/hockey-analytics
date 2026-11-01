@@ -296,3 +296,37 @@ class TestTransactionRollsBackPartialPersistence:
                 workers=1,
             )
         assert counts(database)[0:2] == (0, 0)
+
+
+@pytest.mark.integration
+class TestAmbiguousContractMatches:
+    @pytest.fixture
+    def scenario(self, database):
+        seed_player(database, 8005)
+        with database.begin() as connection:
+            connection.execute(
+                text("""INSERT INTO contracts
+                    (player_id,signing_team_id,source_id,external_id,
+                     start_season,end_season,term_years,total_value_cents)
+                    SELECT 8005,900,ds.id,'ambiguous-' || n,2008,2009,7,4690000000
+                    FROM data_sources ds CROSS JOIN generate_series(1,2) n
+                    WHERE ds.code='capwages'""")
+            )
+        return ContractPreviewScenario(
+            session=FixtureSession(body=FIXTURE.read_text(encoding="utf-8")),
+            before=counts(database),
+        )
+
+    def test_ambiguous_matches_are_preserved_without_season_writes(
+        self, scenario, database
+    ):
+        result = capspace._run(
+            scenario.session,
+            dry_run=False,
+            first_season=2008,
+            last_season=2009,
+            workers=1,
+        )
+        assert result["reconciliation_conflicts"] == 1
+        assert result.get("contracts_created", 0) == 0
+        assert counts(database)[:2] == scenario.before[:2] == (2, 0)

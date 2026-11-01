@@ -8,6 +8,9 @@ from app.ScriptingFiles.FullDataScript.capspace import parse_capspace_page
 from app.ScriptingFiles.FullDataScript.contracts.schemas.serialization import (
     serialize_contract,
 )
+from app.ScriptingFiles.FullDataScript.contracts.schemas.documents import (
+    parse_source_document,
+)
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
     ParsedContract,
 )
@@ -86,3 +89,17 @@ class TestCapWagesSnapshots:
         assert contract.is_entry_level
         assert contract.seasons[1].is_slide
         assert contract.seasons[1].base_salary_cents is None
+
+
+class TestSourceDocumentSnapshots:
+    @pytest.fixture
+    def document(self):
+        source = Path(__file__).parent.joinpath(
+            "fixtures", "ingestion", "capwages_contract.html"
+        )
+        return parse_source_document(source.read_text(encoding="utf-8"))
+
+    def test_a_consumer_cannot_change_later_parsing(self, document):
+        snapshot = document.next_data
+        snapshot[0].clear()
+        assert document.next_data[0] != {}

@@ -218,23 +218,37 @@ def record_conflict(summary: Counter[str]) -> None:
     summary["records_skipped"] += 1
 
 
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ContractWriteContext:
+    player_id: int
+    source_id: int
+    contract: ParsedContract
+    signing_team_id: int | None
+    seasons: tuple[ContractSeason, ...]
+    seasons_to_write: tuple[ContractSeason, ...]
+
+    @property
+    def start(self) -> int:
+        return min(row.season_start_year for row in self.seasons)
+
+    @property
+    def end(self) -> int:
+        return max(row.season_start_year for row in self.seasons)
+
+
 def matching_contract_id(
     cursor: PgCursor,
-    *,
-    player_id: int,
-    source_id: int,
-    contract: ParsedContract,
-    signing_team_id: int | None,
-    start: int,
-    end: int,
+    context: ContractWriteContext,
 ) -> tuple[int | None, bool]:
     cursor.execute(
         "SELECT id FROM contracts WHERE source_id=%s AND external_id=%s",
-        (source_id, contract.external_id),
+        (context.source_id, context.contract.external_id),
     )
     source_match = cursor.fetchone()
     policy = ContractReconciliationPolicy(
-        player_id=player_id, incoming=contract, signing_team_id=signing_team_id
+        player_id=context.player_id,
+        incoming=context.contract,
+        signing_team_id=context.signing_team_id,
     )
     if source_match is not None:
         existing = contract_row(cursor, int(source_match[0]))
@@ -245,7 +259,7 @@ def matching_contract_id(
              FROM contracts
             WHERE player_id=%s AND start_season=%s AND end_season=%s
               AND term_years=%s""",
-        (player_id, start, end, contract.term_years),
+        (context.player_id, context.start, context.end, context.contract.term_years),
     )
     matches = tuple(contract_row(cursor, int(row[0])) for row in cursor.fetchall())
     conflict = policy.find_violation(matches) is not None
@@ -271,26 +285,13 @@ def existing_contract_seasons(
 
 def resolve_contract(
     cursor: PgCursor,
+    context: ContractWriteContext,
     *,
-    player_id: int,
-    source_id: int,
-    contract: ParsedContract,
-    signing_team_id: int | None,
-    start: int,
-    end: int,
-    seasons_to_write: tuple[ContractSeason, ...],
     summary: Counter[str],
     preview: bool,
 ) -> ResolvedContract | None:
-    contract_id, conflict = matching_contract_id(
-        cursor,
-        player_id=player_id,
-        source_id=source_id,
-        contract=contract,
-        signing_team_id=signing_team_id,
-        start=start,
-        end=end,
-    )
+    contract = context.contract
+    contract_id, conflict = matching_contract_id(cursor, context)
     if conflict:
         record_conflict(summary)
         return None
@@ -298,16 +299,16 @@ def resolve_contract(
     existing_seasons: dict[int, tuple[int, int]] = {}
     if contract_id is not None:
         existing = contract_row(cursor, contract_id)
-        if not contracts_compatible(existing, contract, signing_team_id):
+        if not contracts_compatible(existing, contract, context.signing_team_id):
             record_conflict(summary)
             return None
         existing_seasons = existing_contract_seasons(
-            cursor, contract_id, seasons_to_write
+            cursor, contract_id, context.seasons_to_write
         )
         if any(
             existing_seasons.get(row.season_start_year, (0, None))[1]
             not in (None, row.cap_hit_cents)
-            for row in seasons_to_write
+            for row in context.seasons_to_write
         ):
             record_conflict(summary)
             return None
@@ -328,14 +329,14 @@ def resolve_contract(
                     WHERE id=%s""",
                 (
                     contract.signed_on,
-                    signing_team_id,
+                    context.signing_team_id,
                     contract.contract_type,
                     contract.expiry_status,
                     contract.total_value_cents,
                     average_value(contract),
                     Json(
-                        contract.source_payload
-                        if contract.source_payload is not None
+                        payload
+                        if (payload := contract.source_payload) is not None
                         else {}
                     ),
                     contract_id,
@@ -356,13 +357,13 @@ def resolve_contract(
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id""",
             (
-                player_id,
-                signing_team_id,
-                source_id,
+                context.player_id,
+                context.signing_team_id,
+                context.source_id,
                 contract.external_id,
                 contract.signed_on,
-                start,
-                end,
+                context.start,
+                context.end,
                 contract.term_years,
                 contract.contract_type,
                 contract.expiry_status,
@@ -370,9 +371,7 @@ def resolve_contract(
                 average_value(contract),
                 contract.is_entry_level,
                 Json(
-                    contract.source_payload
-                    if contract.source_payload is not None
-                    else {}
+                    payload if (payload := contract.source_payload) is not None else {}
                 ),
             ),
         )
@@ -493,18 +492,17 @@ def persist_contracts(
         )
         if len(seasons_to_write) == 0:
             continue
-        start = min(row.season_start_year for row in seasons)
-        end = max(row.season_start_year for row in seasons)
         signing_team_id = team_lookup.get(_clean_text(contract.signing_team).casefold())
         resolved = resolve_contract(
             cursor,
-            player_id=player_id,
-            source_id=source_id,
-            contract=contract,
-            signing_team_id=signing_team_id,
-            start=start,
-            end=end,
-            seasons_to_write=seasons_to_write,
+            ContractWriteContext(
+                player_id=player_id,
+                source_id=source_id,
+                contract=contract,
+                signing_team_id=signing_team_id,
+                seasons=seasons,
+                seasons_to_write=seasons_to_write,
+            ),
             summary=summary,
             preview=preview,
         )
