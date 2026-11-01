@@ -250,7 +250,7 @@ from the repository root. No check suppressions or reduced coverage
 thresholds are used. The retired loaders are archived as byte-preserved `.py.txt`
 references. The [Python verification guide](docs/python-verification.md) documents
 unit/integration selection, disposable database safety, coverage scope, and
-framework boundaries retained from the remediation phases.
+approved framework and test boundaries.
 
 Build and verify both distributions with `bash scripts/verify-packages.sh`.
 It checks wheel contents and imports non-editable installations from outside
