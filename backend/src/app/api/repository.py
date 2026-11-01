@@ -67,7 +67,7 @@ def read_all[T](
     return tuple(adapter.validate_python(dict(row)) for row in rows)
 
 
-def summary_rows(
+def select_summary_rows(
     session: Session,
     season: int,
     where: str = "TRUE",
@@ -164,7 +164,7 @@ class SqlApiRepository:
         }
         column = columns[query.sort]
         direction = "ASC" if query.order == "asc" else "DESC"
-        rows = summary_rows(
+        rows = select_summary_rows(
             self.session,
             query.season,
             where,
@@ -192,12 +192,12 @@ class SqlApiRepository:
         if status is not None:
             where += " AND roster_status = :status"
             params["status"] = status
-        return summary_rows(
+        return select_summary_rows(
             self.session, season, where, params, "full_name ASC, id ASC", 100
         )
 
     def summary_for_player(self, player_id: int, season: int) -> SummaryRow | None:
-        rows = summary_rows(
+        rows = select_summary_rows(
             self.session, season, "id = :player_id", {"player_id": player_id}
         )
         return next(iter(rows), None)
@@ -227,7 +227,7 @@ class SqlApiRepository:
         if team is not None:
             clauses.append("UPPER(abbreviation)=UPPER(:team)")
             params["team"] = team
-        return summary_rows(
+        return select_summary_rows(
             self.session,
             season,
             " AND ".join(clauses),
@@ -285,4 +285,4 @@ class SqlApiRepository:
         )
 
     def overview(self, season: int) -> tuple[SummaryRow, ...]:
-        return summary_rows(self.session, season, "games_played IS NOT NULL")
+        return select_summary_rows(self.session, season, "games_played IS NOT NULL")

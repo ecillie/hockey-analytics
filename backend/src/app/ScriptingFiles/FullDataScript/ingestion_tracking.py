@@ -8,7 +8,7 @@ from app.ScriptingFiles.FullDataScript.tracking.errors import (
     ConcurrentIngestionError as ConcurrentIngestionError,
 )
 from app.ScriptingFiles.FullDataScript.tracking.repository import (
-    advisory_lock_key as advisory_lock_key,
+    build_advisory_lock_key,
 )
 from app.ScriptingFiles.FullDataScript.tracking.repository import (
     open_ingestion_run,
@@ -52,3 +52,6 @@ def report_ingestion_failure(run: PostgresIngestionRun, primary: BaseException) 
         run.fail(primary)
     except BaseException as reporting:
         primary.add_note(f"Ingestion failure reporting also failed: {reporting!r}")
+
+
+advisory_lock_key = build_advisory_lock_key

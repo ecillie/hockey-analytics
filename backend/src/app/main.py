@@ -27,7 +27,7 @@ from app.database import DatabaseResources, create_database_resources
 logger = logging.getLogger(__name__)
 
 
-def _error(status: int, code: str, message: str, details=None) -> JSONResponse:
+def build_api_error(status: int, code: str, message: str, details=None) -> JSONResponse:
     body = {"error": {"code": code, "message": message}}
     if details:
         body["error"]["details"] = details
@@ -95,7 +95,7 @@ def create_app(
 
     @application.exception_handler(ApiProblem)
     async def api_problem_handler(_request: Request, exc: ApiProblem):
-        return _error(exc.status, exc.code, exc.message, exc.details)
+        return build_api_error(exc.status, exc.code, exc.message, exc.details)
 
     @application.exception_handler(RequestValidationError)
     async def validation_handler(_request: Request, exc: RequestValidationError):
@@ -103,21 +103,23 @@ def create_app(
         for issue in exc.errors():
             field = str(issue["loc"][-1])
             details.setdefault(field, []).append(issue["msg"])
-        return _error(
+        return build_api_error(
             400, "INVALID_REQUEST", "The request parameters are invalid.", details
         )
 
     @application.exception_handler(SQLAlchemyError)
     async def database_handler(_request: Request, exc: SQLAlchemyError):
         logger.exception("Database request failed", exc_info=exc)
-        return _error(
+        return build_api_error(
             503, "DATABASE_UNAVAILABLE", "The data service is temporarily unavailable."
         )
 
     @application.exception_handler(Exception)
     async def unhandled_handler(_request: Request, exc: Exception):
         logger.exception("Unhandled API error", exc_info=exc)
-        return _error(500, "INTERNAL_ERROR", "The API could not complete this request.")
+        return build_api_error(
+            500, "INTERNAL_ERROR", "The API could not complete this request."
+        )
 
     application.include_router(create_router())
 

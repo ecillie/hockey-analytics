@@ -34,8 +34,8 @@ from app.ScriptingFiles.FullDataScript.contracts.tests.fixtures import (
     SavedSession,
 )
 from app.ScriptingFiles.FullDataScript.contracts.util import (
-    money_to_cents,
-    season_start_year,
+    parse_money_cents,
+    parse_season_start_year,
 )
 from hypothesis import given
 from app.ScriptingFiles.FullDataScript.contracts.tests.strategies import (
@@ -47,17 +47,17 @@ from app.ScriptingFiles.FullDataScript.contracts.tests.strategies import (
 class TestAmountAndSeasonProperties:
     @given(amount=currency_amounts())
     def test_currency_format_preserves_exact_cents(self, amount: Decimal) -> None:
-        assert money_to_cents(f"${amount:,.2f}") == int(amount * 100)
+        assert parse_money_cents(f"${amount:,.2f}") == int(amount * 100)
 
     @given(amount=currency_amounts(negative=True))
     def test_negative_amounts_never_become_zero(self, amount: Decimal) -> None:
         with pytest.raises(MoneyParseError):
-            money_to_cents(amount)
+            parse_money_cents(amount)
 
     @given(year=season_years())
     def test_short_and_full_seasons_agree_across_centuries(self, year: int) -> None:
-        assert season_start_year(f"{year}-{(year + 1) % 100:02d}") == year
-        assert season_start_year(f"{year}–{year + 1}") == year
+        assert parse_season_start_year(f"{year}-{(year + 1) % 100:02d}") == year
+        assert parse_season_start_year(f"{year}–{year + 1}") == year
 
     @pytest.fixture(
         params=(
@@ -73,7 +73,7 @@ class TestAmountAndSeasonProperties:
 
     def test_invalid_money_is_a_structured_failure(self, invalid_amount: str) -> None:
         with pytest.raises(MoneyParseError) as failure:
-            money_to_cents(invalid_amount)
+            parse_money_cents(invalid_amount)
         assert failure.value.value == invalid_amount
 
     @pytest.fixture(
@@ -89,7 +89,7 @@ class TestAmountAndSeasonProperties:
 
     def test_invalid_seasons_are_rejected(self, invalid_season: str) -> None:
         with pytest.raises(CapSpaceParseError):
-            season_start_year(invalid_season)
+            parse_season_start_year(invalid_season)
 
 
 class TestContractSourceShapes:

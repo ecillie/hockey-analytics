@@ -14,7 +14,7 @@ from app.ScriptingFiles.FullDataScript.contracts.errors import (
 from dateutil.parser import parse as parse_date
 
 
-def money_to_cents(value: object, *, rounding: str = ROUND_HALF_UP) -> int | None:
+def parse_money_cents(value: object, *, rounding: str = ROUND_HALF_UP) -> int | None:
     if value is None or str(value).strip() in {"", "-", "—", "–", "N/A", "NA"}:
         return None
     text = str(value).strip().replace("$", "").replace(",", "").replace(" ", "")
@@ -36,7 +36,7 @@ def money_to_cents(value: object, *, rounding: str = ROUND_HALF_UP) -> int | Non
         ) from error
 
 
-def season_start_year(value: object) -> int:
+def parse_season_start_year(value: object) -> int:
     text = clean_text(value).replace("–", "-").replace("—", "-")
     found = re.fullmatch(r"(\d{4})\s*-\s*(\d{2}|\d{4})", text)
     if found is None:
@@ -53,20 +53,20 @@ def clean_text(value: object) -> str:
     return " ".join(str("" if value is None else value).replace("\xa0", " ").split())
 
 
-def optional_text(value: object) -> str | None:
+def parse_optional_text(value: object) -> str | None:
     text = clean_text(value)
     return text if text != "" else None
 
 
-def date_value(value: object) -> date | None:
+def parse_signing_date(value: object) -> date | None:
     text = clean_text(value)
     if text == "":
         return None
     if found := re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", text):
-        return calendar_date(value, tuple(map(int, found.groups())))
+        return build_calendar_date(value, tuple(map(int, found.groups())))
     if found := re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", text):
         month, day, year = map(int, found.groups())
-        return calendar_date(value, (year, month, day))
+        return build_calendar_date(value, (year, month, day))
     if re.fullmatch(r"[A-Za-z]{3,9}\.?\s+\d{1,2},\s*\d{4}", text) is None:
         raise SigningDateParseError(value=str(value))
     try:
@@ -75,19 +75,19 @@ def date_value(value: object) -> date | None:
         raise SigningDateParseError(value=str(value)) from error
 
 
-def calendar_date(value: object, parts: tuple[int, ...]) -> date:
+def build_calendar_date(value: object, parts: tuple[int, ...]) -> date:
     try:
         return date(*parts)
     except ValueError as error:
         raise SigningDateParseError(value=str(value)) from error
 
 
-def expiry_status(value: object) -> str | None:
+def parse_expiry_status(value: object) -> str | None:
     text = clean_text(value).upper()
     return next((status for status in ("RFA", "UFA") if status in text), None)
 
 
-def contract_type(value: object) -> str | None:
+def parse_contract_type(value: object) -> str | None:
     text = clean_text(value)[:32]
     return text if text != "" else None
 

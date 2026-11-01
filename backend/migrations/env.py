@@ -8,7 +8,7 @@ from app.shared.cli import ExitCode
 from app.shared.environment import migration_database_url as database_url
 
 
-def configure(connection=None, *, url: str | None = None) -> None:
+def configure_migration_context(connection=None, *, url: str | None = None) -> None:
     context.configure(
         connection=connection,
         url=url,
@@ -22,7 +22,7 @@ def configure(connection=None, *, url: str | None = None) -> None:
 
 
 def run_migrations_offline() -> None:
-    configure(url=database_url())
+    configure_migration_context(url=database_url())
     with context.begin_transaction():
         context.run_migrations()
 
@@ -39,7 +39,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        configure(connection)
+        configure_migration_context(connection)
         with context.begin_transaction():
             context.run_migrations()
 

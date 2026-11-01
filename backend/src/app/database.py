@@ -41,7 +41,7 @@ def create_database_resources(settings: DatabaseSettings) -> DatabaseResources:
 
 
 @contextmanager
-def database_resources(settings: DatabaseSettings) -> Generator[DatabaseResources]:
+def open_database_resources(settings: DatabaseSettings) -> Generator[DatabaseResources]:
     resources = create_database_resources(settings)
     primary: BaseException | None = None
     try:
@@ -56,7 +56,7 @@ def database_resources(settings: DatabaseSettings) -> Generator[DatabaseResource
 def init_db(settings: DatabaseSettings | None = None) -> None:
     selected = get_database_settings() if settings is None else settings
     with (
-        database_resources(selected) as resources,
+        open_database_resources(selected) as resources,
         resources.engine.connect() as connection,
     ):
         players_table = connection.execute(
@@ -74,7 +74,7 @@ def connect_database(settings: DatabaseSettings | None = None) -> PgConnection:
 
 
 @contextmanager
-def database_transaction(
+def open_database_transaction(
     settings: DatabaseSettings | None = None,
 ) -> Generator[PgConnection]:
     connection = connect_database(settings)
@@ -88,3 +88,7 @@ def database_transaction(
         raise
     finally:
         complete_cleanup((connection.close,), primary)
+
+
+database_resources = open_database_resources
+database_transaction = open_database_transaction

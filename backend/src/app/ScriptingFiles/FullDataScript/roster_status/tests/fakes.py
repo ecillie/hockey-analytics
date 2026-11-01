@@ -4,9 +4,9 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date
 from app.ScriptingFiles.FullDataScript.roster_status.domain import (
+    StoredRoster,
     FetchResult,
     RosterStatus,
-    StoredPlayer,
 )
 from io import BytesIO
 from urllib.request import Request
@@ -20,12 +20,12 @@ from app.ScriptingFiles.FullDataScript.roster_status.services import (
 
 @dataclass(slots=True, kw_only=True, frozen=True)
 class MemoryRosterRepository:
-    players: tuple[StoredPlayer, ...] = ()
+    players: StoredRoster = ()
     ltir_player_ids: frozenset[int] = frozenset()
     updates: dict[int, RosterStatus] = field(default_factory=dict)
     ahl_mappings: list[tuple[int, str, str]] = field(default_factory=list)
 
-    def load_players(self) -> tuple[StoredPlayer, ...]:
+    def load_players(self) -> StoredRoster:
         return self.players
 
     def load_active_ltir_player_ids(self, as_of: date) -> frozenset[int]:

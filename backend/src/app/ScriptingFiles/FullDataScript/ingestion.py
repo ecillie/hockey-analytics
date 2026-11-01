@@ -18,7 +18,7 @@ import requests
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     MissingSourceSnapshotError,
 )
-from app.database import database_transaction, init_db
+from app.database import open_database_transaction, init_db
 from app.ScriptingFiles.FullDataScript import capspace
 from app.ScriptingFiles.FullDataScript.contracts.active_repository import (
     open_active_repository,
@@ -37,7 +37,7 @@ from app.ScriptingFiles.FullDataScript.contracts.options import (
     ActiveContractOptions,
     find_active_option_violation,
 )
-from app.ScriptingFiles.FullDataScript.contracts.util import money_to_cents
+from app.ScriptingFiles.FullDataScript.contracts.util import parse_money_cents
 from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingestion
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     DataQualityReport as DataQualityReport,
@@ -57,7 +57,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
     open_source_client,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
-    http_session as http_session,
+    open_http_session as http_session,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import (
     MoneyPuckOptions,
@@ -89,7 +89,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.services import (
 from app.ScriptingFiles.FullDataScript.source_ingestion.policy import (
     find_quality_violation,
     RowPolicy,
-    stat_violation,
+    find_stat_violation,
     validate_rows,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.schedule.domain import (
@@ -103,15 +103,15 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.schedule.services import
     ScheduleService,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
-    season_start_year as _season_start_year,
+    parse_season_start_year as _season_start_year,
 )
 
 LOGGER = logging.getLogger(__name__)
 RECONCILIATION_POLICY = "retain_missing"
 
 
-def _money_cents(value: object) -> int | None:
-    return money_to_cents(value, rounding=ROUND_HALF_EVEN)
+def parse_legacy_money_cents(value: object) -> int | None:
+    return parse_money_cents(value, rounding=ROUND_HALF_EVEN)
 
 
 def ingest_capwages(
@@ -143,8 +143,8 @@ def track_active_contracts(
     ).run(options)
 
 
-def existing_capwages_summary() -> dict[str, int]:
-    with database_transaction() as connection:
+def load_capwages_summary() -> dict[str, int]:
+    with open_database_transaction() as connection:
         cursor = connection.cursor()
         cursor.execute(
             """SELECT
@@ -210,11 +210,11 @@ def enforce_quality_thresholds(
 def validate_stat_invariants(
     kind: str, row: Mapping[str, object], *, source: str
 ) -> None:
-    if violation := stat_violation(kind, row, source=source):
+    if violation := find_stat_violation(kind, row, source=source):
         raise violation
 
 
-def default_moneypuck_options(
+def build_moneypuck_options(
     *,
     expected_seasons: Iterable[int] = range(2008, 2026),
     minimum_rows_per_kind: int = 100,
@@ -245,7 +245,7 @@ def ingest_moneypuck(
     repository: MoneyPuckRepository | None = None,
 ) -> dict[str, int | str]:
     options = (
-        default_moneypuck_options(
+        build_moneypuck_options(
             expected_seasons=expected_seasons,
             minimum_rows_per_kind=minimum_rows_per_kind,
             maximum_duplicate_ratio=maximum_duplicate_ratio,
@@ -254,7 +254,7 @@ def ingest_moneypuck(
         else options
     )
     repository = (
-        PostgresMoneyPuckRepository(transaction=database_transaction)
+        PostgresMoneyPuckRepository(transaction=open_database_transaction)
         if repository is None
         else repository
     )
@@ -277,7 +277,7 @@ def ingest_nhl_rosters(
     repository: NhlRosterRepository | None = None,
 ) -> dict[str, int | str]:
     repository = (
-        PostgresNhlRosterRepository(transaction=database_transaction)
+        PostgresNhlRosterRepository(transaction=open_database_transaction)
         if repository is None
         else repository
     )
@@ -295,7 +295,7 @@ def ingest_nhl_rosters(
     )
 
 
-def _nhl_stats_pages(
+def fetch_nhl_stats_pages(
     session: SourceSession, endpoint: str, season: int, game_type: int
 ) -> list[dict[str, object]]:
     return list(
@@ -322,7 +322,7 @@ def ingest_nhl_stats(
         else options
     )
     repository = (
-        PostgresNhlStatsRepository(transaction=database_transaction)
+        PostgresNhlStatsRepository(transaction=open_database_transaction)
         if repository is None
         else repository
     )
@@ -360,7 +360,7 @@ def ingest_schedule(
     repository: ScheduleRepository | None = None,
 ) -> dict[str, int | str]:
     repository = (
-        PostgresScheduleRepository(transaction=database_transaction)
+        PostgresScheduleRepository(transaction=open_database_transaction)
         if repository is None
         else repository
     )
@@ -388,7 +388,7 @@ def run_all() -> dict[str, Mapping[str, object]]:
             RuntimeError,
             IngestionValidationError,
         ) as exc:
-            results["capwages"] = existing_capwages_summary()
+            results["capwages"] = load_capwages_summary()
             LOGGER.warning(
                 "CapWages refresh unavailable; retained last-good database snapshot: %s",
                 exc,
@@ -401,7 +401,7 @@ def run_all() -> dict[str, Mapping[str, object]]:
             IngestionValidationError,
         ) as exc:
             results["historical_contracts"] = (
-                capspace.existing_historical_contract_summary()
+                capspace.load_historical_contract_summary()
             )
             LOGGER.warning(
                 "Historical contract refresh unavailable; retained last-good snapshot: %s",
@@ -411,3 +411,11 @@ def run_all() -> dict[str, Mapping[str, object]]:
         return results
     finally:
         session.close()
+
+
+existing_capwages_summary = load_capwages_summary
+default_moneypuck_options = build_moneypuck_options
+
+
+_money_cents = parse_legacy_money_cents
+_nhl_stats_pages = fetch_nhl_stats_pages

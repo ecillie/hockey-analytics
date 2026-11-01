@@ -39,9 +39,15 @@ class StoredPlayer:
         return f"{self.first_name} {self.last_name}".strip()
 
 
+type ExternalRoster = tuple[ExternalRosterPlayer, ...]
+type StoredRoster = tuple[StoredPlayer, ...]
+type RosterIdentity = tuple[str, date]
+type OptionalBirthIdentity = tuple[str, date | None]
+
+
 @dataclass(slots=True, kw_only=True, frozen=True)
 class FetchResult:
-    items: tuple[ExternalRosterPlayer, ...] = ()
+    items: ExternalRoster = ()
     errors: tuple[str, ...] = ()
 
     @property

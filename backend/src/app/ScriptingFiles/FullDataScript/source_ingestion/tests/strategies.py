@@ -6,5 +6,5 @@ from hypothesis import strategies as st
 from hypothesis.strategies import SearchStrategy
 
 
-def optional_numbers() -> SearchStrategy[Decimal]:
+def generate_optional_numbers() -> SearchStrategy[Decimal]:
     return st.decimals(allow_nan=True, allow_infinity=True)

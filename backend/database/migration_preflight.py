@@ -5,7 +5,7 @@ import logging
 from collections.abc import Sequence
 
 from app.shared.cli import ExitCode
-from app.shared.environment import database_url
+from app.shared.environment import resolve_database_url
 from app.shared.cleanup import complete_cleanup
 from sqlalchemy import create_engine, text
 
@@ -63,7 +63,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def execute_command() -> int:
-    engine = create_engine(database_url(), pool_pre_ping=True)
+    engine = create_engine(resolve_database_url(), pool_pre_ping=True)
     primary: BaseException | None = None
     try:
         with engine.connect() as connection:

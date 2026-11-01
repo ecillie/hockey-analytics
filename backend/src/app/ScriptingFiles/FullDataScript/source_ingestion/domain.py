@@ -155,7 +155,7 @@ def serialize_summary(
     }
 
 
-def moneypuck_skater_layout() -> StatLayout:
+def build_moneypuck_skater_layout() -> StatLayout:
     return StatLayout(
         table="skater_advanced_season_stats",
         advanced=True,
@@ -234,7 +234,7 @@ def moneypuck_skater_layout() -> StatLayout:
     )
 
 
-def moneypuck_goalie_layout() -> StatLayout:
+def build_moneypuck_goalie_layout() -> StatLayout:
     return StatLayout(
         table="goalie_advanced_season_stats",
         advanced=True,
@@ -317,7 +317,7 @@ def moneypuck_goalie_layout() -> StatLayout:
     )
 
 
-def nhl_skater_layout() -> StatLayout:
+def build_nhl_skater_layout() -> StatLayout:
     return StatLayout(
         table="skater_season_stats",
         advanced=False,
@@ -345,7 +345,7 @@ def nhl_skater_layout() -> StatLayout:
     )
 
 
-def nhl_goalie_layout() -> StatLayout:
+def build_nhl_goalie_layout() -> StatLayout:
     return StatLayout(
         table="goalie_season_stats",
         advanced=False,
@@ -375,11 +375,15 @@ def nhl_goalie_layout() -> StatLayout:
     )
 
 
-def stat_layout(kind: PlayerKind, *, advanced: bool) -> StatLayout:
+def select_stat_layout(kind: PlayerKind, *, advanced: bool) -> StatLayout:
     if advanced:
         return (
-            moneypuck_skater_layout()
+            build_moneypuck_skater_layout()
             if kind == PlayerKind.SKATER
-            else moneypuck_goalie_layout()
+            else build_moneypuck_goalie_layout()
         )
-    return nhl_skater_layout() if kind == PlayerKind.SKATER else nhl_goalie_layout()
+    return (
+        build_nhl_skater_layout()
+        if kind == PlayerKind.SKATER
+        else build_nhl_goalie_layout()
+    )

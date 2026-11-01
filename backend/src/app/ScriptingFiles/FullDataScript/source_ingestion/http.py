@@ -78,7 +78,7 @@ class SessionSourceClient:
         return response.text
 
 
-def http_session(options: SourceHttpOptions | None = None) -> requests.Session:
+def open_http_session(options: SourceHttpOptions | None = None) -> requests.Session:
     options = SourceHttpOptions() if options is None else options
     session = requests.Session()
     retry = Retry(
@@ -103,7 +103,7 @@ def open_source_client(
     options: SourceHttpOptions | None = None,
 ) -> Generator[SourceClient]:
     options = SourceHttpOptions() if options is None else options
-    with http_session(options) as session:
+    with open_http_session(options) as session:
         yield SessionSourceClient(session=session, options=options)
 
 

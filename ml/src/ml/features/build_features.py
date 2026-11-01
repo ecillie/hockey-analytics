@@ -11,7 +11,7 @@ from ml.pipelines.build_model_dataset import build_model_dataset
 from ml.schemas import validate_feature_options, validate_frame
 
 
-def _per_60(
+def calculate_per_60(
     values: pd.Series,
     ice_time_seconds: pd.Series,
 ) -> pd.Series:
@@ -75,57 +75,57 @@ def build_features(
 
     features["toi_hours"] = features["ice_time_seconds"] / 3600.0
 
-    features["goals_per_60"] = _per_60(
+    features["goals_per_60"] = calculate_per_60(
         features["goals"],
         features["ice_time_seconds"],
     )
 
-    features["assists_per_60"] = _per_60(
+    features["assists_per_60"] = calculate_per_60(
         features["assists"],
         features["ice_time_seconds"],
     )
 
-    features["points_per_60"] = _per_60(
+    features["points_per_60"] = calculate_per_60(
         features["points"],
         features["ice_time_seconds"],
     )
 
-    features["xg_per_60"] = _per_60(
+    features["xg_per_60"] = calculate_per_60(
         features["individual_expected_goals"],
         features["ice_time_seconds"],
     )
 
-    features["shots_on_goal_per_60"] = _per_60(
+    features["shots_on_goal_per_60"] = calculate_per_60(
         features["individual_shots_on_goal"],
         features["ice_time_seconds"],
     )
 
-    features["unblocked_attempts_per_60"] = _per_60(
+    features["unblocked_attempts_per_60"] = calculate_per_60(
         features["individual_unblocked_attempts"],
         features["ice_time_seconds"],
     )
 
-    features["game_score_per_60"] = _per_60(
+    features["game_score_per_60"] = calculate_per_60(
         features["game_score"],
         features["ice_time_seconds"],
     )
 
-    features["primary_assists_per_60"] = _per_60(
+    features["primary_assists_per_60"] = calculate_per_60(
         features["individual_primary_assists"],
         features["ice_time_seconds"],
     )
 
-    features["secondary_assists_per_60"] = _per_60(
+    features["secondary_assists_per_60"] = calculate_per_60(
         features["individual_secondary_assists"],
         features["ice_time_seconds"],
     )
 
-    features["takeaways_per_60"] = _per_60(
+    features["takeaways_per_60"] = calculate_per_60(
         features["takeaways"],
         features["ice_time_seconds"],
     )
 
-    features["giveaways_per_60"] = _per_60(
+    features["giveaways_per_60"] = calculate_per_60(
         features["giveaways"],
         features["ice_time_seconds"],
     )
@@ -134,17 +134,17 @@ def build_features(
         features["takeaways_per_60"] - features["giveaways_per_60"]
     )
 
-    features["blocks_per_60"] = _per_60(
+    features["blocks_per_60"] = calculate_per_60(
         features["shots_blocked"],
         features["ice_time_seconds"],
     )
 
-    features["penalties_per_60"] = _per_60(
+    features["penalties_per_60"] = calculate_per_60(
         features["penalties"],
         features["ice_time_seconds"],
     )
 
-    features["penalties_drawn_per_60"] = _per_60(
+    features["penalties_drawn_per_60"] = calculate_per_60(
         features["penalties_drawn"],
         features["ice_time_seconds"],
     )
@@ -157,7 +157,7 @@ def build_features(
         features["goals"] - features["individual_expected_goals"]
     )
 
-    features["goals_above_expected_per_60"] = _per_60(
+    features["goals_above_expected_per_60"] = calculate_per_60(
         features["goals_above_expected"],
         features["ice_time_seconds"],
     )

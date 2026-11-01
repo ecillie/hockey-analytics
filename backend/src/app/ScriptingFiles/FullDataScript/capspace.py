@@ -60,7 +60,7 @@ from app.ScriptingFiles.FullDataScript.contracts.repository import (
     open_contract_repository,
 )
 from app.ScriptingFiles.FullDataScript.contracts.repository import (
-    coverage_report as coverage_report,
+    load_coverage_report as coverage_report,
 )
 from app.ScriptingFiles.FullDataScript.contracts.repository import (
     select_candidates as select_candidates,
@@ -76,10 +76,10 @@ from app.ScriptingFiles.FullDataScript.contracts.services import (
     ProfileFetcher,
 )
 from app.ScriptingFiles.FullDataScript.contracts.util import (
-    money_to_cents as money_to_cents,
+    parse_money_cents,
 )
 from app.ScriptingFiles.FullDataScript.contracts.util import (
-    season_start_year as season_start_year,
+    parse_season_start_year,
 )
 from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingestion
 from app.shared.cli import ExitCode
@@ -105,7 +105,7 @@ DEFAULT_BATCH_SIZE = HistoricalContractOptions().batch_size
 MAX_BATCH_SIZE = HistoricalContractOptions().limits.maximum_batch_size
 
 
-def _run(
+def run_contract_sync(
     session: ProfileSession | None,
     *,
     dry_run: bool,
@@ -200,7 +200,7 @@ def preview_historical_contracts(
     nhl_id: str | None = None,
     force: bool = False,
 ) -> dict[str, int]:
-    return _run(
+    return run_contract_sync(
         session,
         dry_run=True,
         first_season=first_season,
@@ -214,7 +214,7 @@ def preview_historical_contracts(
     )
 
 
-def existing_historical_contract_summary() -> dict[str, object]:
+def load_historical_contract_summary() -> dict[str, object]:
     report = coverage_report()
     report.update(
         {
@@ -328,6 +328,10 @@ def execute_historical_command(
         return track_historical_contracts(None, options.ingestion)
     return run_historical_contracts(None, options=options.ingestion, dry_run=True)
 
+
+existing_historical_contract_summary = load_historical_contract_summary
+money_to_cents = parse_money_cents
+season_start_year = parse_season_start_year
 
 if __name__ == "__main__":
     raise SystemExit(main())

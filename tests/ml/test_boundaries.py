@@ -20,7 +20,11 @@ from ml.configuration import (
 )
 from ml.errors import FrameColumnsError, FrameGrainError, FrameValuesError
 from ml.evaluation.evaluate_skater_model import evaluate_model, evaluate_predictions
-from ml.evaluation.gate import prediction_frame, temporal_splits, validate_metadata
+from ml.evaluation.gate import (
+    build_prediction_frame,
+    split_temporal_data,
+    validate_metadata,
+)
 from ml.features.build_features import build_features
 from ml.features.replacement_level import calculate_replacement_level
 from ml.pipelines.build_model_dataset import build_model_dataset
@@ -76,7 +80,7 @@ class TestDataBoundaries:
 
         monkeypatch.setenv("ENV", "")
         monkeypatch.setattr(module, "get_database_settings", read_settings)
-        monkeypatch.setattr(module, "database_resources", resources)
+        monkeypatch.setattr(module, "open_database_resources", resources)
         monkeypatch.setattr(module, "load_player_stats", read_players)
         monkeypatch.setattr(module, "load_salary_cap", read_caps)
         return scenario
@@ -310,11 +314,11 @@ class TestArtifacts:
         self, player_seasons, invalid_predictions
     ):
         with pytest.raises(ValueError):
-            prediction_frame(
+            build_prediction_frame(
                 player_seasons.assign(target_season=player_seasons["season"] + 1),
                 invalid_predictions,
             )
 
     def test_missing_target_seasons_are_rejected(self, training_data):
         with pytest.raises(ValueError, match="whole years"):
-            temporal_splits(training_data.assign(target_season=np.nan))
+            split_temporal_data(training_data.assign(target_season=np.nan))

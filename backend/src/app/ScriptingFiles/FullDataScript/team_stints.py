@@ -115,7 +115,9 @@ SELECT
 )
 
 
-def _params(first_season: int | None, last_season: int | None) -> dict[str, int | None]:
+def build_team_stint_params(
+    first_season: int | None, last_season: int | None
+) -> dict[str, int | None]:
     if (
         first_season is not None
         and last_season is not None
@@ -133,7 +135,7 @@ def plan_team_stint_backfill(
 ) -> dict[str, int]:
     cursor = connection.cursor()
     try:
-        cursor.execute(_PLAN_SQL, _params(first_season, last_season))
+        cursor.execute(_PLAN_SQL, build_team_stint_params(first_season, last_season))
         canonical, missing = cursor.fetchone()
         return {
             "canonical_assignments": canonical,
@@ -151,7 +153,7 @@ def apply_team_stint_backfill(
 ) -> dict[str, int]:
     cursor = connection.cursor()
     try:
-        cursor.execute(_APPLY_SQL, _params(first_season, last_season))
+        cursor.execute(_APPLY_SQL, build_team_stint_params(first_season, last_season))
         canonical, missing, inserted = cursor.fetchone()
         return {
             "canonical_assignments": canonical,

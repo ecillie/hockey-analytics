@@ -17,7 +17,7 @@ from app.ScriptingFiles.FullDataScript.tracking.errors import (
     UnknownIngestionSourceError,
 )
 from app.ScriptingFiles.FullDataScript.tracking.repository import (
-    advisory_lock_key,
+    build_advisory_lock_key,
     open_ingestion_run,
 )
 
@@ -96,11 +96,12 @@ class TestCommittedContractBatches:
         with scenario.connection.cursor() as cursor:
             cursor.execute(
                 "SELECT pg_try_advisory_lock(%s)",
-                (advisory_lock_key("phase9-unknown"),),
+                (build_advisory_lock_key("phase9-unknown"),),
             )
             assert cursor.fetchone() == (True,)
             cursor.execute(
-                "SELECT pg_advisory_unlock(%s)", (advisory_lock_key("phase9-unknown"),)
+                "SELECT pg_advisory_unlock(%s)",
+                (build_advisory_lock_key("phase9-unknown"),),
             )
 
     def test_overlap_is_cancelled_then_lock_can_be_reacquired(self, scenario):

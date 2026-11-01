@@ -4,7 +4,7 @@ from hypothesis import strategies as st
 from ml.domain import Metric
 
 
-def identical_metric_inputs():
+def generate_identical_metric_inputs():
     return st.floats(
         min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False
     ).map(build_identical_metric_inputs)

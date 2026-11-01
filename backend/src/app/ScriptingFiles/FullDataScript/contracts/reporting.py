@@ -14,7 +14,10 @@ from app.ScriptingFiles.FullDataScript.contracts.schemas.serialization import (
 )
 
 
-def result_source_payload(result: ProfileResult) -> dict[str, object]:
+type SourceProfileRecords = dict[str, list[tuple[Candidate, dict[str, object]]]]
+
+
+def serialize_profile_result(result: ProfileResult) -> dict[str, object]:
     return {
         "status": result.status,
         "error": result.error,
@@ -23,11 +26,11 @@ def result_source_payload(result: ProfileResult) -> dict[str, object]:
     }
 
 
-def source_records_by_code(
+def group_source_records(
     candidates: Iterable[Candidate],
     results: Iterable[ProfileResult],
-) -> dict[str, list[tuple[Candidate, dict[str, object]]]]:
-    grouped: dict[str, list[tuple[Candidate, dict[str, object]]]] = {
+) -> SourceProfileRecords:
+    grouped: SourceProfileRecords = {
         ProfileSource.CAPSPACE: [
             (candidate, {"status": ProfileStatus.NO_NHL_ID})
             for candidate in candidates
@@ -36,12 +39,12 @@ def source_records_by_code(
     }
     for result in results:
         grouped.setdefault(result.source_code, []).append(
-            (result.candidate, result_source_payload(result))
+            (result.candidate, serialize_profile_result(result))
         )
     return grouped
 
 
-def profile_metrics(results: Iterable[ProfileResult]) -> Counter[str]:
+def calculate_profile_metrics(results: Iterable[ProfileResult]) -> Counter[str]:
     materialized = list(results)
     return Counter(
         {
@@ -92,7 +95,7 @@ def profile_metrics(results: Iterable[ProfileResult]) -> Counter[str]:
     )
 
 
-def unprocessed_count(summary: dict[str, int]) -> int:
+def count_unprocessed_records(summary: dict[str, int]) -> int:
     return (
         summary.get("records_skipped", 0)
         + summary.get("players_without_nhl_ids", 0)

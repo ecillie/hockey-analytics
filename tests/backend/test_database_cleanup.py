@@ -44,7 +44,7 @@ class TestTransactionCleanup:
 
     def test_failure_identity_cause_and_cleanup_order(self, scenario):
         with pytest.raises(BaseException) as raised:
-            with database.database_transaction():
+            with database.open_database_transaction():
                 if scenario.primary is not None:
                     raise scenario.primary
         assert raised.value is scenario.expected
@@ -109,7 +109,7 @@ class TestEngineCleanup:
             if mode == "construction":
                 database.create_database_resources(resources.settings)
             if mode == "scope":
-                with database.database_resources(resources.settings):
+                with database.open_database_resources(resources.settings):
                     if resources.primary is not None:
                         raise resources.primary
         assert raised.value is resources.expected

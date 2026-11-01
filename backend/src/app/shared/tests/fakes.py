@@ -217,11 +217,11 @@ class RevisionScenario:
     cursor: MigrationCursor
 
 
-def migration_scripts(*revisions, heads=("head",)):
+def build_migration_history(*revisions, heads=("head",)):
     return MigrationHistory(revisions=tuple(revisions), heads=heads)
 
 
-def revision(name="revision", *, doc="description", merge=False):
+def build_migration_revision(name="revision", *, doc="description", merge=False):
     return MigrationRevision(revision=name, doc=doc, is_merge_point=merge)
 
 
@@ -231,7 +231,7 @@ class SnapshotScenario:
     actual: Path
 
 
-def response(status, body, text_body=None):
+def build_http_response(status, body, text_body=None):
     if text_body is not None:
         return httpx.Response(status, text=text_body)
     return httpx.Response(status, json=body)

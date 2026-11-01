@@ -10,6 +10,10 @@ from urllib.error import URLError
 from pydantic import BaseModel, ValidationError
 
 from app.ScriptingFiles.FullDataScript.roster_status.domain import (
+    ExternalRoster,
+    StoredRoster,
+    RosterIdentity,
+    OptionalBirthIdentity,
     ExternalRosterPlayer,
     StoredPlayer,
 )
@@ -45,7 +49,7 @@ def fetch_validated[T: BaseModel](
         raise FeedFetchError(source=source, reason=reason) from exc
 
 
-def parse_nhl_roster(payload: NhlRoster, team: str) -> tuple[ExternalRosterPlayer, ...]:
+def parse_nhl_roster(payload: NhlRoster, team: str) -> ExternalRoster:
     rows = chain(payload.forwards, payload.defensemen, payload.goalies)
     return tuple(
         ExternalRosterPlayer(
@@ -57,7 +61,7 @@ def parse_nhl_roster(payload: NhlRoster, team: str) -> tuple[ExternalRosterPlaye
     )
 
 
-def parse_ahl_roster(payload: AhlRoster, team: str) -> tuple[ExternalRosterPlayer, ...]:
+def parse_ahl_roster(payload: AhlRoster, team: str) -> ExternalRoster:
     rows = (
         entry.row
         for group in payload.roster
@@ -95,7 +99,7 @@ def normalize_name(value: str) -> str:
 
 
 def match_ahl_players(
-    players: tuple[StoredPlayer, ...], ahl_players: tuple[ExternalRosterPlayer, ...]
+    players: StoredRoster, ahl_players: ExternalRoster
 ) -> dict[int, ExternalRosterPlayer]:
     ahl_by_id = index_ahl_players(ahl_players)
     stored_counts = Counter(
@@ -110,8 +114,8 @@ def match_ahl_players(
         and stored_counts[player.ahl_external_id] == 1
     }
     claimed_ids = {player.external_id for player in matches.values()}
-    db_by_identity: dict[tuple[str, date], list[StoredPlayer]] = defaultdict(list)
-    ahl_by_identity: dict[tuple[str, date], list[ExternalRosterPlayer]] = defaultdict(
+    db_by_identity: dict[RosterIdentity, list[StoredPlayer]] = defaultdict(list)
+    ahl_by_identity: dict[RosterIdentity, list[ExternalRosterPlayer]] = defaultdict(
         list
     )
     for player in players:
@@ -134,9 +138,9 @@ def match_ahl_players(
 
 
 def index_ahl_players(
-    players: tuple[ExternalRosterPlayer, ...],
+    players: ExternalRoster,
 ) -> dict[str, ExternalRosterPlayer]:
-    identities: dict[str, set[tuple[str, date | None]]] = defaultdict(set)
+    identities: dict[str, set[OptionalBirthIdentity]] = defaultdict(set)
     for player in players:
         identities[player.external_id].add(
             (normalize_name(player.full_name), player.birth_date)

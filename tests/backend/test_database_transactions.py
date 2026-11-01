@@ -5,7 +5,7 @@ import psycopg2
 from psycopg2 import sql
 import pytest
 from app.config import AppEnvironment, DatabaseSettings
-from app.database import database_transaction
+from app.database import open_database_transaction
 from app.shared.tests.resources import (
     TransactionScenario,
 )
@@ -39,14 +39,14 @@ class TestDatabaseTransactions:
             connection.close()
 
     def test_success_commits_and_closes(self, scenario):
-        with database_transaction(scenario.settings) as connection:
+        with open_database_transaction(scenario.settings) as connection:
             scenario.insert_row(connection)
         assert connection.closed != 0
         assert scenario.count_rows() == 1
 
     def test_failure_rolls_back_and_closes(self, scenario):
         with pytest.raises(RuntimeError, match="transaction failed"):
-            with database_transaction(scenario.settings) as connection:
+            with open_database_transaction(scenario.settings) as connection:
                 scenario.insert_row(connection)
                 raise RuntimeError("transaction failed")
         assert connection.closed != 0

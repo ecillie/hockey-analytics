@@ -1,5 +1,6 @@
 """Validation schemas at JSON, CSV, and normalized identity boundaries."""
 
+import json
 from datetime import date
 from typing import Annotated
 from pydantic import (
@@ -7,6 +8,9 @@ from pydantic import (
     BeforeValidator,
     AfterValidator,
     ConfigDict,
+    JsonValue,
+    PlainSerializer,
+    TypeAdapter,
     Field,
     ValidationError,
 )
@@ -18,7 +22,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
 )
 
 
-def required_integer(value: object) -> int:
+def parse_required_integer(value: object) -> int:
     result = parse_strict_integer(value)
     if result is None:
         raise ValueError("a finite integer is required")
@@ -32,7 +36,7 @@ def normalize_team_abbreviation(value: str) -> str:
     return abbreviation
 
 
-def localized_value(value: object) -> object:
+def extract_localized_value(value: object) -> object:
     if isinstance(value, dict):
         default = value.get("default")
         return (
@@ -46,7 +50,7 @@ def localized_value(value: object) -> object:
 type TeamAbbreviation = Annotated[str, AfterValidator(normalize_team_abbreviation)]
 
 
-type Integer = Annotated[int, BeforeValidator(required_integer)]
+type Integer = Annotated[int, BeforeValidator(parse_required_integer)]
 type NonnegativeInteger = Annotated[Integer, Field(ge=0)]
 type Season = Annotated[Integer, Field(ge=1900, le=2200)]
 type NonnegativeFloat = Annotated[float, Field(ge=0, allow_inf_nan=False)]
@@ -92,13 +96,43 @@ class GoalieStatRow(NhlStatRow):
     goalsAgainst: NonnegativeInteger
 
 
+type PageRows = tuple[dict[str, object], ...]
+type JsonPageRows = tuple[dict[str, JsonValue], ...]
+
+
+def serialize_page_rows(value: object) -> tuple[str, ...]:
+    rows = TypeAdapter(JsonPageRows).validate_python(value)
+    return tuple(json.dumps(row) for row in rows)
+
+
+def decode_page_rows(value: tuple[str, ...]) -> PageRows:
+    return tuple(json.loads(row) for row in value)
+
+
+type PageSnapshots = Annotated[
+    tuple[str, ...],
+    BeforeValidator(serialize_page_rows),
+    PlainSerializer(decode_page_rows, return_type=PageRows),
+]
+
+
 class StatsPage(BoundaryModel):
-    data: tuple[dict[str, object], ...]
+    model_config = ConfigDict(serialize_by_alias=True)
+
+    data_snapshot: PageSnapshots = Field(
+        validation_alias="data", serialization_alias="data"
+    )
     total: PageTotal | None = None
 
+    @property
+    def data(self) -> PageRows:
+        return decode_page_rows(self.data_snapshot)
 
-type LocalizedText = Annotated[str | None, BeforeValidator(localized_value)]
-type LocalizedTeam = Annotated[TeamAbbreviation, BeforeValidator(localized_value)]
+
+type LocalizedText = Annotated[str | None, BeforeValidator(extract_localized_value)]
+type LocalizedTeam = Annotated[
+    TeamAbbreviation, BeforeValidator(extract_localized_value)
+]
 
 
 class Standing(BoundaryModel):

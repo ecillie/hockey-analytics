@@ -10,7 +10,7 @@ from decimal import Decimal
 from types import MappingProxyType
 from typing import Protocol, runtime_checkable
 
-from app.database import database_transaction
+from app.database import open_database_transaction
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
     Candidate,
     ContractSeason,
@@ -30,9 +30,9 @@ from app.ScriptingFiles.FullDataScript.contracts.options import (
 )
 from app.ScriptingFiles.FullDataScript.contracts.policy import (
     ContractReconciliationPolicy,
-    contracts_compatible,
+    are_contracts_compatible,
 )
-from app.ScriptingFiles.FullDataScript.contracts.reporting import source_records_by_code
+from app.ScriptingFiles.FullDataScript.contracts.reporting import group_source_records
 from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
     normalize_contracts,
 )
@@ -121,7 +121,7 @@ def select_candidates(
     ]
 
 
-def team_lookup(cursor: PgCursor) -> dict[str, int]:
+def load_team_lookup(cursor: PgCursor) -> dict[str, int]:
     cursor.execute("SELECT id,abbreviation,name FROM teams")
     lookup: dict[str, int] = {}
     for team_id, abbreviation, name in cursor.fetchall():
@@ -153,11 +153,13 @@ def load_persistence_context(
         season_caps=MappingProxyType(
             {int(year): cap for year, cap in cursor.fetchall()}
         ),
-        team_lookup=MappingProxyType(team_lookup(cursor)),
+        team_lookup=MappingProxyType(load_team_lookup(cursor)),
     )
 
 
-def player_stint_teams(cursor: PgCursor, player_id: int) -> dict[int, tuple[int, ...]]:
+def load_player_stint_teams(
+    cursor: PgCursor, player_id: int
+) -> dict[int, tuple[int, ...]]:
     cursor.execute(
         """SELECT DISTINCT season_start_year,team_id
              FROM player_team_stints
@@ -183,7 +185,7 @@ def resolve_team_id(
     return teams[0] if len(teams) == 1 else None
 
 
-def contract_row(cursor: PgCursor, contract_id: int) -> StoredContract:
+def build_contract_row(cursor: PgCursor, contract_id: int) -> StoredContract:
     cursor.execute(
         """SELECT id,player_id,signing_team_id,total_value_cents
              FROM contracts
@@ -207,7 +209,7 @@ class ResolvedContract:
     existing_seasons: Mapping[int, tuple[int, int]]
 
 
-def average_value(contract: ParsedContract) -> int | None:
+def calculate_average_value(contract: ParsedContract) -> int | None:
     if contract.total_value_cents is None:
         return None
     return contract.total_value_cents // contract.term_years
@@ -236,7 +238,7 @@ class ContractWriteContext:
         return max(row.season_start_year for row in self.seasons)
 
 
-def matching_contract_id(
+def find_matching_contract_id(
     cursor: PgCursor,
     context: ContractWriteContext,
 ) -> tuple[int | None, bool]:
@@ -251,7 +253,7 @@ def matching_contract_id(
         signing_team_id=context.signing_team_id,
     )
     if source_match is not None:
-        existing = contract_row(cursor, int(source_match[0]))
+        existing = build_contract_row(cursor, int(source_match[0]))
         return existing.contract_id, policy.find_violation((existing,)) is not None
 
     cursor.execute(
@@ -261,12 +263,14 @@ def matching_contract_id(
               AND term_years=%s""",
         (context.player_id, context.start, context.end, context.contract.term_years),
     )
-    matches = tuple(contract_row(cursor, int(row[0])) for row in cursor.fetchall())
+    matches = tuple(
+        build_contract_row(cursor, int(row[0])) for row in cursor.fetchall()
+    )
     conflict = policy.find_violation(matches) is not None
     return (matches[0].contract_id if len(matches) == 1 else None), conflict
 
 
-def existing_contract_seasons(
+def load_contract_seasons(
     cursor: PgCursor,
     contract_id: int,
     seasons: Iterable[ContractSeason],
@@ -291,18 +295,18 @@ def resolve_contract(
     preview: bool,
 ) -> ResolvedContract | None:
     contract = context.contract
-    contract_id, conflict = matching_contract_id(cursor, context)
+    contract_id, conflict = find_matching_contract_id(cursor, context)
     if conflict:
         record_conflict(summary)
         return None
 
     existing_seasons: dict[int, tuple[int, int]] = {}
     if contract_id is not None:
-        existing = contract_row(cursor, contract_id)
-        if not contracts_compatible(existing, contract, context.signing_team_id):
+        existing = build_contract_row(cursor, contract_id)
+        if not are_contracts_compatible(existing, contract, context.signing_team_id):
             record_conflict(summary)
             return None
-        existing_seasons = existing_contract_seasons(
+        existing_seasons = load_contract_seasons(
             cursor, contract_id, context.seasons_to_write
         )
         if any(
@@ -333,7 +337,7 @@ def resolve_contract(
                     contract.contract_type,
                     contract.expiry_status,
                     contract.total_value_cents,
-                    average_value(contract),
+                    calculate_average_value(contract),
                     Json(
                         payload
                         if (payload := contract.source_payload) is not None
@@ -368,7 +372,7 @@ def resolve_contract(
                 contract.contract_type,
                 contract.expiry_status,
                 contract.total_value_cents,
-                average_value(contract),
+                calculate_average_value(contract),
                 contract.is_entry_level,
                 Json(
                     payload if (payload := contract.source_payload) is not None else {}
@@ -474,7 +478,7 @@ def persist_contracts(
     season_caps = persistence.season_caps
     available = set(season_caps)
     team_lookup = persistence.team_lookup
-    stint_teams = {} if preview else player_stint_teams(cursor, player_id)
+    stint_teams = {} if preview else load_player_stint_teams(cursor, player_id)
     targets = frozenset(result.candidate.missing_seasons)
     pending_seasons: list[tuple[object, ...]] = []
     for contract in normalize_contracts(contracts, nhl_id, source_code):
@@ -551,7 +555,7 @@ def persist_contracts(
         summary["contract_seasons_created"] += len(pending_seasons)
 
 
-def source_record_values(
+def build_source_record_values(
     source_id: int, source_code: str, candidate: Candidate, payload: dict[str, object]
 ) -> tuple[object, ...]:
     encoded = json.dumps(payload, sort_keys=True, default=str, separators=(",", ":"))
@@ -565,14 +569,14 @@ def source_record_values(
     )
 
 
-def source_records_bulk(
+def save_source_records_bulk(
     cursor: PgCursor,
     source_id: int,
     source_code: str,
     records: Iterable[tuple[Candidate, dict[str, object]]],
 ) -> None:
     values = [
-        source_record_values(source_id, source_code, candidate, payload)
+        build_source_record_values(source_id, source_code, candidate, payload)
         for candidate, payload in records
     ]
     if len(values) == 0:
@@ -586,7 +590,7 @@ def source_records_bulk(
     )
 
 
-def source_id(cursor: PgCursor, source_code: str = CAPSPACE_SOURCE) -> int:
+def load_source_id(cursor: PgCursor, source_code: str = CAPSPACE_SOURCE) -> int:
     cursor.execute("SELECT id FROM data_sources WHERE code=%s", (source_code,))
     row = cursor.fetchone()
     if row is None:
@@ -594,7 +598,7 @@ def source_id(cursor: PgCursor, source_code: str = CAPSPACE_SOURCE) -> int:
     return int(row[0])
 
 
-def coverage_counts(
+def count_contract_coverage(
     cursor: PgCursor, first_season: int, last_season: int
 ) -> dict[str, object]:
     cursor.execute(
@@ -613,7 +617,7 @@ def coverage_counts(
     }
 
 
-def coverage_report(
+def load_coverage_report(
     *, first_season: int = DEFAULT_FIRST_SEASON, last_season: int = DEFAULT_LAST_SEASON
 ) -> dict[str, object]:
     if violation := find_option_violation(
@@ -621,10 +625,10 @@ def coverage_report(
     ):
         raise violation
     with (
-        database_transaction() as connection,
+        open_database_transaction() as connection,
         connection.cursor() as cursor,
     ):
-        report = coverage_counts(cursor, first_season, last_season)
+        report = count_contract_coverage(cursor, first_season, last_season)
         range_params = (first_season, last_season, first_season, last_season)
         cursor.execute(
             f"""WITH {STAT_SEASONS_CTE}
@@ -711,12 +715,12 @@ class PostgresContractRepository:
     ) -> Mapping[str, int]:
         summary: Counter[str] = Counter()
         source_ids: dict[str, int] = {
-            code: source_id(self.cursor, code)
+            code: load_source_id(self.cursor, code)
             for code in {result.source_code for result in results} | {CAPSPACE_SOURCE}
         }
         if not dry_run:
-            for code, records in source_records_by_code(candidates, results).items():
-                source_records_bulk(self.cursor, source_ids[code], code, records)
+            for code, records in group_source_records(candidates, results).items():
+                save_source_records_bulk(self.cursor, source_ids[code], code, records)
         successful = tuple(
             result for result in results if result.status is ProfileStatus.SUCCEEDED
         )
@@ -740,7 +744,9 @@ class PostgresContractRepository:
     def coverage_counts(
         self, options: HistoricalContractOptions
     ) -> Mapping[str, object]:
-        return coverage_counts(self.cursor, options.first_season, options.last_season)
+        return count_contract_coverage(
+            self.cursor, options.first_season, options.last_season
+        )
 
 
 type ContractRepositoryFactory = Callable[
@@ -750,5 +756,5 @@ type ContractRepositoryFactory = Callable[
 
 @contextmanager
 def open_contract_repository() -> Generator[ContractRepository]:
-    with database_transaction() as connection, connection.cursor() as cursor:
+    with open_database_transaction() as connection, connection.cursor() as cursor:
         yield PostgresContractRepository(cursor=cursor)

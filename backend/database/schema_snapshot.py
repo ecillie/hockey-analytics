@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.shared.cli import ExitCode
-from app.shared.environment import database_url
+from app.shared.environment import resolve_database_url
 from app.shared.cleanup import complete_cleanup
 from sqlalchemy import create_engine, text
 
@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, text
 type SchemaCatalog = dict[str, list[dict[str, object]]]
 
 
-def catalog_queries() -> dict[str, str]:
+def build_catalog_queries() -> dict[str, str]:
     return {
         "tables": """
             SELECT table_name
@@ -62,14 +62,14 @@ def catalog_queries() -> dict[str, str]:
     }
 
 
-def snapshot() -> SchemaCatalog:
-    engine = create_engine(database_url(), pool_pre_ping=True)
+def capture_schema_catalog() -> SchemaCatalog:
+    engine = create_engine(resolve_database_url(), pool_pre_ping=True)
     primary: BaseException | None = None
     try:
         with engine.connect() as connection:
             return {
                 name: [dict(row) for row in connection.execute(text(query)).mappings()]
-                for name, query in catalog_queries().items()
+                for name, query in build_catalog_queries().items()
             }
     except BaseException as failure:
         primary = failure
@@ -78,8 +78,12 @@ def snapshot() -> SchemaCatalog:
         complete_cleanup((engine.dispose,), primary)
 
 
-def render(value: SchemaCatalog) -> str:
+def render_schema_catalog(value: SchemaCatalog) -> str:
     return json.dumps(value, indent=2, sort_keys=True, default=str) + "\n"
+
+
+snapshot = capture_schema_catalog
+render = render_schema_catalog
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -117,7 +121,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def execute_command(options: CommandOptions) -> int:
 
-    actual = render(snapshot())
+    actual = render_schema_catalog(capture_schema_catalog())
     if options.actual is not None:
         options.actual.parent.mkdir(parents=True, exist_ok=True)
         options.actual.write_text(actual, encoding="utf-8")

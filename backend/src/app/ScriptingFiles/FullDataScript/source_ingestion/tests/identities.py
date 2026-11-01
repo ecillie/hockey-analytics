@@ -5,11 +5,11 @@ from dataclasses import dataclass
 from hypothesis import strategies as st
 from hypothesis.strategies import SearchStrategy
 
-from app.ScriptingFiles.FullDataScript.source_ingestion.util import source_row_hash
+from app.ScriptingFiles.FullDataScript.source_ingestion.util import hash_source_row
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     PlayerKind,
     StatLayout,
-    stat_layout,
+    select_stat_layout,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.domain import StatsJob
 from app.ScriptingFiles.FullDataScript.source_ingestion.policy import RowPolicy
@@ -82,19 +82,19 @@ def build_identity_rows(player_id: int) -> IdentityRows:
         kinds=tuple(
             IdentityKind(
                 job=StatsJob(kind=kind, season=2025, game_type=2),
-                advanced=stat_layout(kind, advanced=True),
-                basic=stat_layout(kind, advanced=False),
+                advanced=select_stat_layout(kind, advanced=True),
+                basic=select_stat_layout(kind, advanced=False),
             )
             for kind in PlayerKind
         ),
         moneypuck=moneypuck,
         nhl=nhl,
-        moneypuck_hashes=tuple(map(source_row_hash, moneypuck)),
-        nhl_hashes=tuple(map(source_row_hash, nhl)),
+        moneypuck_hashes=tuple(map(hash_source_row, moneypuck)),
+        nhl_hashes=tuple(map(hash_source_row, nhl)),
     )
 
 
-def equivalent_identity_rows() -> SearchStrategy[IdentityRows]:
+def build_equivalent_identity_rows() -> SearchStrategy[IdentityRows]:
     return st.integers(min_value=-999_999_999, max_value=999_999_999).map(
         build_identity_rows
     )

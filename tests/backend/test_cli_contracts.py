@@ -52,10 +52,11 @@ class TestCommandBoundaries:
             CommandCase(module=backfill_team_stints, action="init_db"), id="repair"
         ),
         pytest.param(
-            CommandCase(module=container_smoke, action="validate"), id="container"
+            CommandCase(module=container_smoke, action="validate_container_api"),
+            id="container",
         ),
         pytest.param(
-            CommandCase(module=migration_preflight, action="database_url"),
+            CommandCase(module=migration_preflight, action="resolve_database_url"),
             id="preflight",
         ),
         pytest.param(
@@ -63,10 +64,12 @@ class TestCommandBoundaries:
             id="migration-smoke",
         ),
         pytest.param(
-            CommandCase(module=schema_snapshot, action="snapshot"), id="snapshot"
+            CommandCase(module=schema_snapshot, action="capture_schema_catalog"),
+            id="snapshot",
         ),
         pytest.param(
-            CommandCase(module=verify_migrations, action="validate"), id="history"
+            CommandCase(module=verify_migrations, action="validate_migration_history"),
+            id="history",
         ),
         pytest.param(
             CommandCase(module=run_pipeline, action="run_pipeline"), id="pipeline"
@@ -90,7 +93,8 @@ class TestCommandBoundaries:
             id="replacement",
         ),
         pytest.param(
-            CommandCase(module=train_skater_value, action="train"), id="training"
+            CommandCase(module=train_skater_value, action="train_skater_model"),
+            id="training",
         ),
         pytest.param(
             CommandCase(module=evaluate_skater_model, action="evaluate_model"),
@@ -182,7 +186,7 @@ class TestInvalidOptions:
         module, argv = request.param
         action = "init_db"
         if module is container_smoke:
-            action = "validate"
+            action = "validate_container_api"
         if module is run_pipeline:
             action = "run_pipeline"
         monkeypatch.setattr(module, action, FailingAction())

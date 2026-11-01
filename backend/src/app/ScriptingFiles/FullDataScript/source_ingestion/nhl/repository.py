@@ -9,20 +9,20 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     RosterSummary,
     WriteCounts,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.domain import stat_layout
+from app.ScriptingFiles.FullDataScript.source_ingestion.domain import select_stat_layout
 from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.domain import (
     NhlRosterSnapshot,
     NhlStatsSnapshot,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.repository import (
     TransactionFactory,
-    source_ids,
+    load_source_ids,
     ensure_teams,
     ensure_seasons,
     upsert_player,
     link_external_id,
     resolve_nhl_player,
-    stat_values,
+    build_stat_values,
     write_stats,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import split_name
@@ -34,7 +34,7 @@ class PostgresNhlStatsRepository:
 
     def persist(self, snapshot: NhlStatsSnapshot) -> NhlStatsSummary:
         with self.transaction() as connection, connection.cursor() as cursor:
-            sources = source_ids(cursor)
+            sources = load_source_ids(cursor)
             nhl_id, moneypuck_id = sources["nhl"], sources["moneypuck"]
             team_ids = ensure_teams(
                 cursor, (team for row in snapshot.rows for team in row.teams)
@@ -55,7 +55,7 @@ class PostgresNhlStatsRepository:
             created = updated = 0
             for kind in PlayerKind:
                 incoming = (
-                    stat_values(
+                    build_stat_values(
                         row,
                         player_cache[row.external_id],
                         team_ids,
@@ -68,7 +68,7 @@ class PostgresNhlStatsRepository:
                 by_grain = {tuple(value[:6]): value for value in incoming}
                 values = tuple(by_grain.values())
                 new, changed = write_stats(
-                    cursor, stat_layout(kind, advanced=False), nhl_id, values
+                    cursor, select_stat_layout(kind, advanced=False), nhl_id, values
                 )
                 created += new
                 updated += changed
@@ -103,7 +103,7 @@ class PostgresNhlRosterRepository:
 
     def persist(self, snapshot: NhlRosterSnapshot) -> RosterSummary:
         with self.transaction() as connection, connection.cursor() as cursor:
-            sources = source_ids(cursor)
+            sources = load_source_ids(cursor)
             moneypuck_id, nhl_id = sources["moneypuck"], sources["nhl"]
             ensure_seasons(cursor, (snapshot.season,))
             team_ids = ensure_teams(
