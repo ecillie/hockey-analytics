@@ -16,6 +16,7 @@ from app.shared.tests.resources import (
     CursorProbe,
     ResourceFailureScenario,
     ResourceProbe,
+    TeamStintQueryScenario,
 )
 from app.ScriptingFiles.FullDataScript import ingestion, team_stints
 from app.shared.tests.fakes import StageOutcome
@@ -50,6 +51,26 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.schedule.domain import (
 from app.ScriptingFiles.FullDataScript.source_ingestion.schedule.repository import (
     PostgresScheduleRepository,
 )
+
+
+class TestTeamStintRangeBeforeResources:
+    @pytest.fixture(
+        params=[
+            pytest.param(team_stints.plan_team_stint_backfill, id="plan"),
+            pytest.param(team_stints.apply_team_stint_backfill, id="apply"),
+        ]
+    )
+    def scenario(self, request):
+        return TeamStintQueryScenario(
+            query=request.param, connection=ResourceProbe(failures={})
+        )
+
+    def test_reversed_range_does_not_acquire_a_cursor(self, scenario):
+        with pytest.raises(team_stints.SeasonRangeError) as failure:
+            scenario.query(scenario.connection, first_season=2026, last_season=2025)
+        assert failure.value.first_season == 2026
+        assert failure.value.last_season == 2025
+        assert scenario.connection.events == []
 
 
 class TestOwnedCursorQueries:

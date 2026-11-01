@@ -8,8 +8,61 @@ from app.config import ConfigurationError, get_api_settings, get_database_settin
 from app.shared.environment import resolve_database_url
 from app.shared.smoke import ContainerReadinessError, SmokeResponseError
 from app.shared.tests.fakes import StageOutcome
-from app.shared.tests.resources import ResourceProbe, RepairFailureScenario
+from app.shared.tests.resources import (
+    ResourceProbe,
+    RepairFailureScenario,
+    TeamStintQueryScenario,
+    TeamStintQueryProbe,
+)
+from app.ScriptingFiles.FullDataScript.team_stints.repository import TeamStintQuery
 from backend.database import backfill_team_stints, container_smoke, migration_smoke
+
+
+class TestInjectedTeamStintQuery:
+    counts = (("canonical_assignments", 4), ("missing_assignments", 2))
+
+    @pytest.fixture(
+        params=[pytest.param(False, id="dry-run"), pytest.param(True, id="apply")]
+    )
+    def options(self, request):
+        return backfill_team_stints.CommandOptions(
+            apply=request.param, first_season=2024, last_season=2025
+        )
+
+    @pytest.fixture
+    def scenario(
+        self, options, monkeypatch
+    ) -> TeamStintQueryScenario[TeamStintQueryProbe]:
+        values = self.counts + ((("inserted_assignments", 2),) if options.apply else ())
+        scenario = TeamStintQueryScenario(
+            query=TeamStintQueryProbe(values=values),
+            connection=ResourceProbe(failures={}),
+        )
+        monkeypatch.setattr(backfill_team_stints, "init_db", StageOutcome(result=None))
+        monkeypatch.setattr(
+            backfill_team_stints,
+            "connect_database",
+            scenario.connection.create_resource,
+        )
+        rejected = StageOutcome(
+            result=None, failure=AssertionError("default query used")
+        )
+        monkeypatch.setattr(backfill_team_stints, "plan_team_stint_backfill", rejected)
+        monkeypatch.setattr(backfill_team_stints, "apply_team_stint_backfill", rejected)
+        return scenario
+
+    def test_falsy_query_retains_range_result_and_transaction_ownership(
+        self, scenario, options
+    ):
+        assert isinstance(scenario.query, TeamStintQuery)
+        assert len(scenario.query) == 0
+        result = backfill_team_stints.repair_team_stints(options, query=scenario.query)
+        assert result == dict(scenario.query.values) | {"applied": options.apply}
+        assert scenario.query.calls == [(2024, 2025)]
+        assert scenario.connection.events == [
+            "commit" if options.apply else "rollback",
+            "close",
+        ]
 
 
 class TestOperationalEnvironment:

@@ -1,7 +1,7 @@
 """Typed PostgreSQL adapter for the active CapWages snapshot."""
 
 from collections import defaultdict
-from collections.abc import Callable, Generator, Mapping
+from collections.abc import Callable, Generator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from app.database import open_database_cursor
@@ -13,10 +13,10 @@ from app.shared.observability.domain import DiagnosticContext
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
     ActiveContractSnapshot,
     ActivePlayer,
-    ContractSeason,
-    ParsedContract,
+    ActiveSeasonWrite,
+    ActiveContractWrite,
 )
-from app.ScriptingFiles.FullDataScript.contracts.errors import ActiveSeasonCapError
+from app.ScriptingFiles.FullDataScript.contracts.policy import ActiveSeasonCapPolicy
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import Player
 from app.ScriptingFiles.FullDataScript.source_ingestion.repository import (
     ensure_seasons as _ensure_seasons,
@@ -46,16 +46,12 @@ from psycopg2.extensions import cursor as PgCursor
 from psycopg2.extras import Json
 
 
-def upsert_active_season(
-    cursor: PgCursor,
-    *,
-    contract_id: int,
-    external_id: str,
-    owning_team_id: int | None,
-    detail: ContractSeason,
-) -> int:
-    year = detail.season_start_year
-    cap_hit = detail.cap_hit_cents
+type ActiveContractCounts = tuple[int, int]
+
+
+def upsert_active_season(cursor: PgCursor, write: ActiveSeasonWrite) -> int:
+    year = write.detail.season_start_year
+    cap_hit = write.detail.cap_hit_cents
     cursor.execute(
         "SELECT salary_cap_cents FROM seasons WHERE start_year=%s",
         (year,),
@@ -66,12 +62,14 @@ def upsert_active_season(
         if cap_row is not None and cap_row[0] not in (None, 0)
         else None
     )
-    if cap_pct is not None and cap_pct > 1:
-        raise ActiveSeasonCapError(external_id=external_id, season=year)
+    if violation := ActiveSeasonCapPolicy(
+        external_id=write.external_id, season=year
+    ).find_violation(cap_pct):
+        raise violation
     cursor.execute(
         """SELECT 1 FROM contract_seasons
            WHERE contract_id=%s AND season_start_year=%s""",
-        (contract_id, year),
+        (write.contract_id, year),
     )
     season_existed = cursor.fetchone() is not None
     cursor.execute(
@@ -81,40 +79,33 @@ def upsert_active_season(
            cap_percentage=EXCLUDED.cap_percentage,
            is_slide=EXCLUDED.is_slide,updated_at=CURRENT_TIMESTAMP""",
         (
-            contract_id,
+            write.contract_id,
             year,
-            owning_team_id,
+            write.owning_team_id,
             cap_hit,
             cap_pct,
-            detail.is_slide,
+            write.detail.is_slide,
         ),
     )
     return int(not season_existed)
 
 
 def upsert_active_contract(
-    cursor: PgCursor,
-    *,
-    player_id: int,
-    source_id: int,
-    item: ActivePlayer,
-    contract: ParsedContract,
-    index: int,
-    team_ids: Mapping[str, int],
-) -> tuple[int, int]:
-    details = contract.seasons
+    cursor: PgCursor, write: ActiveContractWrite
+) -> ActiveContractCounts:
+    details = write.contract.seasons
     years = [season.season_start_year for season in details]
     start, end = min(years), max(years)
-    external_id = f"{item.slug}:{start}:{end}:{index}"
+    external_id = f"{write.item.slug}:{start}:{end}:{write.index}"
     cursor.execute(
         "SELECT 1 FROM contracts WHERE source_id=%s AND external_id=%s",
-        (source_id, external_id),
+        (write.source_id, external_id),
     )
     contract_existed = cursor.fetchone() is not None
-    total_cents = contract.total_value_cents
+    total_cents = write.contract.total_value_cents
     average_cents = details[0].cap_hit_cents
-    expiry = contract.expiry_status
-    contract_type = contract.contract_type
+    expiry = write.contract.expiry_status
+    contract_type = write.contract.contract_type
     cursor.execute(
         """INSERT INTO contracts (player_id,signing_team_id,source_id,external_id,start_season,end_season,
                term_years,contract_type,expiry_status,total_value_cents,average_value_cents,is_entry_level,source_payload)
@@ -127,15 +118,9 @@ def upsert_active_contract(
                average_value_cents=EXCLUDED.average_value_cents,is_entry_level=EXCLUDED.is_entry_level,
                source_payload=EXCLUDED.source_payload,updated_at=CURRENT_TIMESTAMP RETURNING id""",
         (
-            player_id,
-            team_ids.get(
-                str(
-                    contract.signing_team
-                    if contract.signing_team is not None
-                    else item.team
-                ).upper()
-            ),
-            source_id,
+            write.player_id,
+            write.signing_team_id,
+            write.source_id,
             external_id,
             start,
             end,
@@ -146,17 +131,19 @@ def upsert_active_contract(
             average_cents,
             "ENTRY" in (contract_type if contract_type is not None else "").upper()
             or "ELC" in (contract_type if contract_type is not None else "").upper(),
-            Json(contract.source_payload),
+            Json(write.contract.source_payload),
         ),
     )
     contract_id = cursor.fetchone()[0]
     seasons_created = sum(
         upsert_active_season(
             cursor,
-            contract_id=contract_id,
-            external_id=external_id,
-            owning_team_id=team_ids.get(item.team),
-            detail=detail,
+            ActiveSeasonWrite(
+                contract_id=contract_id,
+                external_id=external_id,
+                owning_team_id=write.owning_team_id,
+                detail=detail,
+            ),
         )
         for detail in details
     )
@@ -232,12 +219,21 @@ def save_active_snapshot(
         for index, contract in enumerate(contracts_by_slug[item.slug]):
             created, seasons_created = upsert_active_contract(
                 cursor,
-                player_id=player_id,
-                source_id=capwages_id,
-                item=item,
-                contract=contract,
-                index=index,
-                team_ids=team_ids,
+                ActiveContractWrite(
+                    player_id=player_id,
+                    source_id=capwages_id,
+                    item=item,
+                    contract=contract,
+                    index=index,
+                    signing_team_id=team_ids.get(
+                        str(
+                            contract.signing_team
+                            if contract.signing_team is not None
+                            else item.team
+                        ).upper()
+                    ),
+                    owning_team_id=team_ids.get(item.team),
+                ),
             )
             contract_count += 1
             season_count += len(contract.seasons)

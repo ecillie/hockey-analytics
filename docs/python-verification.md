@@ -1,5 +1,20 @@
 # Python verification
 
+The active-write/team-stint checkpoint resolves those remaining context/role
+findings. Immutable write values carry resolved scalar team IDs; compatibility
+writer calls retain exact SQL/bindings/outcomes in **216** contract and **24**
+season comparisons. Team-stint SQL/policy/error roles retain exact compatibility
+exports; **10** valid-range comparisons preserve counts/close. Two reversed-range
+cases fail before the fix and pass before cursor acquisition. Two falsy injected
+queries prove the minimal query Protocol and transaction ownership. Final focus
+passes **387**. Fresh migrated `tradevalue_test_logging05_write_context` passes
+**1,565 tests, zero skips**, **91.44%** coverage in **134.25 seconds**, with the
+**100%** API/calendar gate. Isolated units pass **1,515**, with 50 integrations
+deselected, in **114.91 seconds**. Static, package/export, migration/schema/API and
+ML gates pass. Twelve dispositions were reviewed; all **245** current source
+digests match. Source helper/entrypoint and exact framework/historical/fault-double
+decisions, hosted verification and final combined acceptance/release remain open.
+
 The native Session lifetime checkpoint fixes the confirmed source/profile teardown
 defect with one shared owner guard. ExitStack registers native exit before entry;
 complete_cleanup preserves an existing primary/cause or propagates a sole cleanup

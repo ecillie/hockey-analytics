@@ -3,6 +3,7 @@
 import math
 import re
 from dataclasses import dataclass
+from decimal import Decimal
 
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
     Candidate,
@@ -17,6 +18,7 @@ from app.ScriptingFiles.FullDataScript.contracts.errors import (
     ContractConflictError,
     ReconciliationFailure,
     ContractOptionError,
+    ActiveSeasonCapError,
 )
 from app.ScriptingFiles.FullDataScript.contracts.schemas import SourceDocument
 from app.ScriptingFiles.FullDataScript.contracts.schemas.documents import PageSnapshots
@@ -27,6 +29,19 @@ from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
 )
 from app.ScriptingFiles.FullDataScript.contracts.util import clean_text
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import build_player_slug
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ActiveSeasonCapPolicy:
+    external_id: str
+    season: int
+
+    def find_violation(self, percentage: Decimal | None) -> ActiveSeasonCapError | None:
+        if percentage is not None and percentage > 1:
+            return ActiveSeasonCapError(
+                external_id=self.external_id, season=self.season
+            )
+        return None
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

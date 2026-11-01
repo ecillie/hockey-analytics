@@ -215,6 +215,25 @@ class ActiveContractSnapshot:
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
+class ActiveSeasonWrite:
+    contract_id: int
+    external_id: str
+    owning_team_id: int | None
+    detail: ContractSeason
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ActiveContractWrite:
+    player_id: int
+    source_id: int
+    item: ActivePlayer
+    contract: ParsedContract
+    index: int
+    signing_team_id: int | None
+    owning_team_id: int | None
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
 class HistoricalContractLimits:
     maximum_workers: int = 8
     maximum_batch_size: int = 1000

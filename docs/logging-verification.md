@@ -1798,3 +1798,56 @@ helper/entrypoint and exact framework/historical/native fault-double decisions,
 hosted NonProd mode/correlation and final combined acceptance/release promotion
 remain open. The approved API lifespan hook is unchanged. No acceptance PR or
 production promotion is made by this checkpoint.
+
+## Active write values and canonical team-stint query checkpoint
+
+Active contract/season SQL writers now accept immutable write values, including
+resolved scalar signing/owning team IDs. Mutable team lookup stays in snapshot
+preparation, and mutable name matching stays inside its save operation. The two
+existing keyword writer boundaries construct those values for compatibility.
+ActiveSeasonCapPolicy returns the existing contextual cap error; the writer raises
+at the same point after reading the database cap. The count pair has an exact alias.
+
+Team-stint SQL, range policy and error now live in concept role files, with exact
+compatibility exports at the established import path. The original SQL constant
+AST and moved error-class AST are unchanged. Parameter validation precedes cursor
+acquisition. A minimal runtime-checkable callable query Protocol is injectable at
+repair; None selects the established plan/apply default, preserving falsy injected
+queries. Commit/dry-run rollback, cleanup, help/main and report behavior remain.
+
+Verification under Python 3.12.14:
+
+- Comparisons against `54b5e18` preserve outcomes, exact SQL and bound values in
+  **216** legacy contract and **24** legacy season cases, including null/zero caps,
+  existing rows, nullable/explicit team choices, contract types and cap violations.
+  **10** valid team-stint range cases preserve SQL, bindings, counts and one close.
+- Both reversed-range cases fail before the fix and pass with typed first/last
+  fields and zero cursor operations. Two falsy query cases reject default-query
+  fallback and verify bounds, returned counts/applied flag and transaction/close.
+- Initial active/cursor focus passes **261**; expanded focus passes **336**; final
+  active/cursor/operational/CLI focus passes **387** in **8.87 seconds**.
+- Fresh migrated `tradevalue_test_logging05_write_context`: **1,565 passed, zero
+  skips**, **91.44%** coverage in **134.25 seconds**, with **100%** API/calendar
+  coverage. Isolated units pass **1,515**, with 50 integrations deselected, in
+  **114.91 seconds**. The total adds four named regressions and two net native
+  import-discovery cases for the new team-stint role modules.
+- Locked sync, Ruff lint/format, ty, structural scope, dependency exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke,
+  clean API/Vercel/ML artifact installs/exclusions and committed-model gates pass.
+  Twelve current dispositions were reviewed; all **245** source digests match the
+  staged source set. No added prohibited forms/comments were found. Public HTTP
+  schema, frontend and committed model inputs remain unchanged. Final combined
+  images, browser and hosted acceptance remain required.
+
+Evidence uses `/private/tmp/tradevalue-logging05-write-context-` prefixes:
+`before-range.txt`, `focus.txt`, `focus-final.txt`, `focus-complete.txt`,
+`compare.py`/`compare.txt`, `checks.sh`/`checks.txt`, `pytest.txt`, `units.txt`,
+`schema.json` and `packages.txt`. Compatibility comparisons execute the prior
+writer/query definitions in isolated namespaces with owned transcript probes;
+current worktree source is not rewritten by the comparison.
+
+Active write-context and team-stint role findings are resolved. Source helper/
+compatibility-entrypoint and exact framework/historical/native fault-double
+judgments, hosted NonProd mode/correlation and final combined acceptance/release
+promotion remain open. The approved API lifespan hook is unchanged. No acceptance
+PR or production promotion is made by this checkpoint.

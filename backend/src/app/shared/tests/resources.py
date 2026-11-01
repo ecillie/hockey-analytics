@@ -6,6 +6,7 @@ from typing import Self
 from io import BytesIO
 from urllib.error import HTTPError
 from app.config import DatabaseSettings
+from app.ScriptingFiles.FullDataScript.team_stints.repository import TeamStintQuery
 from collections.abc import Generator
 from contextlib import contextmanager
 from fastapi import Request
@@ -90,6 +91,31 @@ class ResourceProbe:
     def create_sessions(self, *args: object, **kwargs: object) -> Self:
         self.record_operation("sessions")
         return self
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class TeamStintQueryScenario[Q: TeamStintQuery]:
+    query: Q
+    connection: ResourceProbe
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class TeamStintQueryProbe:
+    values: tuple[tuple[str, int], ...]
+    calls: list[tuple[int | None, int | None]] = field(default_factory=list)
+
+    def __len__(self) -> int:
+        return len(self.calls)
+
+    def __call__(
+        self,
+        connection: object,
+        *,
+        first_season: int | None = None,
+        last_season: int | None = None,
+    ) -> dict[str, int]:
+        self.calls.append((first_season, last_season))
+        return dict(self.values)
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
