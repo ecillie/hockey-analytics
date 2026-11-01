@@ -1,8 +1,54 @@
 # Logging event owners
 
-Implemented Python behavior through logging phase 3. Browser instrumentation and
-hosted retention/access/limit acceptance are later phases. Diagnostics use stderr;
+Implemented Python behavior through logging phase 3 and browser behavior in
+phase 4. Hosted retention/access/limit acceptance remains phase 5. Python diagnostics use stderr;
 requested CLI reports and offline migration SQL retain their stdout contracts.
+
+## Browser
+
+The application bootstrap owns one logger and one pair of global listeners,
+outside React effects. Cleanup removes its listeners and deactivates its logger;
+hot reload also unmounts its root. Imports do not install listeners or emit logs.
+React root callbacks own render-error reporting; the error boundary displays a
+generic fallback. Handled API failures retain the existing page retry behavior.
+
+| Events | Owner and severity |
+| --- | --- |
+| `app.started` | Application bootstrap, INFO |
+| `api.request_started`, `api.request_finished` | API client, DEBUG |
+| `api.request_cancelled` | API client, DEBUG; original cancellation preserved |
+| `api.request_failed` | API client, ERROR; controlled network/HTTP/decode/invalid-response/unexpected category |
+| `react.render_failed`, `react.uncaught_error`, `react.recovered_error` | React root callbacks, ERROR / CRITICAL / WARNING |
+| `global.error`, `global.unhandled_rejection` | Owned window listeners, ERROR; expected aborts silent |
+| `logging.suppressed` | Logger, at the suppressed severity |
+| `logging.format_failed` | Independent formatter fallback, at least ERROR; CRITICAL retained |
+
+`VITE_LOG_LEVEL` is validated at build and bootstrap, default INFO, with the same
+five severity thresholds and case/whitespace normalization as Python. Browser
+output is one JSON string per console call, using debug/info/warn/error methods;
+CRITICAL uses console.error with its severity retained in the record. There is
+no browser text format or hosted collection. No deployment environment is inferred
+from Vite mode or mock selection; optional logger environment metadata accepts
+only explicit dev/nonprod/prod values.
+
+The logger permits only stable events, components, categories, route templates,
+numeric status/duration and exactly 32 lowercase hexadecimal server request-ID
+characters. It never serializes errors, stacks, messages, URLs, query values,
+headers, bodies or nested objects. HTTP errors retain their original UI message,
+code and details; their new optional `requestId` carries the validated correlation
+ID. Decode exceptions and cancellation reasons preserve their identity. Unknown
+paths become `unknown`, and malformed correlation IDs are omitted.
+
+Each logger permits 20 records per severity per monotonic 60-second window plus
+one suppression notice for that severity. There are five finite counters, no
+queue, persistence or retries; DEBUG traffic cannot consume ERROR capacity.
+Object errors are deduplicated in a logger-owned WeakSet, including errors that
+subsequently reach a root/global handler. Primitive rejections are bounded by the
+rate limit. Expected aborts are not error diagnostics. Sink/format/clock faults
+do not replace API or render results, and a failed sink does not recursively log.
+Global handlers prevent the default raw error console report while allowing
+other listeners to run. Browser-native network or extension diagnostics remain
+under browser ownership; this policy governs application records.
 
 ## Configuration and correlation
 
