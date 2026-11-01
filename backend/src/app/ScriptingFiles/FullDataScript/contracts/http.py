@@ -41,7 +41,10 @@ from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
 from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
     parse_contract_document as _parse_contract_document,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import open_http_session
+from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
+    open_http_session,
+    report_request_recovery,
+)
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
     build_player_slug as _slug_from_name,
 )
@@ -186,6 +189,7 @@ def request_capspace_attempt(
         )
         time.sleep(min(2**attempt, options.maximum_backoff))
         return None
+    report_request_recovery(response, context)
     if response.status_code == 404:
         return ProfileResult(
             candidate=candidate,
@@ -267,6 +271,7 @@ def request_capwages_slug(
     *,
     is_base: bool,
     options: ProfileHttpOptions,
+    context: IngestionContext | None = None,
 ) -> ProfileResult | ContinueSlugSearch:
     try:
         response = session.get(url, timeout=options.timeout)
@@ -284,6 +289,7 @@ def request_capwages_slug(
                 ),
             )
         )
+    report_request_recovery(response, context)
     if response.status_code == 404:
         if is_base:
             return ProfileResult(
@@ -345,6 +351,7 @@ def fetch_capwages_profile(
     candidate: Candidate,
     *,
     options: ProfileHttpOptions | None = None,
+    context: IngestionContext | None = None,
 ) -> ProfileResult:
     options = ProfileHttpOptions() if options is None else options
     if violation := find_profile_http_violation(options):
@@ -373,7 +380,12 @@ def fetch_capwages_profile(
     searching = True
     while searching and (suffix := next(suffixes, None)) is not None:
         attempt = request_capwages_slug(
-            session, candidate, f"{url}{suffix}", is_base=suffix == "", options=options
+            session,
+            candidate,
+            f"{url}{suffix}",
+            is_base=suffix == "",
+            options=options,
+            context=context,
         )
         if isinstance(attempt, ProfileResult):
             result = attempt
@@ -407,7 +419,9 @@ def fetch_profile_with_fallback(
         values={"source": "capwages"},
         level=LogLevel.DEBUG,
     )
-    fallback = fetch_capwages_profile(session, candidate, options=options)
+    fallback = fetch_capwages_profile(
+        session, candidate, options=options, context=context
+    )
     report_ingestion_progress(
         context,
         event="ingestion.fallback_finished",

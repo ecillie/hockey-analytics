@@ -13,8 +13,8 @@ and text format is available for terminals. Invalid logging settings exit 2
 before resource acquisition. Help and argument errors retain their existing
 behavior before logging setup. Each invocation generates an `invocation_id`;
 `command.started`, `command.finished` and translated failures share it. Output
-and exit contracts below remain unchanged. Alembic framework logging and final
-phase-3 acceptance are still in progress.
+and exit contracts below remain unchanged. Event ownership is recorded in
+[Logging event owners](logging-events.md).
 
 OpenAPI, container readiness, migration history, migration preflight, schema
 snapshot and structural verification read logging settings directly from the
@@ -130,7 +130,18 @@ Application commands use the environment configuration documented in the backend
 README. Migration preflight and schema snapshots retain the explicit
 `DATABASE_URL`, then `TEST_DATABASE_URL`, precedence. Alembic remains a separate
 framework command, invoked with `uv run python -m alembic -c backend/alembic.ini`;
-its revision metadata, frozen SQL, and framework logging configuration are
-unchanged. Operational scripts remain repository tools; ingestion modules remain
+its revision metadata and frozen SQL remain unchanged. Its environment callback
+now configures shared logging from `main()` and preserves unrelated root handlers,
+without `fileConfig`. INFO records command boundaries; DEBUG adds mode and revision
+step detail. Pending step events precede commit and do not claim durable success.
+Execution diagnostics stay on stderr and SQL stays on stdout. Command errors retain
+255 (or 1 with `--raiseerr`); other execution failures retain 1. Programmatic calls
+retain their original exception identity and exception hook. Help and errors before
+environment loading retain native framework output; invalid logging settings fail
+before resource acquisition without echoing values. Controlled failure stages
+include `postgresql_required`, `database_url_required`, `configuration`, `framework`
+and `execution`. The callback returns control to Alembic on success and exits only
+for a translated CLI failure, rather than unconditionally exiting a framework
+process on success. Operational scripts remain repository tools; ingestion modules remain
 excluded from the serving wheel. CI and database workflows keep their existing
 supported paths and flags.

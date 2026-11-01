@@ -144,7 +144,14 @@ def configure_logging(
         SafeStream(stream=stream, format=settings.format, minimum_level=settings.level)
     )
     application_names = ("app", "backend", "ml", "__main__")
-    dependency_names = ("sqlalchemy", "httpx", "httpcore", "urllib3", "requests")
+    dependency_names = (
+        "sqlalchemy",
+        "httpx",
+        "httpcore",
+        "urllib3",
+        "requests",
+        "alembic",
+    )
     for namespace in application_names + dependency_names:
         target = logging.getLogger(namespace)
         target.setLevel(

@@ -1,7 +1,7 @@
 """Source transport protocols and explicitly owned retry sessions."""
 
 from collections.abc import Generator, Mapping
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 from _thread import LockType
@@ -10,6 +10,12 @@ from threading import Lock
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from urllib3.response import HTTPResponse
+from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
+from app.ScriptingFiles.FullDataScript.tracking.services import (
+    report_ingestion_progress,
+)
+from app.shared.observability.domain import LogLevel
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -54,6 +60,7 @@ class SourceClient(Protocol):
 class SessionSourceClient:
     session: SourceSession
     options: SourceHttpOptions = field(default_factory=SourceHttpOptions)
+    context: IngestionContext | None = None
 
     def get_json(
         self,
@@ -63,19 +70,46 @@ class SessionSourceClient:
         params: Mapping[str, str | int] | None = None,
     ) -> object:
         timeout = self.options.json_timeout if timeout is None else timeout
+        report_ingestion_progress(
+            self.context, event="ingestion.request_started", level=LogLevel.DEBUG
+        )
         response = (
             self.session.get(url, timeout=timeout)
             if params is None
             else self.session.get(url, params=params, timeout=timeout)
         )
         response.raise_for_status()
+        report_request_recovery(response, self.context)
         return response.json()
 
     def get_csv(self, url: str, *, timeout: float | None = None) -> str:
         timeout = self.options.csv_timeout if timeout is None else timeout
+        report_ingestion_progress(
+            self.context, event="ingestion.request_started", level=LogLevel.DEBUG
+        )
         response = self.session.get(url, timeout=timeout)
         response.raise_for_status()
+        report_request_recovery(response, self.context)
         return response.text
+
+
+def report_request_recovery(response: object, context: IngestionContext | None) -> None:
+    if context is None or type(response) is not requests.Response:
+        return
+    raw = response.raw
+    if type(raw) is not HTTPResponse or type(raw.retries) is not Retry:
+        return
+    history = raw.retries.history
+    if type(history) is not tuple:
+        return
+    attempts = len(history) + 1
+    if attempts > 1:
+        report_ingestion_progress(
+            context,
+            event="ingestion.request_recovered",
+            values={"attempt": attempts},
+            level=LogLevel.WARNING,
+        )
 
 
 def open_http_session(options: SourceHttpOptions | None = None) -> requests.Session:
@@ -101,10 +135,21 @@ def open_http_session(options: SourceHttpOptions | None = None) -> requests.Sess
 @contextmanager
 def open_source_client(
     options: SourceHttpOptions | None = None,
+    *,
+    context: IngestionContext | None = None,
 ) -> Generator[SourceClient]:
     options = SourceHttpOptions() if options is None else options
     with open_http_session(options) as session:
-        yield SessionSourceClient(session=session, options=options)
+        yield SessionSourceClient(session=session, options=options, context=context)
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ContextualSourceClientFactory:
+    context: IngestionContext | None
+    options: SourceHttpOptions = field(default_factory=SourceHttpOptions)
+
+    def __call__(self) -> AbstractContextManager[SourceClient]:
+        return open_source_client(self.options, context=self.context)
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

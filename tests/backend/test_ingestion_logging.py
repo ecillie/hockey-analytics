@@ -3,13 +3,15 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from io import StringIO
+from io import BytesIO, StringIO
 import json
 import logging
 from threading import Barrier
 
 import pytest
 import requests
+from urllib3.response import HTTPResponse
+from urllib3.util.retry import Retry, RequestHistory
 
 from app.shared.observability.domain import (
     InvocationContext,
@@ -21,6 +23,10 @@ from app.shared.observability.sinks import build_diagnostic_handler
 from app.ScriptingFiles.FullDataScript import capspace, ingestion, ingestion_tracking
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.responses import (
     SessionLifecycle,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.http import SessionSourceClient
+from app.ScriptingFiles.FullDataScript.source_ingestion.tests.fakes import (
+    ManagedSession,
 )
 from app.shared.tests.fakes import StageOutcome
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import PlayerKind
@@ -412,4 +418,76 @@ class TestProfileRetryContext:
             assert events[0]["attempt"] == 2
             assert events[0]["run_id"] == 17
             assert events[0]["invocation_id"] == "generated-invocation"
+        assert "secret" not in capture.getvalue()
+
+
+class TestAdapterRecovery:
+    @pytest.fixture(
+        params=[
+            pytest.param(False, id="first-attempt"),
+            pytest.param(True, id="retried"),
+        ]
+    )
+    def retried(self, request):
+        return request.param
+
+    @pytest.fixture(
+        params=[pytest.param("json", id="json"), pytest.param("csv", id="csv")]
+    )
+    def kind(self, request):
+        return request.param
+
+    @pytest.fixture
+    def client(self, context, retried):
+        history = tuple(
+            RequestHistory(
+                method="GET",
+                url="https://feed.invalid?token=url_secret",
+                error=None,
+                status=503,
+                redirect_location=None,
+            )
+            for _ in range(2 if retried else 0)
+        )
+        response = requests.Response()
+        response.status_code = 200
+        response.raw = HTTPResponse(
+            body=BytesIO(b'{"value":"payload_secret"}'),
+            preload_content=False,
+            retries=Retry(total=4, history=history),
+        )
+        return SessionSourceClient(
+            session=ManagedSession(response=response),
+            context=replace(context, source="nhl", run_id=17),
+        )
+
+    def test_native_retry_history_produces_only_safe_recovery_count(
+        self, client, retried, kind, capture, level
+    ):
+        result = (
+            client.get_json("https://feed.invalid?token=url_secret")
+            if kind == "json"
+            else client.get_csv("https://feed.invalid?token=url_secret")
+        )
+        assert result == (
+            {"value": "payload_secret"}
+            if kind == "json"
+            else '{"value":"payload_secret"}'
+        )
+        events = [
+            json.loads(line.removeprefix("event "))
+            for line in capture.getvalue().splitlines()
+        ]
+        assert sum(item["event"] == "ingestion.request_started" for item in events) == (
+            level is LogLevel.DEBUG
+        )
+        recovered = [
+            item for item in events if item["event"] == "ingestion.request_recovered"
+        ]
+        assert len(recovered) == retried
+        if recovered:
+            assert recovered[0]["attempt"] == 3
+            assert recovered[0]["severity"] == "WARNING"
+            assert recovered[0]["run_id"] == 17
+            assert recovered[0]["invocation_id"] == "generated-invocation"
         assert "secret" not in capture.getvalue()

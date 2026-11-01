@@ -113,6 +113,7 @@ def sanitize_context(
         "method",
         "source_module",
         "player_kind",
+        "revision",
     )
     numbers = (
         "run_id",
@@ -223,6 +224,7 @@ def render_bounded_diagnostic(
             "exceptions_truncated",
             "source_module",
             "player_kind",
+            "revision",
             "game_type",
             "failed",
             "line",

@@ -58,7 +58,8 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
     SourceClient,
     SourceSession,
     SynchronizedSourceClient,
-    open_source_client,
+    open_source_client as open_source_client,
+    ContextualSourceClientFactory,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
     open_http_session as http_session,
@@ -275,7 +276,7 @@ def ingest_moneypuck(
     )
     return serialize_summary(
         MoneyPuckService(
-            client=SessionSourceClient(session=session),
+            client=SessionSourceClient(session=session, context=context),
             repository=repository,
             options=options,
             context=context,
@@ -309,7 +310,7 @@ def ingest_nhl_rosters(
     )
     return serialize_summary(
         NhlRosterService(
-            client=SessionSourceClient(session=session),
+            client=SessionSourceClient(session=session, context=context),
             repository=repository,
             options=options,
             context=context,
@@ -355,11 +356,11 @@ def ingest_nhl_stats(
     )
     if client_factory is None:
         client_factory = (
-            open_source_client
+            ContextualSourceClientFactory(context=context)
             if session is None
             else BorrowedSourceClientFactory(
                 client=SynchronizedSourceClient(
-                    client=SessionSourceClient(session=session)
+                    client=SessionSourceClient(session=session, context=context)
                 )
             )
         )
@@ -401,7 +402,7 @@ def ingest_schedule(
     )
     return serialize_summary(
         ScheduleService(
-            client=SessionSourceClient(session=session),
+            client=SessionSourceClient(session=session, context=context),
             repository=repository,
             options=ScheduleOptions(season=season, minimum_games=minimum_games),
             context=context,

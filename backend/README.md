@@ -262,8 +262,10 @@ handlers remain untouched. API startup preserves existing Uvicorn handler object
 while applying safe formatting and coordinating exception/access records.
 SQL/HTTP dependency diagnostics remain at WARNING or above even in application
 DEBUG mode. Application commands now install the same policy from `main()` after
-argument validation. Alembic's framework configuration remains to be reconciled
-before logging phase 3 is complete.
+argument validation. Alembic's migration callback now uses the shared policy too,
+with INFO command boundaries and DEBUG revision-step detail, while preserving
+SQL stdout, exit codes and unrelated host handlers. Native help and errors before
+the callback retain framework output. See [event owners](../docs/logging-events.md).
 
 Ingestion commands generate an `invocation_id` before opening resources. A frozen
 context adds source, stage and the durable `run_id`, then travels explicitly into

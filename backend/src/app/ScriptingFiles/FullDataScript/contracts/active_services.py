@@ -22,6 +22,9 @@ from app.ScriptingFiles.FullDataScript.contracts.errors import (
     ActiveProfileCoverageError,
 )
 from app.ScriptingFiles.FullDataScript.contracts.http import ActiveSessionFactory
+from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
+    report_request_recovery,
+)
 from app.ScriptingFiles.FullDataScript.contracts.options import (
     ActiveContractOptions,
     find_active_option_violation,
@@ -43,6 +46,7 @@ class ActiveContractService:
         with self.session_factory() as session:
             response = session.get("https://capwages.com/players/active", timeout=60)
             response.raise_for_status()
+            report_request_recovery(response, self.context)
             active = parse_active_index(
                 response.text, minimum_rows=options.minimum_players
             )
@@ -56,6 +60,7 @@ class ActiveContractService:
                 f"https://capwages.com/players/{player.slug}", timeout=30
             )
             response.raise_for_status()
+            report_request_recovery(response, self.context)
             return parse_active_profile(response.text, slug=player.slug)
 
     def fetch_snapshot(self, options: ActiveContractOptions) -> ActiveContractSnapshot:

@@ -534,4 +534,67 @@ phase/container/CI acceptance remain before the PR. Its existing bootstrap must
 account for framework-caught CommandError output as well as uncaught failures;
 changing handlers alone does not cover both paths. Frontend, hosted rollout and
 the outstanding phase-7 semantic audit remain later acceptance requirements.
+
+## Phase 3 local acceptance
+
+Alembic now delegates its environment callback to repository-owned runtime
+composition. `main()` validates shared settings before resources, preserves root
+handlers, and replaces `fileConfig` without disabling unrelated loggers. CLI
+execution failures are translated once before Alembic's outer handler can print
+raw values. Framework errors retain status 255, `--raiseerr` retains 1, and SQL
+stdout remains separate. Programmatic callers retain original exception identity,
+root handlers and exception hook. Pre-callback native help/configuration messages
+retain framework output. Revision steps are DEBUG `rendered` or `pending` events,
+never claims of a commit before the framework transaction exits. Frozen revision
+metadata/SQL remain unchanged. The environment callback must return on success
+so Alembic can finish its own command; only a translated CLI failure exits there.
+
+Thirty fresh-process Alembic cases cover both formats/modes, offline SQL, connection
+failure, revision errors, raiseerr, invalid logging settings and programmatic
+ownership. The real migration round trip, repeated upgrade, schema parity and API
+smoke pass. Controlled failure stages retain actionable configuration reasons
+without arbitrary exception messages or database paths.
+
+Final audit also added HTTP-adapter recovery observation: native requests/urllib3
+retry history produces only a correlated attempt count, without changing retry
+budgets, statuses, delays, payloads or error propagation. Unknown response/history
+objects are ignored. Sixteen native-response behavioral cases cover JSON/CSV,
+first success and recovered success, both formats and modes. Contract/active
+profile boundaries also observe native adapter recovery. The complete implemented
+Python event/entrypoint inventory is [Logging event owners](logging-events.md).
+
+Combined acceptance on 2026-11-01:
+
+- Locked all-group sync, Ruff lint/format, ty, structural rules, dependency exports,
+  OpenAPI/generated-type parity, isolated packages and ML gate passed.
+- Newly provisioned/migrated PostgreSQL database `tradevalue_test_logging03_final`:
+  **1,205 passed, zero skips**, **90.58%** aggregate coverage in **162.90 seconds**.
+  API/calendar remains **100%**. Isolated units passed **1,155 tests**, with 50
+  integration tests deselected, in **140.41 seconds**.
+- Frontend checks passed under **Node 24.22.2**: contract, lint, **60 tests** with
+  **100%** measured statements/branches/functions/lines in **7.63 seconds**, and
+  production build. The initial shell selected Node 23; that run was superseded
+  by the supported-Node run. No frontend implementation or dependency lock changed.
+- Rebuilt production image `tradevalue-logging03:verified` ran as UID 10001 against
+  independent disposable database `tradevalue_test_logging03_probe`. INFO/DEBUG
+  probes each passed six HTTP/streaming flows and captured-log verification:
+  **15 / 22 events**, correlated IDs/CORS, unchanged bodies/statuses, one exception
+  diagnostic per unexpected/streaming failure, bounded records, no synthetic
+  secrets and healthy-probe suppression at INFO. Both exited **0** after graceful
+  shutdown. Invalid startup produced sanitized CRITICAL diagnostics and exit **3**.
+- Captures are under `/private/tmp/tradevalue-logging03-capture`; the reused probe
+  verifier retains its phase-2 artifact basenames within this separate directory.
+  Frontend, Python, package and image transcripts use the `tradevalue-logging03-`
+  prefix in `/private/tmp`. Existing earlier-phase evidence was not overwritten.
+- Manual branch-diff review confirms frozen values, main-owned command setup,
+  lazy diagnostic arguments, explicit context propagation, resource cleanup,
+  phase-specific error ownership and role-file separation. CLI translation logs
+  and returns; the programmatic Alembic branch raises without an error diagnostic.
+  No new forbidden constructs/comments were found; the sole `lambda` search hit
+  is the structural-verifier fixture assertion. Historical `plan.md` is untouched.
+
+Phase-3 local deliverables and acceptance gates are complete. Publication and
+required hosted checks follow. This does not complete logging phase 4/5, hosted
+capture/retention/access/limits acceptance, or the existing phase-7 semantic audit.
+No production promotion or manual PR merge is part of this acceptance.
 The dedicated checkpoint PostgreSQL container was removed after verification.

@@ -440,7 +440,12 @@ def test_alembic_environment_rejects_non_postgresql_database(tmp_path):
         success=False,
     )
 
-    assert "TradeValue migrations require PostgreSQL" in result.stderr
+    events = [json.loads(line) for line in result.stderr.splitlines()]
+    failures = [item for item in events if item["event"] == "command.failed"]
+    assert len(failures) == 1
+    assert failures[0]["stage"] == "postgresql_required"
+    assert failures[0]["exceptions"][0]["type"] == "ConfigurationError"
+    assert "wrong.db" not in result.stderr
 
 
 @pytest.mark.integration

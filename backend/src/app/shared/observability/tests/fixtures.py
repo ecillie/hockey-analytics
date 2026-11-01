@@ -19,6 +19,7 @@ def isolate_command_logging(monkeypatch, caplog):
         "httpcore",
         "urllib3",
         "requests",
+        "alembic",
     )
     previous = logging.getHandlerByName("tradevalue.diagnostics")
     for namespace in namespaces:
