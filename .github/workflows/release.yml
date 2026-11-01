@@ -26,6 +26,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
+          SOURCE_BRANCH: ${{ github.head_ref }}
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           set -euo pipefail
@@ -35,6 +36,10 @@ jobs:
           fi
 
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            if [ "$SOURCE_BRANCH" != Dev ]; then
+              echo "Only Dev promotion PRs may target release or hotfix branches. Feature PRs must target Dev."
+              exit 1
+            fi
             shopt -s nocasematch
             if [[ "$PR_TITLE" =~ (^|[^[:alnum:]])hotfix([^[:alnum:]]|$) ]]; then
               [[ "$PR_TITLE" =~ ^hotfix([^[:alnum:]]|$) ]] || {
