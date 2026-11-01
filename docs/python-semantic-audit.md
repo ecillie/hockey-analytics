@@ -1,7 +1,7 @@
 # Python semantic audit checkpoint
 
 This is an incomplete file-by-file review, not phase-7 acceptance. Scope is all
-237 tracked/new Python files in the acceptance worktree based on `e78db6b`. Source
+237 tracked/new Python files in the acceptance worktree based on `4727840`. Source
 digests identify exactly what was inspected; changed files require re-review.
 Generated artifacts, environments and retired `.py.txt` loaders are not source
 entries. The structural gate separately checks all supported executable roots.
@@ -9,7 +9,7 @@ entries. The structural gate separately checks all supported executable roots.
 Read `~/.codex/python-guidelines.md` before this review. Mechanical lint, format,
 type, structural, test and package results do not waive semantic decisions.
 18 empty files and 20 module-docstring-only package files have no executable
-behavior to assess. 56 other files have received the content review
+behavior to assess. 69 other files have received the content review
 recorded below; unresolved layout/boundary decisions are explicit. Every other
 nonempty file remains pending.
 
@@ -45,16 +45,27 @@ Record findings and fixes before assigning final acceptance.
   bodies, argparse metadata and both SQL literals retain their prior behavior.
   Shared grouping and connection ownership changes have dedicated regressions.
 
+## Cleanup findings resolved in this checkpoint
+
+- Note rendering and attachment are best-effort, independent from secondary
+  failure metadata. The resource owner still rethrows the original failure or
+  cancellation; annotation faults cannot interrupt the remaining cleanup.
+- Caught HTTP error responses are explicitly closed. A read failure remains
+  primary if close also fails. Native status/text conversion and successful
+  response context behavior remain unchanged.
+- Regressions failed in 26 cases before the fix, then passed with original
+  error/cancellation identity, cleanup order and secret-free bounded output.
+
 ## Findings requiring resolution
 
-- Harden cleanup annotation so an exception with hostile repr/add_note behavior
-  cannot replace the primary failure or prevent later cleanup attempts.
-- Close the caught HTTPError response in the container smoke HTTP adapter,
-  preserving its status/body contract and primary failure identity.
+- Carry the existing frozen PlayerQuery from the route into the service instead
+  of threading ten positional parameters before constructing it.
+- Finish boundary-specific decisions about API response-model mutability,
+  summary query options and the remaining naming/layout judgments.
 
 Required framework and historical-migration dispositions above remain open.
 Do not rewrite frozen history or introduce a global-state approximation.
-The 143 remaining nonempty files still require complete semantic review;
+The 130 remaining nonempty files still require complete semantic review;
 passing mechanical and behavior gates does not accept them implicitly.
 
 ## File ledger
@@ -63,7 +74,7 @@ passing mechanical and behavior gates does not accept them implicitly.
 | --- | --- | --- |
 | `backend/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
 | `backend/database/backfill_team_stints.py` | `8cd7c439de15` | Reviewed: frozen command options and ordered bounds, main-owned diagnostics, explicit commit/dry-run rollback, BaseException compensation and close preserving primary failure; core backfill logic delegated. |
-| `backend/database/container_smoke.py` | `fd9ce96e5e2a` | Reviewed content: typed timeout/attempt validation, bounded readiness loop, stdout PASS contract and main-only diagnostics. Finding: caught HTTPError response is read without explicit closure; fix required. |
+| `backend/database/container_smoke.py` | `b6dc16038c68` | Reviewed/fixed: typed response contract, bounded readiness and explicit caught-HTTPError close. Read failure/cancellation remains primary when close also fails; status/raw-text conversion is unchanged. Native success contexts are verified closed. |
 | `backend/database/migration_preflight.py` | `4307aec8a137` | Reviewed: explicit operational URL resolver, fixed catalog queries, connection context and engine cleanup, report values kept distinct from command exit ownership; no import-time resources. |
 | `backend/database/migration_smoke.py` | `64354d6e86c8` | Reviewed: fixed reference-data contract and shared payload predicates, context-owned database/TestClient lifetimes, original status/body failures preserved, main-owned logging and fixed stdout PASS lines. |
 | `backend/database/migrations/__init__.py` | `efbca4488e57` | Reviewed: module docstring only; no executable behavior. |
@@ -158,24 +169,24 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `backend/src/app/ScriptingFiles/FullDataScript/tracking/util.py` | `51453fb01dc8` | Pending semantic review. |
 | `backend/src/app/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
 | `backend/src/app/api/__init__.py` | `ac8dadf50d98` | Reviewed: module docstring only; no executable behavior. |
-| `backend/src/app/api/domain.py` | `207f93061887` | Pending semantic review. |
-| `backend/src/app/api/errors.py` | `bd34cb531625` | Pending semantic review. |
-| `backend/src/app/api/policy.py` | `8f799d93d8d1` | Pending semantic review. |
-| `backend/src/app/api/queries.py` | `eb3a586b0e03` | Pending semantic review. |
-| `backend/src/app/api/repository.py` | `4da8ed6f725d` | Pending semantic review. |
-| `backend/src/app/api/routes.py` | `26d73f2e592a` | Pending semantic review. |
-| `backend/src/app/api/schemas.py` | `d7fbc367ffcc` | Pending semantic review. |
-| `backend/src/app/api/service.py` | `b510a125fdce` | Pending semantic review. |
+| `backend/src/app/api/domain.py` | `207f93061887` | Reviewed content: frozen database rows/query/page values, tuple row snapshots and structural response mapping types. Mapping outputs are per-response values, not shared mutable domain state; published field names and nullability remain unchanged. |
+| `backend/src/app/api/errors.py` | `bd34cb531625` | Reviewed: dedicated typed failures retain IDs/seasons and public HTTP envelopes. Common exception inheritance supplies the framework handler contract; exception mutability is native traceback/annotation behavior, not reusable application state. |
+| `backend/src/app/api/policy.py` | `8f799d93d8d1` | Reviewed: pure historical cents/season calculation, local immutable threshold data and guarded next selection; no I/O or module mutable state. Fixed published policy values are not logging/environment tunables. |
+| `backend/src/app/api/queries.py` | `eb3a586b0e03` | Reviewed: immutable fixed SQL definitions only; named binds, explicit TOTAL/team-stint precedence, stable ordering, season visibility and existing cap/model selection policy. No execution or mutable import state. |
+| `backend/src/app/api/repository.py` | `4da8ed6f725d` | Reviewed: minimal consumer-complete runtime-checkable read Protocol, frozen borrowed session adapter, validated frozen rows, bound values and controlled sort/filter fragments; no resource ownership or logging at import. Summary selection option grouping remains a manual design item. |
+| `backend/src/app/api/routes.py` | `26d73f2e592a` | Reviewed content: router created explicitly, named Annotated aliases, per-request context-owned session and synchronous database routes, controlled validation translation. PlayerQuery handoff should replace the current long positional service call. |
+| `backend/src/app/api/schemas.py` | `d7fbc367ffcc` | Reviewed content: native Pydantic boundary models, forbidden extras and fixed wire enums/field names. Explicit enum strings preserve the public contract; response-model mutability is a boundary-specific disposition still to record. |
+| `backend/src/app/api/service.py` | `b510a125fdce` | Reviewed content: frozen injected repository/date ownership, explicit season/identity guards, fresh response aggregates and bounded loop nesting. Finding: players still threads ten arguments before constructing the existing PlayerQuery; move that value boundary outward. |
 | `backend/src/app/api/tests/__init__.py` | `89699d68cd40` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/api/tests/fakes.py` | `465becfe754e` | Pending semantic review. |
 | `backend/src/app/api/tests/fixtures.py` | `8bbfa684ad4a` | Pending semantic review. |
-| `backend/src/app/api/util.py` | `f9144c0881f3` | Pending semantic review. |
+| `backend/src/app/api/util.py` | `f9144c0881f3` | Reviewed: pure conversion into fresh response maps, explicit nullable fields, owned ranking list and stable ID tiebreak; no mutation of frozen repository rows or external effects. |
 | `backend/src/app/config.py` | `2e25f8385208` | Reviewed: frozen settings/snapshot, explicit call-time dotenv merge with exports winning, narrow environment selection, typed validation, no import-time external resources. |
-| `backend/src/app/database.py` | `bf1fa2396edb` | Pending semantic review. |
+| `backend/src/app/database.py` | `bf1fa2396edb` | Reviewed: frozen engine/session dependencies, explicit construction and rollback/dispose/close contexts, original BaseException/cancellation retained, transaction diagnostics follow actual DB outcomes, and minimal runtime-checkable transaction factory. |
 | `backend/src/app/main.py` | `5aa95f0094bf` | Reviewed content: native FastAPI extension owns middleware/schema, settings captured at factory, resources owned by lifespan, bounded threaded disposal preserves primary failure. Framework inheritance and approved logging hook are explicit; export/import boundary remains open. |
 | `backend/src/app/shared/__init__.py` | `e27164e808fc` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/shared/calendar.py` | `91d7d52a9526` | Reviewed: pure date-derived July-1 boundary and compatibility function alias; no state or I/O. |
-| `backend/src/app/shared/cleanup.py` | `45b3252d6b24` | Reviewed content: attempts all cleanup operations and retains primary cause/secondary data. Finding: unguarded cleanup repr/add_note can replace the primary error; harden before acceptance. |
+| `backend/src/app/shared/cleanup.py` | `c71230c7da56` | Reviewed/fixed: best-effort note rendering and attachment cannot replace a pending primary or stop later cleanup. Native notes remain for ordinary errors; bounded secondary metadata is independent. Annotation guards preserve original cancellation/interrupt propagation by the resource owner. |
 | `backend/src/app/shared/cli.py` | `321790265705` | Reviewed: published numeric exit contract is explicit IntEnum values, not tunable ordinals; structured keyword argument error stores its fields. No state/I/O. |
 | `backend/src/app/shared/environment.py` | `46b0dac87bab` | Reviewed: explicit operational URL resolver, no dotenv or import I/O, deliberate missing/empty distinction, controlled configuration failures and compatibility function aliases. |
 | `backend/src/app/shared/errors.py` | `5b1c6847813f` | Reviewed: dedicated missing-schema failure with typed table field and controlled migration guidance; exception constructor only. |
@@ -204,7 +215,7 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `backend/src/app/shared/tests/fakes.py` | `67bf73843c47` | Pending semantic review. |
 | `backend/src/app/shared/tests/migrations.py` | `ee59f171cdcc` | Pending semantic review. |
 | `backend/src/app/shared/tests/python_rules.py` | `b1d328f47d4c` | Pending semantic review. |
-| `backend/src/app/shared/tests/resources.py` | `14cd071167cc` | Pending semantic review. |
+| `backend/src/app/shared/tests/resources.py` | `639123a9c76b` | Reviewed: frozen scenario holders distinguish owned probe lists and borrowed handles from immutable value snapshots; native HTTP bodies are fixture-owned, teardown closes buffers, and database probe behavior remains explicit. |
 | `ml/src/ml/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
 | `ml/src/ml/artifacts.py` | `4243f83c055c` | Reviewed: explicit compatibility exports of domain paths and repository functions only; no persistence at import. |
 | `ml/src/ml/configuration.py` | `3686072e3086` | Reviewed: explicit compatibility exports of canonical domain values only; old configuration import paths remain available without duplicate state. |
@@ -263,12 +274,12 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `tests/backend/test_command_cancellation.py` | `a67078ec6e12` | Pending semantic review. |
 | `tests/backend/test_command_logging.py` | `4a1ee6437e7f` | Pending semantic review. |
 | `tests/backend/test_config.py` | `7624d1154587` | Pending semantic review. |
-| `tests/backend/test_container_smoke.py` | `b24d41512eaf` | Pending semantic review. |
+| `tests/backend/test_container_smoke.py` | `02fdc5a44940` | Reviewed: native HTTPError/BytesIO fixtures cover handled status, invalid bytes, read/close failures, cancellation, interruption and successful/decode-failed responses; no real network. Readiness and contract specimens are read-only, observations are fixture-owned. |
 | `tests/backend/test_contract_domain.py` | `a992295230c4` | Pending semantic review. |
 | `tests/backend/test_contract_lifecycle.py` | `ff97b7834779` | Pending semantic review. |
 | `tests/backend/test_contract_lifecycle_postgres.py` | `820899fbe154` | Pending semantic review. |
 | `tests/backend/test_contract_parsing.py` | `3a3ca5de4c15` | Pending semantic review. |
-| `tests/backend/test_database_cleanup.py` | `435602cf81d6` | Pending semantic review. |
+| `tests/backend/test_database_cleanup.py` | `6cd3fbacf88d` | Reviewed: fixture-scoped typed failures/probes and original-cause checks; hostile repr, overridden annotation and invalid native notes cannot mask primary or skip close. Both formats omit secrets and retain bounded secondary diagnostics. |
 | `tests/backend/test_database_transactions.py` | `2c682bdcfe33` | Pending semantic review. |
 | `tests/backend/test_historical_options.py` | `6b5661805392` | Pending semantic review. |
 | `tests/backend/test_ingestion.py` | `f2c145032c20` | Pending semantic review. |

@@ -1,12 +1,107 @@
 """Primary database failures survive all owned cleanup attempts."""
 
 import asyncio
+import json
+import logging
 
 import pytest
 
 from app import database
 from app.config import AppEnvironment, DatabaseSettings
 from app.shared.tests.resources import ResourceFailureScenario, ResourceProbe
+from app.shared.tests.fakes import StageOutcome
+from app.shared.observability.tests.fakes import HostileValue
+from app.shared.observability.domain import LogFormat, LoggingSettings
+from app.shared.observability.formatting import SafeFormatter
+
+
+class TestHostileCleanupAnnotations:
+    @pytest.fixture(
+        params=[
+            pytest.param(RuntimeError, id="ordinary-primary"),
+            pytest.param(asyncio.CancelledError, id="cancelled-primary"),
+            pytest.param(KeyboardInterrupt, id="interrupted-primary"),
+        ]
+    )
+    def failure_type(self, request):
+        return request.param
+
+    @pytest.fixture(
+        params=[
+            pytest.param("normal", id="repr-failure"),
+            pytest.param("override", id="note-override-failure"),
+            pytest.param("invalid", id="invalid-native-notes"),
+        ]
+    )
+    def annotation_mode(self, request):
+        return request.param
+
+    @pytest.fixture
+    def scenario(self, failure_type, annotation_mode, monkeypatch):
+        primary = failure_type("primary_secret")
+        cause = ValueError("cause_secret")
+        primary.__cause__ = cause
+        if annotation_mode == "override":
+            primary.__dict__["add_note"] = StageOutcome(
+                result=None, failure=failure_type("annotation_secret")
+            )
+        if annotation_mode == "invalid":
+            primary.__dict__["__notes__"] = 42
+        probe = ResourceProbe(
+            failures={
+                "rollback": RuntimeError(HostileValue()),
+                "close": OSError("close_secret"),
+            }
+        )
+        monkeypatch.setattr(database, "connect_database", probe.create_resource)
+        return ResourceFailureScenario(
+            probe=probe,
+            primary=primary,
+            expected=primary,
+            cause=cause,
+            settings=DatabaseSettings(
+                environment=AppEnvironment.DEV, database_url="sqlite://"
+            ),
+        )
+
+    @pytest.fixture(
+        params=[pytest.param(format, id=format.value) for format in LogFormat]
+    )
+    def formatter(self, request):
+        return SafeFormatter(settings=LoggingSettings(format=request.param))
+
+    @pytest.fixture
+    def record(self, scenario):
+        return logging.LogRecord(
+            "app.probe",
+            logging.ERROR,
+            "",
+            1,
+            "message_secret",
+            (),
+            (type(scenario.expected), scenario.expected, None),
+        )
+
+    def test_annotation_faults_do_not_replace_primary_or_skip_later_cleanup(
+        self, scenario, formatter, record
+    ):
+        with pytest.raises(BaseException) as raised:
+            with database.open_database_transaction():
+                raise scenario.expected
+        assert raised.value is scenario.expected
+        assert raised.value.__cause__ is scenario.cause
+        assert scenario.probe.events == ["rollback", "close"]
+        assert (
+            raised.value.__dict__["tradevalue_cleanup"]
+            is scenario.probe.failures["rollback"]
+        )
+        assert raised.value.__dict__["tradevalue_cleanup_failed"] is True
+        assert raised.value.__dict__["tradevalue_cleanup_truncated"] is True
+        rendered = formatter.format(record)
+        payload = json.loads(rendered.removeprefix("event "))
+        assert payload["severity"] == "ERROR"
+        assert payload["exceptions_truncated"] is True
+        assert "secret" not in rendered
 
 
 class TestTransactionCleanup:

@@ -8,7 +8,7 @@ metric types and position grouping. A borrowed reader Protocol makes dataset
 resource ownership explicit. Tests retain fixture-owned mutable observation
 probes; immutable domain values do not wrap shared test state.
 
-The final ML checkpoint passed **1,208 tests, zero skips**, **90.74%** aggregate
+The ML checkpoint passed **1,208 tests, zero skips**, **90.74%** aggregate
 coverage and the **100%** API/calendar selection on fresh database
 `tradevalue_test_logging05_roles_final` under Python 3.12.14. Isolated units passed
 **1,158**, with 50 integration tests deselected. Lint, format, types, structural
@@ -16,6 +16,17 @@ scope, package/export, schema/API smoke and committed-model gates passed. This
 does not accept pending source reviews or the newly identified cleanup/HTTP
 resource findings; exact framework dispositions and hosted NonProd acceptance
 also remain open. Full evidence is in [logging verification](logging-verification.md).
+
+The following cleanup checkpoint fixes note-rendering/attachment failures that
+could mask a primary error, and explicitly closes caught HTTP error responses.
+Regression scenarios fail before the fixes and preserve original identity,
+cancellation, cleanup order and safe diagnostics afterward. Final verification
+on fresh `tradevalue_test_logging05_cleanup_final` passed **1,236 tests, zero
+skips**, **90.84%** aggregate coverage and the **100%** API/calendar gate.
+Isolated units passed **1,186**, with 50 integrations deselected. Static, package,
+schema/API, ML and rebuilt INFO/JSON + DEBUG/text image gates passed. The semantic
+audit still has 130 nonempty files pending and records the remaining API boundary
+and framework decisions explicitly; these results are not final phase-7 acceptance.
 
 The supported runtime is Python 3.12. Install the root uv workspace with
 `uv sync --locked --all-groups`. Runtime, ingestion, ML, and development

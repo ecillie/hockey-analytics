@@ -846,3 +846,68 @@ the original failure. Those findings, exact framework dispositions, hosted
 NonProd success/correlation/mode checks and final release acceptance remain open.
 No acceptance PR is opened until the required work is complete. Historical
 untracked `plan.md` is unchanged.
+
+## Phase 5 cleanup failure and HTTP response ownership checkpoint
+
+Fixed both concrete findings from the ML/operational source audit, based on
+acceptance head `4727840`. Cleanup-note rendering and attachment are now
+best-effort operations, separate from bounded secondary-error metadata. A hostile
+repr, overridden add_note or invalid native notes collection cannot replace a
+pending primary error or stop later cleanup. Ordinary note text is retained.
+The narrow BaseException guards protect annotation only: resource owners still
+propagate the original cancellation/interrupt or first failure, and a cleanup
+failure with no pending primary still propagates unchanged. No handler logs and
+rethrows the same error.
+
+The container smoke adapter now explicitly closes caught HTTPError responses.
+Read/decode failure remains primary when close also fails; the shared cleanup
+helper retains the secondary close failure. A close-only failure propagates.
+Handled status/raw-text behavior, invalid-byte replacement and native successful
+response contexts remain unchanged. Fixtures use native HTTPError/BytesIO objects
+and close their buffers even when simulating failed close operations.
+
+Regression-first evidence: **26 failed, 21 passed** before the production fixes.
+The final isolated focused selection passed **80 tests**, with its two integration
+cases explicitly deselected. An initial focused invocation without a database
+skipped those two cases; the complete database-backed run below supersedes it.
+The new cases exercise ordinary errors, cancellation and interrupts; repr/note
+faults; read/close fault combinations; original identity/cause; cleanup order;
+both diagnostic formats; secret omission and bounded secondary retention.
+
+Final acceptance for this checkpoint on 2026-11-01, Python **3.12.14**:
+
+- Locked sync, Ruff lint/format, ty, structural rules, dependency exports,
+  OpenAPI, linear migration checks, preflight, fresh migration/schema snapshot
+  and API smoke passed.
+- Fresh database `tradevalue_test_logging05_cleanup_final`: **1,236 passed, zero
+  skips**, **90.84%** aggregate coverage in **131.33 seconds**. API/calendar stays
+  **100%**. Isolated units passed **1,186**, with 50 integrations deselected,
+  in **110.53 seconds**.
+- Clean API/Vercel-install/ML package, wheel/sdist and committed-model gates
+  passed. No dependency, model artifact, schema, frontend or environment
+  selection changed. Diff checks and prohibited-form searches passed; the
+  existing S310 suppression retains its stated reason, and no new comments or
+  suppressions were introduced.
+- Rebuilt `tradevalue-logging05-cleanup:verified` ran as UID 10001 against fresh
+  `tradevalue_test_logging05_cleanup_probe`. INFO/JSON and DEBUG/text each passed
+  six real HTTP/streaming flows, exact ID/CORS/body/status assertions and bounded
+  safe single-error diagnostics, with **15 / 22** captured events and graceful
+  exit **0**. Invalid startup produced CRITICAL and exit **3**. Probe containers
+  were removed; both earlier PostgreSQL containers remain intact.
+
+Full transcripts use `/private/tmp/tradevalue-logging05-cleanup-final-` prefixes.
+Image transcripts use `tradevalue-logging05-cleanup-image`; captures are under
+`/private/tmp/tradevalue-logging05-cleanup-capture` with reused phase-2 verifier
+basenames. Complete scripts are
+`/private/tmp/tradevalue-logging05-cleanup-final-checks.sh` and
+`/private/tmp/tradevalue-logging05-cleanup-image-checks.sh`.
+
+Further content review now covers every API source file and database resource
+factory. The ledger records 237 files: 18 empty, 20 docstring-only, 69 other
+inspected, and **130** nonempty files still pending. The existing PlayerQuery
+should move across the route/service boundary rather than being created after
+ten positional arguments. Response-model mutability and summary-query option
+grouping also need final boundary-specific disposition. Exact framework and
+historical-migration decisions, hosted NonProd success/mode/correlation evidence
+and final release acceptance remain open. No acceptance PR or production action
+is implied by this verified checkpoint.
