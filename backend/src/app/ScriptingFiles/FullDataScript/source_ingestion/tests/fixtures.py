@@ -4,6 +4,15 @@ import pytest
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import (
     MoneyPuckOptions,
 )
+from contextlib import contextmanager
+from collections.abc import Generator
+from psycopg2.extensions import connection as PgConnection
+from pathlib import Path
+import psycopg2
+from app.ScriptingFiles.FullDataScript import (
+    ingestion,
+)
+from sqlalchemy import create_engine, text
 
 
 @pytest.fixture
@@ -69,3 +78,50 @@ def source_schedule_page():
         ],
         "nextStartDate": None,
     }
+
+
+@pytest.fixture()
+def migrated_database(monkeypatch, tmp_path, disposable_database_url):
+    engine = create_engine(disposable_database_url)
+    with engine.begin() as connection:
+        if (
+            connection.execute(
+                text("SELECT to_regclass('public.players')")
+            ).scalar_one()
+            is None
+        ):
+            raise pytest.skip.Exception("the test database has not been migrated")
+        connection.execute(
+            text("TRUNCATE teams, players, ingestion_runs RESTART IDENTITY CASCADE")
+        )
+
+    @contextmanager
+    def test_transaction() -> Generator[PgConnection]:
+
+        connection = psycopg2.connect(disposable_database_url)
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    monkeypatch.setattr(ingestion, "database_transaction", test_transaction)
+    for folder, name, fixture_name in (
+        ("skater advanced", "skaters_2008_to_2024.csv", "moneypuck_skaters.csv"),
+        ("goalie_advanced", "goalies_2008_to_2024.csv", "moneypuck_goalies.csv"),
+    ):
+        destination = tmp_path.joinpath(folder, name)
+        destination.parent.mkdir()
+        destination.write_text(
+            Path(__file__)
+            .resolve()
+            .parents[7]
+            .joinpath("tests", "backend", "fixtures", "ingestion", fixture_name)
+            .read_text()
+        )
+    monkeypatch.setenv("TRADEVALUE_DATA_DIR", str(tmp_path))
+    yield engine
+    engine.dispose()

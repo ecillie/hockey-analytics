@@ -1,116 +1,18 @@
 from pathlib import Path
-from dataclasses import dataclass, field
-
-from app.ScriptingFiles.FullDataScript.contracts.tests.fixtures import SavedResponse
-
 import pytest
 from app.ScriptingFiles.FullDataScript import capspace
 from app.ScriptingFiles.FullDataScript.contracts import repository as persistence
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
+from app.ScriptingFiles.FullDataScript.contracts.tests.postgres import (
+    FixtureSession,
+    ContractPreviewScenario,
+    seed_player,
+    counts,
+)
 
 FIXTURE = Path(__file__).parent.joinpath(
     "fixtures", "ingestion", "capspace_datsyuk.html"
 )
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class FixtureSession:
-    body: str
-    requests: list[str] = field(default_factory=list)
-
-    @property
-    def calls(self) -> int:
-        return len(self.requests)
-
-    def get(self, url, timeout):
-        self.requests.append(url)
-        return SavedResponse(status_code=200, headers={}, text=self.body, url=url)
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class ContractPreviewScenario:
-    session: FixtureSession
-    before: tuple[int, int, int]
-
-
-@pytest.fixture()
-def database(disposable_database_url):
-    engine = create_engine(disposable_database_url)
-    with engine.begin() as connection:
-        if (
-            connection.execute(
-                text("SELECT to_regclass('public.players')")
-            ).scalar_one()
-            is None
-        ):
-            raise pytest.skip.Exception("the disposable database has not been migrated")
-        if (
-            connection.execute(
-                text("SELECT to_regclass('public.source_records')")
-            ).scalar_one()
-            is None
-        ):
-            raise pytest.skip.Exception("the disposable database has not been migrated")
-        has_capspace = connection.execute(
-            text("SELECT count(*) FROM data_sources WHERE code='capspace'")
-        ).scalar_one()
-        if not has_capspace:
-            raise pytest.skip.Exception(
-                "the disposable database has not been upgraded to the CapSpace migration"
-            )
-        connection.execute(
-            text("TRUNCATE teams, players, ingestion_runs RESTART IDENTITY CASCADE")
-        )
-
-    yield engine
-    engine.dispose()
-
-
-def seed_player(
-    engine, player_id: int, season: int = 2008, *, with_nhl_id: str = "8467514"
-):
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                "INSERT INTO teams (id,abbreviation,name) VALUES (900,'DET','Detroit Red Wings')"
-            )
-        )
-        connection.execute(
-            text(
-                "INSERT INTO players (id,first_name,last_name,primary_position) VALUES (:id,'Pavel','Datsyuk','C')"
-            ),
-            {"id": player_id},
-        )
-        source_id = connection.execute(
-            text("SELECT id FROM data_sources WHERE code='nhl'")
-        ).scalar_one()
-        connection.execute(
-            text(
-                "INSERT INTO player_external_ids (player_id,source_id,external_id) VALUES (:p,:s,:e)"
-            ),
-            {"p": player_id, "s": source_id, "e": with_nhl_id},
-        )
-        for target_season in (season, season + 1):
-            connection.execute(
-                text(
-                    """INSERT INTO skater_season_stats
-                           (player_id,season_start_year,team_id,stat_scope,
-                            game_type,source_id,games_played)
-                       VALUES (:p,:y,NULL,'TOTAL',2,:s,50)"""
-                ),
-                {"p": player_id, "y": target_season, "s": source_id},
-            )
-
-
-def counts(engine):
-    with engine.connect() as connection:
-        return tuple(
-            connection.execute(
-                text(
-                    "SELECT (SELECT count(*) FROM contracts),(SELECT count(*) FROM contract_seasons),(SELECT count(*) FROM source_records WHERE entity_type='capspace_player_profile')"
-                )
-            ).one()
-        )
 
 
 class TestFirstApplySecondRunIsIdempotentAndGapDriven:
@@ -174,13 +76,21 @@ class TestExistingContractGetsMissingSeasonWithoutOverwrite:
         first = counts(database)
         return first
 
+    @pytest.fixture
+    def preview_session(self):
+        return FixtureSession(body=FIXTURE.read_text(encoding="utf-8"))
+
+    @pytest.fixture
+    def apply_session(self):
+        return FixtureSession(body=FIXTURE.read_text(encoding="utf-8"))
+
     @pytest.mark.integration
     def test_existing_contract_gets_missing_season_without_overwrite(
-        self, scenario, database
+        self, scenario, database, preview_session, apply_session
     ):
         first = scenario
         preview = capspace._run(
-            FixtureSession(body=FIXTURE.read_text(encoding="utf-8")),
+            preview_session,
             dry_run=True,
             first_season=2008,
             last_season=2009,
@@ -191,7 +101,7 @@ class TestExistingContractGetsMissingSeasonWithoutOverwrite:
         assert counts(database) == first
 
         result = capspace._run(
-            FixtureSession(body=FIXTURE.read_text(encoding="utf-8")),
+            apply_session,
             dry_run=False,
             first_season=2008,
             last_season=2009,
@@ -226,8 +136,14 @@ class TestDryRunAndConflictAreMutationFree:
         before = counts(database)
         return ContractPreviewScenario(session=session, before=before)
 
+    @pytest.fixture
+    def conflicting_session(self):
+        return FixtureSession(body=FIXTURE.read_text(encoding="utf-8"))
+
     @pytest.mark.integration
-    def test_dry_run_and_conflict_are_mutation_free(self, scenario, database):
+    def test_dry_run_and_conflict_are_mutation_free(
+        self, scenario, database, conflicting_session
+    ):
         session = scenario.session
         before = scenario.before
         preview = capspace._run(
@@ -247,7 +163,7 @@ class TestDryRunAndConflictAreMutationFree:
                 {"s": source_id},
             )
         result = capspace._run(
-            FixtureSession(body=FIXTURE.read_text(encoding="utf-8")),
+            conflicting_session,
             dry_run=False,
             first_season=2008,
             last_season=2009,
@@ -282,14 +198,18 @@ class TestTransactionRollsBackPartialPersistence:
         monkeypatch.setattr(persistence, "persist_contracts", fail_after_insert)
         return database
 
+    @pytest.fixture
+    def failed_session(self):
+        return FixtureSession(body=FIXTURE.read_text(encoding="utf-8"))
+
     @pytest.mark.integration
     def test_transaction_rolls_back_partial_persistence(
-        self, scenario, database, monkeypatch
+        self, scenario, database, failed_session
     ):
         database = scenario
         with pytest.raises(RuntimeError, match="fixture failure"):
             capspace._run(
-                FixtureSession(body=FIXTURE.read_text(encoding="utf-8")),
+                failed_session,
                 dry_run=False,
                 first_season=2008,
                 last_season=2008,

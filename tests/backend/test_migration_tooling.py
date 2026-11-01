@@ -1,17 +1,8 @@
-import importlib.util
-import os
-import subprocess
-import sys
+from app.shared.tests.fakes import migration_scripts, revision
 from pathlib import Path
-from dataclasses import dataclass
 from collections.abc import Generator
-from types import ModuleType
-
-import httpx
 from app.shared.tests.fakes import (
     CatalogDatabase,
-    MigrationRevision,
-    MigrationHistory,
     SavedApiClient,
     MigrationContext,
     MigrationBind,
@@ -20,16 +11,23 @@ from app.shared.tests.fakes import (
     StageOutcome,
 )
 from uuid import uuid4
-
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
-
 from backend.database import (
     migration_preflight,
     migration_smoke,
     schema_snapshot,
     verify_migrations,
+)
+from app.shared.tests.fakes import (
+    RevisionScenario,
+    SnapshotScenario,
+    response,
+)
+from app.shared.tests.migrations import (
+    load_initial_revision,
+    run_command,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,23 +35,6 @@ ALEMBIC_CONFIG = ROOT.joinpath("backend", "alembic.ini")
 INITIAL_REVISION = ROOT.joinpath(
     "backend", "migrations", "versions", "20260910_0001_initial_schema.py"
 )
-
-
-def load_initial_revision():
-    spec = importlib.util.spec_from_file_location(
-        "tradevalue_initial_revision", INITIAL_REVISION
-    )
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class RevisionScenario:
-    revision: ModuleType
-    context: MigrationContext
-    cursor: MigrationCursor
 
 
 class TestFrozenRevision:
@@ -108,14 +89,6 @@ class TestFrozenRevision:
             return
         assert execution.cursor.statements == ["SELECT 100 % 9;"]
         assert execution.cursor.closures == [True]
-
-
-def migration_scripts(*revisions, heads=("head",)):
-    return MigrationHistory(revisions=tuple(revisions), heads=heads)
-
-
-def revision(name="revision", *, doc="description", merge=False):
-    return MigrationRevision(revision=name, doc=doc, is_merge_point=merge)
 
 
 class TestMigrationHistory:
@@ -210,12 +183,6 @@ def test_schema_snapshot_render_is_deterministic():
         rendered
         == '{\n  "tables": [\n    {\n      "table_name": "players"\n    }\n  ]\n}\n'
     )
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class SnapshotScenario:
-    expected: Path
-    actual: Path
 
 
 class TestSchemaSnapshot:
@@ -336,30 +303,21 @@ class TestReferenceDataSmokeAcceptsCompleteBaseline:
 
 
 class TestReferenceDataSmokeRejectsIncompleteBaseline:
-    @pytest.fixture
-    def scenario(self, sources, seasons):
+    cases = [
+        pytest.param((["nhl"], 22), id="missing-sources"),
+        pytest.param((["capwages", "moneypuck", "nhl"], 21), id="missing-seasons"),
+    ]
+
+    @pytest.fixture(params=cases)
+    def scenario(self, request):
+        sources, seasons = request.param
         session = CatalogDatabase(sources=tuple(sources), seasons=seasons)
         return session
 
-    @pytest.mark.parametrize(
-        ("sources", "seasons"),
-        [
-            pytest.param(["nhl"], 22, id="missing-sources"),
-            pytest.param(["capwages", "moneypuck", "nhl"], 21, id="missing-seasons"),
-        ],
-    )
-    def test_reference_data_smoke_rejects_incomplete_baseline(
-        self, scenario, sources, seasons
-    ):
+    def test_reference_data_smoke_rejects_incomplete_baseline(self, scenario):
         session = scenario
         with pytest.raises(RuntimeError, match="initial reference data is incomplete"):
             migration_smoke.validate_reference_data(session)
-
-
-def response(status, body, text_body=None):
-    if text_body is not None:
-        return httpx.Response(status, text=text_body)
-    return httpx.Response(status, json=body)
 
 
 class TestApiSmokeAcceptsExpectedEmptyDatabaseResponses:
@@ -393,8 +351,29 @@ class TestApiSmokeAcceptsExpectedEmptyDatabaseResponses:
 
 
 class TestApiSmokeRejectsBadStatusOrPayload:
-    @pytest.fixture
-    def scenario(self, responses):
+    cases = [
+        pytest.param([response(503, {"error": "down"})], id="unhealthy-status"),
+        pytest.param([response(200, {"status": "wrong"})], id="invalid-health"),
+        pytest.param(
+            [
+                response(200, {"status": "ok"}),
+                response(200, {"availableSeasons": [], "currentSeason": 2026}),
+            ],
+            id="missing-seasons",
+        ),
+        pytest.param(
+            [
+                response(200, {"status": "ok"}),
+                response(200, {"availableSeasons": [{}], "currentSeason": 2026}),
+                response(200, [{"id": 1}]),
+            ],
+            id="nonempty-teams",
+        ),
+    ]
+
+    @pytest.fixture(params=cases)
+    def scenario(self, request):
+        responses = request.param
         client = SavedApiClient(
             responses=dict(
                 zip(("/api/health", "/api/seasons", "/api/teams"), responses)
@@ -402,29 +381,7 @@ class TestApiSmokeRejectsBadStatusOrPayload:
         )
         return client
 
-    @pytest.mark.parametrize(
-        "responses",
-        [
-            pytest.param([response(503, {"error": "down"})], id="unhealthy-status"),
-            pytest.param([response(200, {"status": "wrong"})], id="invalid-health"),
-            pytest.param(
-                [
-                    response(200, {"status": "ok"}),
-                    response(200, {"availableSeasons": [], "currentSeason": 2026}),
-                ],
-                id="missing-seasons",
-            ),
-            pytest.param(
-                [
-                    response(200, {"status": "ok"}),
-                    response(200, {"availableSeasons": [{}], "currentSeason": 2026}),
-                    response(200, [{"id": 1}]),
-                ],
-                id="nonempty-teams",
-            ),
-        ],
-    )
-    def test_api_smoke_rejects_bad_status_or_payload(self, scenario, responses):
+    def test_api_smoke_rejects_bad_status_or_payload(self, scenario):
         client = scenario
         with pytest.raises(RuntimeError, match="post-migration smoke check failed"):
             migration_smoke.smoke_checks(client)
@@ -442,31 +399,6 @@ class TestApiSmokeRejectsInvalidJson:
         client = scenario
         with pytest.raises(RuntimeError, match="body=not-json"):
             migration_smoke.smoke_checks(client)
-
-
-def run_command(database_url: str, *arguments: str, success=True):
-    environment = {
-        **os.environ,
-        "DATABASE_URL": database_url,
-        "DEV_DATABASE_URL": database_url,
-        "TEST_DATABASE_URL": database_url,
-        "ENV": "dev",
-    }
-    result = subprocess.run(
-        [sys.executable, *arguments],
-        cwd=ROOT,
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    if success and result.returncode != 0:
-        raise pytest.fail.Exception(
-            f"command failed: {arguments}\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-        )
-    if not success and result.returncode == 0:
-        raise pytest.fail.Exception(f"command unexpectedly passed: {arguments}")
-    return result
 
 
 def test_alembic_environment_rejects_non_postgresql_database(tmp_path):
@@ -487,6 +419,8 @@ def test_alembic_environment_rejects_non_postgresql_database(tmp_path):
 
 @pytest.mark.integration
 class TestCompleteMigrationLifecycle:
+    alembic = ("-m", "alembic", "-c", str(ALEMBIC_CONFIG))
+
     @pytest.fixture
     def isolated_database(self, disposable_database_url) -> Generator[str]:
         source_url = make_url(disposable_database_url)
@@ -550,10 +484,9 @@ class TestCompleteMigrationLifecycle:
         assert "CREATE TABLE players" in offline_sql
         assert "20260910_0001" in offline_sql
 
-        alembic = ("-m", "alembic", "-c", str(ALEMBIC_CONFIG))
-        run_command(database_url, *alembic, "upgrade", "head")
-        run_command(database_url, *alembic, "upgrade", "head")
-        current = run_command(database_url, *alembic, "current", "--check-heads")
+        run_command(database_url, *self.alembic, "upgrade", "head")
+        run_command(database_url, *self.alembic, "upgrade", "head")
+        current = run_command(database_url, *self.alembic, "current", "--check-heads")
         assert "20260920_0002 (head)" in current.stdout
         run_command(
             database_url,
@@ -563,9 +496,9 @@ class TestCompleteMigrationLifecycle:
         )
         run_command(database_url, "backend/database/migration_smoke.py")
 
-        run_command(database_url, *alembic, "downgrade", "base")
+        run_command(database_url, *self.alembic, "downgrade", "base")
         run_command(database_url, "backend/database/migration_preflight.py")
-        run_command(database_url, *alembic, "upgrade", "head")
+        run_command(database_url, *self.alembic, "upgrade", "head")
         run_command(database_url, "backend/database/schema_snapshot.py")
 
         isolated = create_engine(database_url)

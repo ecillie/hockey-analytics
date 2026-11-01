@@ -8,6 +8,8 @@ import pytest
 import sklearn
 from sqlalchemy.engine import make_url
 
+from app.shared.tests.fakes import reject_network_access
+
 
 def pytest_report_header() -> str:
     return f"scikit-learn {sklearn.__version__} initialized before collection"
@@ -24,10 +26,6 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             )
         if item.get_closest_marker("integration") is None:
             item.add_marker(pytest.mark.unit)
-
-
-def reject_network_access(*args: object, **kwargs: object) -> None:
-    raise AssertionError("unit tests must use a saved response or behavioral fake")
 
 
 @pytest.fixture(autouse=True)

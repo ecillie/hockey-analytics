@@ -1,10 +1,9 @@
 """Contract option validation and bounded profile session ownership."""
 
 import json
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from threading import Barrier, Lock
-
 import pytest
 from app.ScriptingFiles.FullDataScript import capspace, ingestion, ingestion_tracking
 from app.ScriptingFiles.FullDataScript.contracts import repository as persistence
@@ -49,13 +48,9 @@ from app.ScriptingFiles.FullDataScript.tracking.repository import (
     close_run_resources,
     open_ingestion_run,
 )
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class ProfileOptionScenario:
-    probe: ProfileSessionProbe
-    fetcher: ProfileFetcher
-    candidate: Candidate
+from app.ScriptingFiles.FullDataScript.contracts.tests.fakes import (
+    ProfileOptionScenario,
+)
 
 
 class TestContractOptionValidation:
@@ -95,11 +90,15 @@ class TestContractOptionValidation:
         with pytest.raises(ContractOptionError):
             capspace.preview_historical_contracts(**invalid_options)
 
-    def test_service_rejects_before_reading(self, invalid_options):
+    @pytest.fixture
+    def defaults(self):
+        return HistoricalContractOptions()
+
+    def test_service_rejects_before_reading(self, invalid_options, defaults):
         with pytest.raises(ContractOptionError):
             capspace.run_historical_contracts(
                 None,
-                options=replace(HistoricalContractOptions(), **invalid_options),
+                options=replace(defaults, **invalid_options),
                 dry_run=False,
             )
 
@@ -137,10 +136,14 @@ class TestProfileSessionOwnership:
         monkeypatch.setattr(capspace, "open_profile_session", probe.open_session)
         return probe
 
-    def test_concurrent_profiles_have_distinct_closed_sessions(self, candidates, probe):
-        results = ProfileFetcher(session_factory=probe.open_session).fetch_profiles(
-            tuple(candidates), workers=4
-        )
+    @pytest.fixture
+    def fetcher(self, probe):
+        return ProfileFetcher(session_factory=probe.open_session)
+
+    def test_concurrent_profiles_have_distinct_closed_sessions(
+        self, candidates, probe, fetcher
+    ):
+        results = fetcher.fetch_profiles(tuple(candidates), workers=4)
 
         assert len(results) == 4
         assert all(result.covers_target for result in results)
@@ -149,16 +152,16 @@ class TestProfileSessionOwnership:
             id(session) for session in probe.opened
         }
 
-    def test_owned_session_closes_when_fetch_fails(
-        self, candidates, probe, monkeypatch
-    ):
+    @pytest.fixture
+    def failing_fetch(self, monkeypatch):
         monkeypatch.setattr(
             contract_services, "fetch_profile_with_fallback", reject_resource_access
         )
+
+    @pytest.mark.usefixtures("failing_fetch")
+    def test_owned_session_closes_when_fetch_fails(self, candidates, probe, fetcher):
         with pytest.raises(AssertionError, match="resource boundary"):
-            ProfileFetcher(session_factory=probe.open_session).fetch_profiles(
-                tuple(candidates[:1]), workers=1
-            )
+            fetcher.fetch_profiles(tuple(candidates[:1]), workers=1)
 
         assert len(probe.opened) == 1
         assert probe.closed == probe.opened
@@ -249,13 +252,17 @@ class TestBorrowedProfileOwnership:
             for player_id in range(4)
         )
 
-    def test_borrowed_gets_are_guarded_and_owner_keeps_session(
-        self, borrowed, candidates
-    ):
+    @pytest.fixture
+    def fetcher(self, borrowed):
         factory = BorrowedProfileSessionFactory(
             session=SynchronizedProfileSession(session=borrowed, lock=borrowed.lock)
         )
-        results = ProfileFetcher(session_factory=factory).fetch_profiles(candidates, 4)
+        return ProfileFetcher(session_factory=factory)
+
+    def test_borrowed_gets_are_guarded_and_owner_keeps_session(
+        self, borrowed, candidates, fetcher
+    ):
+        results = fetcher.fetch_profiles(candidates, 4)
 
         assert len(results) == 4
         assert all(result.covers_target for result in results)
@@ -295,8 +302,14 @@ class TestProfileRetryDelay:
             status_code=429, headers={"Retry-After": request.param}, text="", url=""
         )
 
-    def test_invalid_delay_uses_normal_backoff(self, invalid_retry_after):
-        assert retry_delay(invalid_retry_after, 1, ProfileHttpOptions()) == 2
+    @pytest.fixture
+    def default_options(self):
+        return ProfileHttpOptions()
+
+    def test_invalid_delay_uses_normal_backoff(
+        self, invalid_retry_after, default_options
+    ):
+        assert retry_delay(invalid_retry_after, 1, default_options) == 2
 
 
 class TestContractReconciliationPolicy:
@@ -341,11 +354,15 @@ class TestContractReconciliationPolicy:
             replace(existing, signing_team_id=901),
         ), ReconciliationFailure.INCOMPATIBLE
 
-    def test_conflicts_have_structured_reasons(self, incoming, conflict):
-        matches, reason = conflict
-        violation = ContractReconciliationPolicy(
+    @pytest.fixture
+    def policy(self, incoming):
+        return ContractReconciliationPolicy(
             player_id=42, incoming=incoming, signing_team_id=900
-        ).find_violation(matches)
+        )
+
+    def test_conflicts_have_structured_reasons(self, conflict, policy):
+        matches, reason = conflict
+        violation = policy.find_violation(matches)
 
         assert violation is not None
         assert violation.reason is reason
@@ -373,14 +390,21 @@ class TestActiveProfileSessionOwnership:
             index_html=index_html, profile_html=body, barrier=Barrier(4)
         )
 
-    def test_owned_active_profiles_are_concurrent_and_closed(self, probe):
-        service = ActiveContractService(
+    @pytest.fixture
+    def service(self, probe):
+        return ActiveContractService(
             session_factory=probe.open_session,
             repository_factory=open_active_repository,
         )
-        snapshot = service.fetch_snapshot(
-            ActiveContractOptions(minimum_players=4, workers=4)
-        )
+
+    @pytest.fixture
+    def options(self):
+        return ActiveContractOptions(minimum_players=4, workers=4)
+
+    def test_owned_active_profiles_are_concurrent_and_closed(
+        self, probe, service, options
+    ):
+        snapshot = service.fetch_snapshot(options)
 
         assert len(snapshot.profiles) == 4
         assert all(len(profile.contracts) == 1 for profile in snapshot.profiles)

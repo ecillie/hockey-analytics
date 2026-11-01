@@ -3,8 +3,10 @@
 from dataclasses import dataclass, field
 from collections.abc import Iterator, Mapping
 from typing import Self
-
 import httpx
+from io import StringIO
+from pathlib import Path
+from types import ModuleType
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -158,3 +160,82 @@ class StageOutcome[R]:
         if self.failure is not None:
             raise self.failure
         return self.result
+
+
+class CommandFailure(RuntimeError):
+    def __init__(self, *, source: str) -> None:
+        super().__init__(f"{source} unavailable")
+        self.source = source
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class FailingAction:
+    source: str = "source"
+
+    def __call__(self, *args: object, **kwargs: object) -> object:
+        raise CommandFailure(source=self.source)
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class RecordingAction:
+    events: StringIO
+    name: str
+    result: object = None
+    failure: Exception | None = None
+
+    def __call__(self, *args: object, **kwargs: object) -> object:
+        self.events.write(f"{self.name}\n")
+        if self.failure is not None:
+            raise self.failure
+        return self.result
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class RepairConnection:
+    events: StringIO
+
+    def commit(self) -> None:
+        self.events.write("commit\n")
+
+    def rollback(self) -> None:
+        self.events.write("rollback\n")
+
+    def close(self) -> None:
+        self.events.write("close\n")
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class CommandCase:
+    module: ModuleType
+    action: str
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class RevisionScenario:
+    revision: ModuleType
+    context: MigrationContext
+    cursor: MigrationCursor
+
+
+def migration_scripts(*revisions, heads=("head",)):
+    return MigrationHistory(revisions=tuple(revisions), heads=heads)
+
+
+def revision(name="revision", *, doc="description", merge=False):
+    return MigrationRevision(revision=name, doc=doc, is_merge_point=merge)
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class SnapshotScenario:
+    expected: Path
+    actual: Path
+
+
+def response(status, body, text_body=None):
+    if text_body is not None:
+        return httpx.Response(status, text=text_body)
+    return httpx.Response(status, json=body)
+
+
+def reject_network_access(*args: object, **kwargs: object) -> None:
+    raise AssertionError("unit tests must use a saved response or behavioral fake")

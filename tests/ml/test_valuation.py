@@ -1,14 +1,11 @@
 """Temporal targets, deterministic training, prediction, and artifact contracts."""
 
 import json
-from dataclasses import dataclass
 from importlib.resources import files
-
 import joblib
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.pipeline import Pipeline
 from ml.evaluation.evaluate_skater_model import metrics
 from ml.evaluation.gate import (
     check_metric_regression,
@@ -23,13 +20,9 @@ from ml.training.train_skater_value import (
     build_model,
     build_training_data,
 )
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class TrainedScenario:
-    model: Pipeline
-    repeated: Pipeline
-    test: pd.DataFrame
+from ml.tests.fakes import (
+    TrainedScenario,
+)
 
 
 class TestTemporalTraining:

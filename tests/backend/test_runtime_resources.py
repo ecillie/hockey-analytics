@@ -1,19 +1,15 @@
 """Resource lifetime and import isolation at composition boundaries."""
 
-from dataclasses import dataclass, field
-from collections.abc import Generator
 import os
 from pathlib import Path
 import subprocess
 import sys
 from textwrap import dedent
-
 from fastapi import Request
 from fastapi.testclient import TestClient
 import pytest
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import Session, sessionmaker
-
+from sqlalchemy.orm import sessionmaker
 from app.config import (
     AppEnvironment,
     DatabaseSettings,
@@ -24,22 +20,13 @@ from app.config import (
 )
 from app.api.routes import get_service
 from app.api.repository import SqlApiRepository
-from app.api.service import TradeValueService
 from app import database
 from app.database import DatabaseResources
 from app.main import create_app
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class ResourceScenario:
-    resources: DatabaseResources
-    disposed: list[bool] = field(default_factory=list)
-
-    def record_disposal(self, engine) -> None:
-        self.disposed.append(True)
-
-    def create_resources(self, settings: DatabaseSettings) -> DatabaseResources:
-        return self.resources
+from app.shared.tests.resources import (
+    ResourceScenario,
+    RequestSessionScenario,
+)
 
 
 class TestApplicationResources:
@@ -78,9 +65,15 @@ class TestApplicationResources:
         assert scenario.disposed == [True]
         assert application.state.database is None
 
-    def test_unconfigured_application_returns_service_unavailable(self):
+    @pytest.fixture
+    def unconfigured_client(self):
         with TestClient(create_app()) as client:
-            response = client.get("/api/health")
+            yield client
+
+    def test_unconfigured_application_returns_service_unavailable(
+        self, unconfigured_client
+    ):
+        response = unconfigured_client.get("/api/health")
         assert response.status_code == 503
         assert response.json()["error"]["code"] == "DATABASE_UNAVAILABLE"
 
@@ -138,12 +131,6 @@ class TestEnvironmentLoading:
         assert values["DB_USER"] == "exported-user"
         assert values["DB_HOST"] == "exported-user"
         assert dict(os.environ) == before
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class RequestSessionScenario:
-    session: Session
-    dependency: Generator[TradeValueService]
 
 
 class TestRequestSessions:
@@ -239,10 +226,13 @@ class TestResourceConstructionFailure:
         monkeypatch.setattr(database, "sessionmaker", reject_session_factory)
         return disposed
 
-    def test_partial_construction_disposes_engine(self, failing_factory):
-        settings = DatabaseSettings(
+    @pytest.fixture
+    def settings(self):
+        return DatabaseSettings(
             environment=AppEnvironment.DEV, database_url="sqlite://"
         )
+
+    def test_partial_construction_disposes_engine(self, failing_factory, settings):
         with pytest.raises(RuntimeError, match="session factory failed"):
             database.create_database_resources(settings)
         assert failing_factory == [True]

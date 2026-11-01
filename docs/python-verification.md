@@ -268,3 +268,42 @@ warnings remain. No hosted data or live upstream ingestion was used.
 
 With database URLs absent and dotenv disabled, isolated units passed **688**
 tests with **50** integration tests deselected in **30.42 seconds**.
+
+## Test organization follow-up, phase 5
+
+Started from `origin/Dev` at `b41bcf3` after operational-command PR #157
+merged. Reusable HTTP clients, CLI actions, database probes, scenario values,
+repository inspection helpers, and generated ML metric strategies live under
+their concept's `src/.../tests` package. Shared fixture plugins also own the
+disposable ingestion/contract databases and PostgreSQL API seed/service setup.
+The existing conftest plugin registrations load those fixtures explicitly.
+Production application code, package exclusions, and test selection rules are
+unchanged.
+
+Fixtures used by one test class live in that class. Ingestion transport inputs,
+contract services/options, ML input copies, and artifact destinations are
+arranged before the test body. Scenario-only parameters now belong to their
+fixtures, and unused monkeypatch arguments are removed. Test bodies retain
+the operations, failure injection, mutations, and observations being verified.
+In particular, the environment-preservation test captures its observation in
+the call phase: pytest itself changes `PYTEST_CURRENT_TEST` between fixture
+setup and the call, so a setup-phase snapshot tests an unrelated transition.
+
+Collection retains all **738** original test names and parameter IDs, with
+**50** integration cases. Some node IDs acquire a class name to support narrow
+fixture scope; no case or assertion was removed. Isolated collection succeeds
+with database URLs absent, ENV empty, and dotenv disabled. The complete run on
+Python 3.12.14 and disposable PostgreSQL 15 database
+`tradevalue_test_followup05` passed **738 tests, zero skips**, **91.71%** aggregate
+coverage in **67.68 seconds**. The API/shared-calendar coverage gate remains
+**100%**. Isolated units passed **688**, with **50** integration cases deselected.
+
+Ruff lint/format, ty, locked workspace sync, committed ML metrics, OpenAPI
+parity, dependency exports, isolated API/ML package imports, wheel/sdist test
+support exclusions, and the production Docker build passed. The HTTP smoke
+gate exercises health, seasons, and teams against the disposable database.
+Structural review found no reusable fake classes or ordinary support helpers
+remaining in executable test modules, no unused test arguments, and no new
+prohibited constructs. Intentional fake failures and owned call histories
+remain observable test behavior. This phase closes F07/F14; the remaining
+typing/style and final enforcement work remains in phases 6 and 7.

@@ -3,11 +3,18 @@
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date
-
 from app.ScriptingFiles.FullDataScript.roster_status.domain import (
     FetchResult,
     RosterStatus,
     StoredPlayer,
+)
+from io import BytesIO
+from urllib.request import Request
+from app.ScriptingFiles.FullDataScript.roster_status.ahl_roster_service import (
+    AhlRosterService,
+)
+from app.ScriptingFiles.FullDataScript.roster_status.services import (
+    RosterStatusService,
 )
 
 
@@ -60,3 +67,33 @@ class MemoryHttpClient:
 
     def __len__(self) -> int:
         return len(self.calls)
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class SyncScenario:
+    service: RosterStatusService
+    repository: MemoryRosterRepository
+    expected: RosterStatus | None
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class EmptyRosterScenario:
+    service: RosterStatusService
+    repository: MemoryRosterRepository
+    feed: FixedRosterFeed
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class AhlClientScenario:
+    service: AhlRosterService
+    client: MemoryHttpClient
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class HttpOpener:
+    response: BytesIO
+    calls: list[tuple[Request, float]] = field(default_factory=list)
+
+    def __call__(self, request: Request, *, timeout: float) -> BytesIO:
+        self.calls.append((request, timeout))
+        return self.response

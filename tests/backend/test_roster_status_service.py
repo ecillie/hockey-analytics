@@ -1,12 +1,9 @@
 """Roster precedence, identity matching, and feed boundary regressions."""
 
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from datetime import date
 from io import BytesIO
-from urllib.request import Request
-
 import pytest
-
 from app.ScriptingFiles.FullDataScript.roster_status import http_json_client
 from app.ScriptingFiles.FullDataScript.roster_status.ahl_roster_service import (
     AhlRosterService,
@@ -42,26 +39,12 @@ from app.ScriptingFiles.FullDataScript.roster_status.util import (
     match_ahl_players,
     parse_birth_date,
 )
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class SyncScenario:
-    service: RosterStatusService
-    repository: MemoryRosterRepository
-    expected: RosterStatus | None
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class EmptyRosterScenario:
-    service: RosterStatusService
-    repository: MemoryRosterRepository
-    feed: FixedRosterFeed
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class AhlClientScenario:
-    service: AhlRosterService
-    client: MemoryHttpClient
+from app.ScriptingFiles.FullDataScript.roster_status.tests.fakes import (
+    SyncScenario,
+    EmptyRosterScenario,
+    AhlClientScenario,
+    HttpOpener,
+)
 
 
 class TestStatusPrecedence:
@@ -371,16 +354,6 @@ class TestFeedAdapters:
             unexpected_failure.fetch_current_rosters()
 
 
-@dataclass(slots=True, kw_only=True, frozen=True)
-class HttpOpener:
-    response: BytesIO
-    calls: list[tuple[Request, float]] = field(default_factory=list)
-
-    def __call__(self, request: Request, *, timeout: float) -> BytesIO:
-        self.calls.append((request, timeout))
-        return self.response
-
-
 class TestJsonTransport:
     @pytest.mark.parametrize(
         "body",
@@ -428,10 +401,12 @@ class TestJsonTransport:
         monkeypatch.setattr(http_json_client, "urlopen", opener)
         return opener
 
-    def test_timeout_headers_query_and_resource_closure(self, opener):
-        result = JsonHttpClient(options=HttpOptions(timeout_seconds=2)).get_json(
-            "https://feed.test", {"key": "a b"}
-        )
+    @pytest.fixture
+    def client(self):
+        return JsonHttpClient(options=HttpOptions(timeout_seconds=2))
+
+    def test_timeout_headers_query_and_resource_closure(self, opener, client):
+        result = client.get_json("https://feed.test", {"key": "a b"})
         assert result == {"ok": True}
         request, timeout = opener.calls[0]
         assert timeout == 2

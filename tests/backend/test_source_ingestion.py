@@ -14,9 +14,7 @@ from hypothesis import given
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.strategies import (
     optional_numbers,
 )
-
 import pytest
-
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     PlayerKind,
     serialize_summary,
@@ -366,6 +364,10 @@ class TestRosterValidation:
 
 
 class TestOwnedHttpTransport:
+    @pytest.fixture
+    def options(self):
+        return SourceHttpOptions(json_timeout=2, csv_timeout=3)
+
     @pytest.fixture(
         params=[
             pytest.param(False, id="success"),
@@ -383,18 +385,14 @@ class TestOwnedHttpTransport:
         )
         return session, request.param
 
-    def test_owned_session_closes_on_success_and_source_failure(self, session):
+    def test_owned_session_closes_on_success_and_source_failure(self, session, options):
         resource, failing = session
         if failing:
             with pytest.raises(RuntimeError, match="source unavailable"):
-                with source_http.open_source_client(
-                    SourceHttpOptions(json_timeout=2)
-                ) as client:
+                with source_http.open_source_client(options) as client:
                     client.get_json("https://source.test")
         if not failing:
-            with source_http.open_source_client(
-                SourceHttpOptions(json_timeout=2, csv_timeout=3)
-            ) as client:
+            with source_http.open_source_client(options) as client:
                 assert client.get_json("https://source.test") == {"ok": True}
                 assert client.get_csv("https://source.test/file.csv") == "csv-content"
             assert resource.calls[-1][1] == 3

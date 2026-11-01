@@ -3,8 +3,13 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Self
-
 from app.config import DatabaseSettings
+from collections.abc import Generator
+from sqlalchemy.orm import Session
+from app.api.service import TradeValueService
+from app.database import DatabaseResources
+import psycopg2
+from psycopg2 import sql
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -44,3 +49,48 @@ class ResourceFailureScenario:
     expected: BaseException
     cause: Exception
     settings: DatabaseSettings
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ResourceScenario:
+    resources: DatabaseResources
+    disposed: list[bool] = field(default_factory=list)
+
+    def record_disposal(self, engine) -> None:
+        self.disposed.append(True)
+
+    def create_resources(self, settings: DatabaseSettings) -> DatabaseResources:
+        return self.resources
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class RequestSessionScenario:
+    session: Session
+    dependency: Generator[TradeValueService]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class TransactionScenario:
+    settings: DatabaseSettings
+    table: str
+
+    def insert_row(self, connection) -> None:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                sql.SQL("INSERT INTO {} VALUES (1)").format(sql.Identifier(self.table))
+            )
+
+    def count_rows(self) -> int:
+        connection = psycopg2.connect(self.settings.database_url)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    sql.SQL("SELECT count(*) FROM {}").format(
+                        sql.Identifier(self.table)
+                    )
+                )
+                row = cursor.fetchone()
+                assert row is not None
+                return row[0]
+        finally:
+            connection.close()

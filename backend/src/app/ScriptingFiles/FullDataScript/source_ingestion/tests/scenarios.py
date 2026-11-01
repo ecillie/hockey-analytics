@@ -7,6 +7,8 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import 
 from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.domain import (
     NhlStatsSnapshot,
 )
+from typing import TypedDict
+from app.ScriptingFiles.FullDataScript.roster_status.tests.fakes import FixedRosterFeed
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -44,3 +46,15 @@ class IdentityPersistence:
     expected_nhl_hash: str
     advanced_table: str
     basic_table: str
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class RosterFeedScenario:
+    nhl: FixedRosterFeed
+    ahl: FixedRosterFeed
+
+
+class MoneyPuckFixtureOptions(TypedDict):
+    expected_seasons: tuple[int, ...]
+    minimum_rows_per_kind: int
+    maximum_duplicate_ratio: float

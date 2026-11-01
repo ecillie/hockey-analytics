@@ -1,13 +1,14 @@
 """External artifact path behavior across working directories."""
 
 from pathlib import Path
-
 import pytest
-
 from ml.paths import artifact_directory
 
 
 class TestArtifactDirectories:
+    default_directory = Path("models")
+    source_directory = Path(__file__).resolve().parents[2].joinpath("ml", "models")
+
     @pytest.fixture
     def outside_checkout(self, monkeypatch, tmp_path):
         monkeypatch.delenv("TRADEVALUE_MODEL_DIR", raising=False)
@@ -15,10 +16,8 @@ class TestArtifactDirectories:
 
     @pytest.mark.usefixtures("outside_checkout")
     def test_source_destination_is_independent_of_working_directory(self):
-        destination = artifact_directory("TRADEVALUE_MODEL_DIR", Path("models"))
-        assert destination == Path(__file__).resolve().parents[2].joinpath(
-            "ml", "models"
-        )
+        destination = artifact_directory("TRADEVALUE_MODEL_DIR", self.default_directory)
+        assert destination == self.source_directory
 
     @pytest.fixture
     def configured_directory(self, monkeypatch, tmp_path):
@@ -27,6 +26,6 @@ class TestArtifactDirectories:
 
     def test_explicit_external_destination(self, configured_directory):
         assert (
-            artifact_directory("TRADEVALUE_MODEL_DIR", Path("models"))
+            artifact_directory("TRADEVALUE_MODEL_DIR", self.default_directory)
             == configured_directory
         )
