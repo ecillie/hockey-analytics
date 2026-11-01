@@ -88,11 +88,20 @@ Add these variables to Production and Preview:
 ```dotenv
 VITE_USE_MOCK_API=false
 VITE_API_BASE_URL=https://YOUR_BACKEND_DOMAIN
+VITE_LOG_LEVEL=INFO
 ```
 
 These variables are compiled into the browser bundle, so changing them requires
 a new frontend deployment. `DATABASE_URL` must never be configured on the
 frontend project.
+
+Browser diagnostics stay in the user's developer console; this release does not
+send them to a hosted collector. `VITE_LOG_LEVEL=DEBUG` requires a new build and
+adds safe request lifecycle records. Restore `INFO` with another build after
+troubleshooting. This setting is independent of Preview/Production selection and
+mock/live data. Only validated `X-Request-ID` values correlate browser failures
+with API logs. Never copy raw response bodies, search terms or credentials into
+diagnostics. See [the logging inventory](logging-events.md) for emission limits.
 
 ## 4. Validate the release
 

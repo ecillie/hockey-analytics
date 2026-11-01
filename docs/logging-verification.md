@@ -633,3 +633,57 @@ and installed React DOM types confirm caught, uncaught and recoverable callbacks
 The React best-practices skill is being used for initialization/listener and
 component review. No frontend logging or phase-4 acceptance is claimed yet.
 The dedicated checkpoint PostgreSQL container was removed after verification.
+
+## Phase 4 local acceptance
+
+Completed the browser implementation on `feature/logging-04-frontend`, based on
+Dev merge `0d1aaa2889e193b165082af24d7104be522b6570`. The logger owns finite
+per-severity counters and weak object-error deduplication. It emits primitive
+allowlisted JSON fields only, with independent fallback formatting and contained
+sink/clock faults. The API client owns request failures, retains existing error
+fields and abort/decode identities, and adds a validated server request ID.
+Page-level retry remains unchanged. Root callbacks own React diagnostics and
+replace default raw console reporting. The boundary renders a generic accessible
+fallback, and bootstrap owns global listeners outside StrictMode effects, with
+cleanup for hot replacement. Imports remain silent until explicit activation.
+
+Local verification on 2026-11-01 under Node **24.22.2**:
+
+- `npm run lint`, `npm run test:coverage`, `npm run api:contract` and live-API
+  `npm run build` passed. **163 tests** passed in **7.22 seconds**, with **100%**
+  statements, branches, functions and lines across measured shipped modules.
+  New helpers and the error boundary remain measured; no thresholds or exclusions
+  changed. Tests cover all severities, bad settings/fields, missing or malformed
+  IDs, HTTP/network/decode/response failures, aborts, listener ownership, root
+  callbacks, StrictMode deduplication, formatter/sink/clock faults and rate windows.
+- Separate production INFO and DEBUG artifacts were built with the live API
+  selector against an isolated HTTP contract harness, then exercised in headless
+  installed Google Chrome using a temporary Playwright harness. Both modes
+  rendered the overview, preserved HTTP error/retry UI, correlated the server's
+  exact request ID, cancelled navigation requests quietly, deduplicated an error
+  shared by global error/rejection handlers, displayed the render fallback, and
+  recovered through its reload link. No uncaught page errors or synthetic secret
+  strings appeared in captured console output.
+- Browser captures contain **29 INFO / 54 DEBUG** application records across the
+  complete multi-navigation flow. Normal successes/cancellation were silent at
+  INFO; DEBUG included request lifecycle records. Each new logger's 30-error loop
+  produced exactly **20 error records plus one suppression notice**. Every record
+  stayed below 8 KiB. The fixture's initial scalar season list was corrected to
+  the actual contract shape before final verification; no application behavior
+  changed to accommodate it. Final overview and fallback screenshots were
+  inspected. Captures, screenshots and the temporary harness are under
+  `/private/tmp/tradevalue-browser-probe`; the complete final command transcript is
+  `/private/tmp/tradevalue-logging04-browser-final.txt`.
+- Manual React checklist review confirmed initialization outside effects, one
+  owned subscription, cleanup, stable error ownership, accessible fallback, no
+  extra fetching or dependencies and no changes to existing hooks. Contract and
+  lock files are unchanged. `git diff --check` passed. Python files were unchanged
+  in this phase; combined Python/package/image acceptance belongs to phase 5.
+
+Environment examples, README, deployment guidance and the event inventory now
+describe console-only browser scope, five severities, safe request correlation,
+limits, DEBUG rebuild and restoration to INFO. Browser-local capture does not
+prove hosted API capture, retention, access or platform limits. Those checks and
+the complete phase-7 semantic audit remain required before release completion.
+Historical untracked `plan.md` remains untouched. Phase 4 is ready for a non-draft
+PR targeting Dev; no deployment or manual merge is performed by this record.

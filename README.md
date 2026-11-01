@@ -67,6 +67,11 @@ npm run dev
 ```
 
 Create a production build with `npm run build` and run lint with `npm run lint`.
+Browser diagnostics appear as structured JSON strings in the browser console.
+`VITE_LOG_LEVEL` defaults to `INFO`; set it to `DEBUG` and rebuild for request
+lifecycle diagnostics. It does not select mock data or change the API origin.
+These records are local to the browser; no central browser collector is installed.
+See [logging event owners](docs/logging-events.md) for correlation and limits.
 
 ## Running the API
 
