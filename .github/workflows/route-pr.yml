@@ -9,14 +9,14 @@ permissions:
 
 jobs:
   route:
-    name: Choose release branch
+    name: Choose integration or promotion branch
     runs-on: ubuntu-latest
     timeout-minutes: 5
     concurrency:
       group: route-pr-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
-      - name: Route by title
+      - name: Route feature PRs to Dev and preserve promotions
         env:
           GH_TOKEN: ${{ secrets.PROMOTION_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -25,6 +25,15 @@ jobs:
           PR_HEAD: ${{ github.event.pull_request.head.ref }}
         run: |
           set -euo pipefail
+
+          if [ "$PR_HEAD" != "Dev" ] && \
+             [[ ! "$PR_HEAD" =~ ^(Release|Hotfix)-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            if [ "$PR_BASE" != "Dev" ]; then
+              gh pr edit "$PR_NUMBER" --repo "${{ github.repository }}" --base Dev
+            fi
+            echo "Feature PR #$PR_NUMBER targets Dev."
+            exit 0
+          fi
 
           if [ "$PR_BASE" = "Prod" ] && \
              [[ "$PR_HEAD" =~ ^(Release|Hotfix)-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then

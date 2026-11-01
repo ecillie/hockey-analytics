@@ -16,6 +16,13 @@ jobs:
       backend: ${{ steps.select.outputs.backend }}
       frontend: ${{ steps.select.outputs.frontend }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify PR routing and Dev promotion
+        run: |
+          bash scripts/test-pr-routing.sh
+          bash scripts/test-dev-promotion.sh
       - name: Select affected areas
         id: select
         env:
