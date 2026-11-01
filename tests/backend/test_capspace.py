@@ -34,6 +34,7 @@ from app.ScriptingFiles.FullDataScript.contracts.tests.transport import (
     RequestScenario,
     TeamResolutionScenario,
     MetricsScenario,
+    ParserCalls,
 )
 
 FIXTURES = Path(__file__).parent.joinpath("fixtures", "ingestion")
@@ -200,22 +201,23 @@ class TestProfileRequests:
                 SavedResponse(url="", status_code=request.param, headers={}, text=""),
             ) * 2
             expected[request.param] = ("failed", f"HTTP {request.param}", [1.0])
+        status, error, delays = expected[request.param]
         scenario = ProfileScenario(
             session=ScriptedProfileSession(responses=responses[request.param]),
             sleep=SleepRecorder(),
+            expected_status=contract_domain.ProfileStatus(status),
+            expected_error=error,
+            expected_delays=tuple(delays),
         )
         monkeypatch.setattr(profile_http.time, "sleep", scenario.sleep)
-        return scenario, expected[request.param]
+        return scenario
 
     def test_retry_status_backoff_and_request_bound(self, candidate, retry):
-        scenario, (status, error, delays) = retry
-        outcome = profile_http.fetch_profile(
-            scenario.session, candidate, max_attempts=2
-        )
-        assert outcome.status == status
-        assert outcome.error == error
-        assert scenario.sleep.delays == delays
-        assert len(scenario.session.calls) == 2
+        outcome = profile_http.fetch_profile(retry.session, candidate, max_attempts=2)
+        assert outcome.status == retry.expected_status
+        assert outcome.error == retry.expected_error
+        assert tuple(retry.sleep.delays) == retry.expected_delays
+        assert len(retry.session.calls) == 2
 
 
 class TestJsonContractPayloadIsSupported:
@@ -350,10 +352,15 @@ class TestEmbeddedPageIdentityMustMatchTheCandidateNhlId:
             capspace.parse_capspace_page(html, expected_nhl_id="2")
 
 
-def test_capwages_name_lookup_requires_an_embedded_nhl_id():
+@pytest.fixture
+def capwages_without_identity():
+    return capwages_html(None)
+
+
+def test_capwages_name_lookup_requires_an_embedded_nhl_id(capwages_without_identity):
     with pytest.raises(capspace.CapSpaceParseError, match="does not expose"):
         capspace.parse_capspace_page(
-            capwages_html(None),
+            capwages_without_identity,
             expected_nhl_id="8470000",
             require_nhl_id=True,
         )
@@ -393,8 +400,14 @@ class TestLegacyCapwagesIdentityRequiresNameSlugAndNhlStatsOverlap:
         )
         return IdentityScenario(candidate=candidate, html=html)
 
+    @pytest.fixture
+    def outside_coverage(self, scenario):
+        return replace(
+            scenario.candidate, player_id=8, nhl_id="1", missing_seasons=(2011,)
+        )
+
     def test_legacy_capwages_identity_requires_name_slug_and_nhl_stats_overlap(
-        self, scenario
+        self, scenario, outside_coverage
     ):
         candidate = scenario.candidate
         html = scenario.html
@@ -405,13 +418,7 @@ class TestLegacyCapwagesIdentityRequiresNameSlugAndNhlStatsOverlap:
         )
         assert not profile_http.matches_capwages_identity(
             html,
-            capspace.Candidate(
-                player_id=8,
-                first_name="Cory",
-                last_name="Stillman",
-                nhl_id="1",
-                missing_seasons=(2011,),
-            ),
+            outside_coverage,
             "https://capwages.com/players/cory-stillman",
         )
 
@@ -419,20 +426,18 @@ class TestLegacyCapwagesIdentityRequiresNameSlugAndNhlStatsOverlap:
 class TestLegacyCapwagesIdentityRequiresPositiveNhlGames:
     cases = [
         pytest.param(
-            [{"season": "2010-11", "league": "AHL", "gp": "65"}], id="minor-league"
+            '[{"season":"2010-11","league":"AHL","gp":"65"}]', id="minor-league"
         ),
+        pytest.param('[{"season":"2010-11","league":"NHL","gp":"0"}]', id="zero-games"),
         pytest.param(
-            [{"season": "2010-11", "league": "NHL", "gp": "0"}], id="zero-games"
-        ),
-        pytest.param(
-            [{"season": "2010-11", "league": "NHL", "gp": "unknown"}],
+            '[{"season":"2010-11","league":"NHL","gp":"unknown"}]',
             id="unknown-games",
         ),
     ]
 
     @pytest.fixture(params=cases)
     def scenario(self, request):
-        stats = request.param
+        stats = json.loads(request.param)
         candidate = capspace.Candidate(
             player_id=7,
             first_name="Cory",
@@ -584,9 +589,8 @@ class TestCapwagesSuccessParsesTheDocumentOnce:
         )
         return RequestScenario(candidate=candidate, session=session)
 
-    def test_capwages_success_parses_the_document_once(self, scenario):
-        candidate = scenario.candidate
-        session = scenario.session
+    @pytest.fixture
+    def parser_calls(self):
         with (
             patch.object(
                 profile_http,
@@ -597,11 +601,15 @@ class TestCapwagesSuccessParsesTheDocumentOnce:
                 documents, "decode_page_payload", wraps=documents.decode_page_payload
             ) as decode,
         ):
-            outcome = profile_http.fetch_capwages_profile(session, candidate)
+            yield ParserCalls(parse=parse, decode=decode)
 
+    def test_capwages_success_parses_the_document_once(self, scenario, parser_calls):
+        outcome = profile_http.fetch_capwages_profile(
+            scenario.session, scenario.candidate
+        )
         assert outcome.status == capspace.STATUS_SUCCEEDED
-        assert parse.call_count == 1
-        assert decode.call_count == 1
+        assert parser_calls.parse.call_count == 1
+        assert parser_calls.decode.call_count == 1
 
 
 class TestTeamResolutionPrefersSourceThenUniqueStint:
@@ -852,15 +860,21 @@ class TestTargetedPlayerStillSelectsOnlyMissingSeasonsWithoutForce:
 @pytest.mark.parametrize(
     "options",
     [
-        pytest.param({"workers": 0}, id="zero-workers"),
-        pytest.param({"workers": capspace.MAX_WORKERS + 1}, id="excess-workers"),
-        pytest.param({"batch_size": 0}, id="zero-batch"),
-        pytest.param({"batch_size": capspace.MAX_BATCH_SIZE + 1}, id="excess-batch"),
+        pytest.param((("workers", 0),), id="zero-workers"),
+        pytest.param((("workers", capspace.MAX_WORKERS + 1),), id="excess-workers"),
+        pytest.param((("batch_size", 0),), id="zero-batch"),
+        pytest.param((("batch_size", capspace.MAX_BATCH_SIZE + 1),), id="excess-batch"),
     ],
+    indirect=True,
 )
 def test_run_rejects_unsafe_worker_and_batch_bounds(options):
     with pytest.raises(ValueError):
         capspace.run_contract_sync(None, dry_run=True, **options)
+
+
+@pytest.fixture
+def options(request):
+    return dict(request.param)
 
 
 class TestRunReturnsCompleteEmptySummaryWithoutFetching:

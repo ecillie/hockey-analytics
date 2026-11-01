@@ -123,6 +123,20 @@ deselected. These remain separate evidence from final acceptance. Existing
 test-scenario/resource, runtime role/interface and framework/historical findings,
 hosted NonProd evidence and final release acceptance remain outstanding.
 
+The fixture-input checkpoint replaces shared dictionary/list/exception/NumPy
+decorator values in contract, roster, API and ML tests with immutable descriptions
+and fresh fixture-owned native values. Generated formatted contract inputs and
+ML feature/artifact/baseline inputs are arranged outside bodies. Named frozen
+scenarios carry retry, reconciliation, service and expected-failure collaborators;
+their native observation/boundary buffers remain fixture-owned. The 286 compared
+collection IDs are unchanged, and focused units passed **319**, with 18 database
+integrations deselected. Fresh `tradevalue_test_logging05_fixture_inputs` passed
+**1,429 tests, zero skips**, **91.26%** coverage and the **100%** API/calendar
+gate. Isolated units passed **1,379**, with 50 integrations deselected; static,
+package/export, schema/API and ML checks passed. Other recorded fixture/resource,
+role/interface and framework/historical
+findings, hosted NonProd evidence and final release acceptance remain open.
+
 The supported runtime is Python 3.12. Install the root uv workspace with
 `uv sync --locked --all-groups`. Runtime, ingestion, ML, and development
 requirements are generated from the same lock. Run these checks at the root:

@@ -40,24 +40,31 @@ from app.ScriptingFiles.FullDataScript.contracts.util import (
 from hypothesis import given
 from app.ScriptingFiles.FullDataScript.contracts.tests.strategies import (
     currency_amounts,
-    season_years,
+    currency_examples,
+    season_examples,
+    CurrencyExample,
+    SeasonExample,
 )
 
 
 class TestAmountAndSeasonProperties:
-    @given(amount=currency_amounts())
-    def test_currency_format_preserves_exact_cents(self, amount: Decimal) -> None:
-        assert parse_money_cents(f"${amount:,.2f}") == int(amount * 100)
+    @given(example=currency_examples())
+    def test_currency_format_preserves_exact_cents(
+        self, example: CurrencyExample
+    ) -> None:
+        assert parse_money_cents(example.text) == example.cents
 
     @given(amount=currency_amounts(negative=True))
     def test_negative_amounts_never_become_zero(self, amount: Decimal) -> None:
         with pytest.raises(MoneyParseError):
             parse_money_cents(amount)
 
-    @given(year=season_years())
-    def test_short_and_full_seasons_agree_across_centuries(self, year: int) -> None:
-        assert parse_season_start_year(f"{year}-{(year + 1) % 100:02d}") == year
-        assert parse_season_start_year(f"{year}–{year + 1}") == year
+    @given(example=season_examples())
+    def test_short_and_full_seasons_agree_across_centuries(
+        self, example: SeasonExample
+    ) -> None:
+        assert parse_season_start_year(example.short) == example.year
+        assert parse_season_start_year(example.full) == example.year
 
     @pytest.fixture(
         params=(
@@ -95,43 +102,27 @@ class TestAmountAndSeasonProperties:
 class TestContractSourceShapes:
     @pytest.fixture(
         params=(
-            pytest.param({"props": None}, id="null-props"),
+            pytest.param('{"props":null}', id="null-props"),
             pytest.param(
-                {"props": {"pageProps": {"player": []}}}, id="wrong-player-shape"
+                '{"props":{"pageProps":{"player":[]}}}', id="wrong-player-shape"
             ),
-            pytest.param({"contracts": [{}]}, id="contract-without-seasons"),
+            pytest.param('{"contracts":[{}]}', id="contract-without-seasons"),
             pytest.param(
-                {"contracts": [{"details": [{"season": "2020-21", "capHit": "NaN"}]}]},
+                '{"contracts":[{"details":[{"season":"2020-21","capHit":"NaN"}]}]}',
                 id="invalid-cap-hit",
             ),
             pytest.param(
-                {
-                    "contracts": [
-                        {
-                            "value": "negative",
-                            "details": [{"season": "2020-21", "capHit": "1"}],
-                        }
-                    ]
-                },
+                '{"contracts":[{"value":"negative","details":[{"season":"2020-21","capHit":"1"}]}]}',
                 id="invalid-total-value",
             ),
             pytest.param(
-                {
-                    "contracts": [
-                        {
-                            "details": [
-                                {"season": "2020-21", "capHit": "1"},
-                                {"season": "2021-22", "capHit": "-2"},
-                            ]
-                        }
-                    ]
-                },
+                '{"contracts":[{"details":[{"season":"2020-21","capHit":"1"},{"season":"2021-22","capHit":"-2"}]}]}',
                 id="partially-malformed-contract",
             ),
         )
     )
     def malformed_html(self, request: pytest.FixtureRequest) -> str:
-        raw = request.param
+        raw = json.loads(request.param)
         payload = raw if "props" in raw else {"props": {"pageProps": {"player": raw}}}
         return (
             '<h1>Contract History</h1><script type="application/json" id="__NEXT_DATA__">'

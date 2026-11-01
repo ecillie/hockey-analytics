@@ -1311,3 +1311,48 @@ Evidence uses `/private/tmp/tradevalue-logging05-adapter-cursors-` prefixes:
 `pytest.txt`, `units.txt` and `packages.txt`. Hosted NonProd mode/correlation and
 final combined acceptance/release promotion remain outstanding. No acceptance PR
 or production promotion is created here.
+
+## Fixture-owned parameter and scenario inputs
+
+Shared mutable decorator payloads in contract, roster, API and ML tests are now
+immutable JSON/pair/tuple descriptions. Fixtures construct fresh native payloads,
+options, expected details, database exceptions, metric dictionaries and NumPy
+arrays. Existing case IDs and boundary values remain intact. Generated formatted
+currency/season inputs are frozen named examples over the original Decimal/year
+spaces; effective service options, tracking wrapper, native wrap-through parser
+instrumentation and alternate identity input are arranged in fixtures.
+
+Named frozen scenarios carry retry, reconciliation, API service and ML expected
+failure collaborators. Native DataFrame/model/dict/observation buffers belong to
+one fixture; these holders do not claim their graphs are immutable domain data.
+ML prediction feature inputs, artifact path, metadata baseline text and metric
+baselines/tolerances are fixture-owned. Native serialization, parsing, prediction,
+mutation and error behavior remain the tested acts.
+
+Verification under Python 3.12.14:
+
+- **286** collected test IDs in the compared eight-file set match the preceding
+  commit exactly. Focused units passed **319**, with 18 integrations deselected,
+  in **3.13 seconds**. No new test cases duplicate these fixture changes.
+- Fresh migrated `tradevalue_test_logging05_fixture_inputs`: **1,429 passed,
+  zero skips**, **91.26%** aggregate coverage in **132.64 seconds**, with the
+  **100%** API/calendar gate. Isolated units passed **1,379**, with 50 integrations
+  deselected, in **113.04 seconds**.
+- Locked sync, Ruff lint/format, ty, structural scope, dependency exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke,
+  clean API/Vercel/ML artifact installs/exclusions and committed-model gates pass.
+- Only excluded test/support sources and documentation changed. Application,
+  image/build inputs, frontend, public HTTP schema and model artifacts remain
+  unchanged; previous API/browser image evidence remains applicable. This
+  checkpoint claims no new image build or hosted acceptance.
+
+Evidence uses `/private/tmp/tradevalue-logging05-fixture-inputs-` prefixes:
+`focused-final2.txt`, `collection-before.txt`, `collection-final.txt`,
+`before-nodes.txt`, `final-nodes.txt`, `checks.sh`/`checks.txt`, `pytest.txt`,
+`units.txt` and `packages.txt`.
+
+Sixteen source dispositions were re-reviewed with current digests. All 237 files
+have content-inspection records; other explicit fixture/resource, host-program,
+runtime role/interface and framework/historical findings still require
+resolution. Hosted NonProd mode/correlation and final combined acceptance/release
+promotion remain outstanding. No acceptance PR or production promotion is made.

@@ -165,11 +165,13 @@ def test_team_roster_contract_and_raw_cap_subtotals(postgres_api_service):
 
 
 @pytest.mark.integration
-def test_search_leaders_overview_and_compare(postgres_api_service):
-    found = postgres_api_service.search("Beta", ["player", "team"], 8)
+def test_search_leaders_overview_and_compare(
+    postgres_api_service, combined_types, player_types, comparison_ids
+):
+    found = postgres_api_service.search("Beta", combined_types, 8)
     assert found["players"] == []
     assert [team["id"] for team in found["teams"]] == [102]
-    players_only = postgres_api_service.search("Traded", ["player"], 8)
+    players_only = postgres_api_service.search("Traded", player_types, 8)
     assert [player["id"] for player in players_only["players"]] == [1001]
     assert players_only["teams"] == []
 
@@ -181,10 +183,25 @@ def test_search_leaders_overview_and_compare(postgres_api_service):
     assert overview["league"]["goals"] == 72
     assert overview["leaders"]["hockeyValue"][0]["id"] == 1004
 
-    comparison = postgres_api_service.compare([1001, 1006], 2025)
+    comparison = postgres_api_service.compare(comparison_ids, 2025)
     assert [row["player"]["id"] for row in comparison["players"]] == [1001, 1006]
     assert comparison["players"][0]["contract"] is not None
     assert comparison["players"][1]["stats"]["goalie"] is not None
+
+
+@pytest.fixture
+def combined_types():
+    return ["player", "team"]
+
+
+@pytest.fixture
+def player_types():
+    return ["player"]
+
+
+@pytest.fixture
+def comparison_ids():
+    return [1001, 1006]
 
 
 @pytest.mark.integration
@@ -373,10 +390,10 @@ class TestQueryBoundaries:
         ("order", "expected"),
         [
             pytest.param(
-                "desc", [1001, 1004, 1003, 1005, 1002, 1006], id="descending-nulls-last"
+                "desc", (1001, 1004, 1003, 1005, 1002, 1006), id="descending-nulls-last"
             ),
             pytest.param(
-                "asc", [1002, 1003, 1005, 1004, 1001, 1006], id="ascending-nulls-last"
+                "asc", (1002, 1003, 1005, 1004, 1001, 1006), id="ascending-nulls-last"
             ),
         ],
     )
@@ -384,7 +401,7 @@ class TestQueryBoundaries:
         self, tied_service, page_queries, expected
     ):
         pages = [tied_service.players(query) for query in page_queries]
-        assert [row["id"] for page in pages for row in page["data"]] == expected
+        assert tuple(row["id"] for page in pages for row in page["data"]) == expected
         assert all(page["pagination"]["totalItems"] == 6 for page in pages)
 
     def test_search_text_is_bound_as_data(self, postgres_api_service, injection_query):

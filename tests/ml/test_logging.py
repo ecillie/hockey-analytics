@@ -103,6 +103,10 @@ class TestMlLogging:
             paths, data=training_data, output=predictions_path, context=context
         )
 
+    @pytest.fixture
+    def training_features(self, training_data):
+        return training_data[list(NUMERIC_FEATURES + CATEGORICAL_FEATURES)]
+
     def test_diagnostics_preserve_outputs_and_exclude_payloads(
         self,
         evaluated,
@@ -110,16 +114,16 @@ class TestMlLogging:
         baseline,
         original,
         training_data,
+        training_features,
         capture,
         level,
         paths,
         predictions_path,
     ):
         pd.testing.assert_frame_equal(original, training_data)
-        columns = list(NUMERIC_FEATURES + CATEGORICAL_FEATURES)
         np.testing.assert_array_equal(
-            trained.predict(training_data[columns]),
-            baseline.model.predict(training_data[columns]),
+            trained.predict(training_features),
+            baseline.model.predict(training_features),
         )
         assert paths.metadata.read_text() == baseline.metadata_json
         assert len(pd.read_csv(predictions_path)) == len(evaluated)

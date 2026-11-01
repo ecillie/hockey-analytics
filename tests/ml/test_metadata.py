@@ -38,6 +38,12 @@ from ml.evaluation.gate import (
     validate_metadata,
 )
 from ml.schemas import ModelMetadata, validate_feature_options
+from ml.tests.fakes import (
+    MetadataFailureScenario,
+    MetricFailureScenario,
+    MetricScenario,
+    TemporalFailureScenario,
+)
 
 
 class TestMetadataValues:
@@ -57,8 +63,17 @@ class TestMetadataValues:
     def parsed(self, payload):
         return validate_metadata(payload)
 
-    def test_validation_returns_owned_immutable_nested_values(self, parsed, payload):
-        original = serialize_metadata_json(parsed)
+    @pytest.fixture
+    def original(self, parsed):
+        return serialize_metadata_json(parsed)
+
+    @pytest.fixture
+    def expected_text(self, committed_text):
+        return json.dumps(json.loads(committed_text), indent=2, sort_keys=True) + "\n"
+
+    def test_validation_returns_owned_immutable_nested_values(
+        self, parsed, payload, original
+    ):
         payload["metrics"]["train"]["mae"] = 999
         payload["metrics"].clear()
         payload["numeric_features"].clear()
@@ -71,11 +86,8 @@ class TestMetadataValues:
         with pytest.raises(ValidationError):
             setattr(parsed, "numeric_features", ())
 
-    def test_serialization_preserves_exact_committed_json(self, committed_text, parsed):
-        assert (
-            serialize_metadata_json(parsed)
-            == json.dumps(json.loads(committed_text), indent=2, sort_keys=True) + "\n"
-        )
+    def test_serialization_preserves_exact_committed_json(self, expected_text, parsed):
+        assert serialize_metadata_json(parsed) == expected_text
         assert validate_metadata(json.loads(serialize_metadata_json(parsed))) == parsed
         assert tuple(map(str, Split)) == ("train", "validation", "test")
         assert tuple(map(str, Metric)) == ("mae", "rmse", "r2")
@@ -90,10 +102,10 @@ class TestMetadataValues:
                 ("contract_features_used", True, ContractFeaturesError), id="contract"
             ),
             pytest.param(
-                ("numeric_features", [], FeatureOrderError), id="numeric-order"
+                ("numeric_features", (), FeatureOrderError), id="numeric-order"
             ),
             pytest.param(
-                ("categorical_features", [], FeatureOrderError), id="categorical-order"
+                ("categorical_features", (), FeatureOrderError), id="categorical-order"
             ),
             pytest.param(
                 ("validation_target_season", 9999, SplitOrderError), id="split-order"
@@ -106,13 +118,16 @@ class TestMetadataValues:
     )
     def incompatible(self, payload, request):
         field, value, error = request.param
-        payload[field] = value
-        return payload, error
+        payload[field] = (
+            list(value)
+            if field in ("numeric_features", "categorical_features")
+            else value
+        )
+        return MetadataFailureScenario(payload=payload, error=error)
 
     def test_incompatible_metadata_has_distinct_failures(self, incompatible):
-        payload, error = incompatible
-        with pytest.raises(error) as raised:
-            validate_metadata(payload)
+        with pytest.raises(incompatible.error) as raised:
+            validate_metadata(incompatible.payload)
         assert len(vars(raised.value)) > 0
 
     @pytest.fixture(
@@ -170,10 +185,10 @@ class TestMetadataValues:
 class TestTemporalFailures:
     @pytest.fixture(
         params=[
-            pytest.param(({}, MissingTargetSeasonError, "columns", ()), id="missing"),
+            pytest.param(((), MissingTargetSeasonError, "columns", ()), id="missing"),
             pytest.param(
                 (
-                    {"target_season": [2022, 2023]},
+                    (("target_season", (2022, 2023)),),
                     InsufficientSeasonsError,
                     "seasons",
                     (2022, 2023),
@@ -182,7 +197,7 @@ class TestTemporalFailures:
             ),
             pytest.param(
                 (
-                    {"target_season": [2022, np.inf, np.nan, 2023.5]},
+                    (("target_season", (2022, np.inf, np.nan, 2023.5)),),
                     InvalidTargetSeasonsError,
                     "invalid_rows",
                     3,
@@ -193,64 +208,104 @@ class TestTemporalFailures:
     )
     def scenario(self, request):
         data, error, field, expected = request.param
-        return pd.DataFrame(data), error, field, expected
+        return TemporalFailureScenario(
+            data=pd.DataFrame(dict(data)),
+            error=error,
+            context_field=field,
+            expected=expected,
+        )
 
     def test_failures_retain_context(self, scenario):
-        data, error, field, expected = scenario
-        with pytest.raises(error) as raised:
-            split_temporal_data(data)
-        assert getattr(raised.value, field) == expected
+        with pytest.raises(scenario.error) as raised:
+            split_temporal_data(scenario.data)
+        assert getattr(raised.value, scenario.context_field) == scenario.expected
 
 
 class TestMetricFailures:
     @pytest.fixture(
         params=[
             pytest.param(
-                ({}, {"mae": 0.0}, {"mae": 0.0}, MissingMetricError),
+                ((), (("mae", 0.0),), (("mae", 0.0),), MissingMetricError),
                 id="missing-current",
             ),
             pytest.param(
-                ({"mae": 0.0}, {}, {"mae": 0.0}, MissingMetricError),
+                ((("mae", 0.0),), (), (("mae", 0.0),), MissingMetricError),
                 id="missing-baseline",
             ),
             pytest.param(
-                ({"mae": 0.0}, {"mae": 0.0}, {}, MissingMetricError),
+                ((("mae", 0.0),), (("mae", 0.0),), (), MissingMetricError),
                 id="missing-tolerance",
             ),
             pytest.param(
-                ({"mae": np.inf}, {"mae": 0.0}, {"mae": 0.0}, InvalidMetricError),
+                (
+                    (("mae", np.inf),),
+                    (("mae", 0.0),),
+                    (("mae", 0.0),),
+                    InvalidMetricError,
+                ),
                 id="nonfinite-current",
             ),
             pytest.param(
-                ({"mae": 0.0}, {"mae": np.nan}, {"mae": 0.0}, InvalidMetricError),
+                (
+                    (("mae", 0.0),),
+                    (("mae", np.nan),),
+                    (("mae", 0.0),),
+                    InvalidMetricError,
+                ),
                 id="nonfinite-baseline",
             ),
             pytest.param(
-                ({"mae": 0.0}, {"mae": 0.0}, {"mae": -1.0}, InvalidMetricError),
+                (
+                    (("mae", 0.0),),
+                    (("mae", 0.0),),
+                    (("mae", -1.0),),
+                    InvalidMetricError,
+                ),
                 id="negative-tolerance",
             ),
             pytest.param(
-                ({"mae": 0.0}, {"mae": 0.0}, {"mae": np.inf}, InvalidMetricError),
+                (
+                    (("mae", 0.0),),
+                    (("mae", 0.0),),
+                    (("mae", np.inf),),
+                    InvalidMetricError,
+                ),
                 id="nonfinite-tolerance",
             ),
             pytest.param(
-                ({"mae": 2.0}, {"mae": 0.0}, {"mae": 1.0}, MetricRegressionError),
+                (
+                    (("mae", 2.0),),
+                    (("mae", 0.0),),
+                    (("mae", 1.0),),
+                    MetricRegressionError,
+                ),
                 id="regression",
             ),
         ]
     )
     def scenario(self, request):
-        return request.param
+        current, baseline, tolerance, error = request.param
+        return MetricFailureScenario(
+            inputs=MetricScenario(
+                current=dict(current),
+                baseline=dict(baseline),
+                tolerances=dict(tolerance),
+            ),
+            error=error,
+        )
 
     def test_errors_identify_metric(self, scenario):
-        current, baseline, tolerance, error = scenario
-        with pytest.raises(error) as raised:
-            check_metric_regression(current, baseline, tolerance)
-        assert raised.value.metric == Metric.MAE
+        with pytest.raises(scenario.error) as raised:
+            check_metric_regression(
+                scenario.inputs.current,
+                scenario.inputs.baseline,
+                scenario.inputs.tolerances,
+            )
+        assert raised.value.metric == scenario.metric
 
     @given(inputs=generate_identical_metric_inputs())
     def test_identical_finite_metrics_never_regress(self, inputs):
-        check_metric_regression(*inputs)
+        check_metric_regression(inputs.current, inputs.baseline, inputs.tolerances)
 
 
 class TestTrainingFailures:

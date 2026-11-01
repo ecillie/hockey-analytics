@@ -3,9 +3,43 @@
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Self
+from typing import Literal, Self
 import pandas as pd
 from sklearn.pipeline import Pipeline
+from ml.domain import Metric, MetricValues
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class MetricScenario:
+    current: MetricValues
+    baseline: MetricValues
+    tolerances: MetricValues
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class MetricFailureScenario:
+    inputs: MetricScenario
+    error: type[Exception]
+    metric: Metric = Metric.MAE
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class MetadataFailureScenario:
+    payload: dict[str, object]
+    error: type[Exception] = ValueError
+    message: str | None = None
+
+
+type TemporalFailureValue = int | tuple[int, ...] | tuple[str, ...]
+type TemporalFailureField = Literal["columns", "seasons", "invalid_rows"]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class TemporalFailureScenario:
+    data: pd.DataFrame
+    error: type[Exception]
+    context_field: TemporalFailureField
+    expected: TemporalFailureValue
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

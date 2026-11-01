@@ -5,6 +5,7 @@ from datetime import date
 from io import BytesIO
 import pytest
 import asyncio
+import json
 from email.message import Message
 from urllib.error import HTTPError
 from app.shared.tests.fakes import StageOutcome
@@ -310,23 +311,24 @@ class TestFeedAdapters:
 
     @pytest.fixture(
         params=[
-            pytest.param(("nhl", "bootstrap", {}), id="nhl-malformed-standings"),
+            pytest.param(("nhl", "bootstrap", "{}"), id="nhl-malformed-standings"),
             pytest.param(
-                ("nhl", "roster", {"forwards": "bad", "defensemen": [], "goalies": []}),
+                ("nhl", "roster", '{"forwards":"bad","defensemen":[],"goalies":[]}'),
                 id="nhl-malformed-roster",
             ),
             pytest.param(
-                ("ahl", "bootstrap", {"teamsNoAll": "bad"}),
+                ("ahl", "bootstrap", '{"teamsNoAll":"bad"}'),
                 id="ahl-malformed-bootstrap",
             ),
             pytest.param(
-                ("ahl", "roster", {"roster": [{"sections": [{"data": [{}]}]}]}),
+                ("ahl", "roster", '{"roster":[{"sections":[{"data":[{}]}]}]}'),
                 id="ahl-malformed-player",
             ),
         ]
     )
     def malformed(self, request, nhl_payloads, ahl_payloads):
         feed, stage, payload = request.param
+        payload = json.loads(payload)
         if feed == "nhl":
             key = (
                 "https://api-web.nhle.com/v1/standings/now"
@@ -410,8 +412,12 @@ class TestJsonTransport:
     def client(self):
         return JsonHttpClient(options=HttpOptions(timeout_seconds=2))
 
-    def test_timeout_headers_query_and_resource_closure(self, opener, client):
-        result = client.get_json("https://feed.test", {"key": "a b"})
+    @pytest.fixture
+    def query(self):
+        return {"key": "a b"}
+
+    def test_timeout_headers_query_and_resource_closure(self, opener, client, query):
+        result = client.get_json("https://feed.test", query)
         assert result == {"ok": True}
         request, timeout = opener.calls[0]
         assert timeout == 2
@@ -465,16 +471,17 @@ class TestDuplicateAhlSightings:
 class TestEmptyFeedDiscovery:
     @pytest.fixture(
         params=[
-            pytest.param(("nhl", {"standings": []}), id="no-nhl-teams"),
+            pytest.param(("nhl", '{"standings":[]}'), id="no-nhl-teams"),
             pytest.param(
-                ("ahl", {"current_season_id": "90", "teamsNoAll": []}),
+                ("ahl", '{"current_season_id":"90","teamsNoAll":[]}'),
                 id="no-ahl-teams",
             ),
-            pytest.param(("ahl", {"teamsNoAll": [{"id": "415"}]}), id="no-ahl-season"),
+            pytest.param(("ahl", '{"teamsNoAll":[{"id":"415"}]}'), id="no-ahl-season"),
         ]
     )
     def feed(self, request):
         source, payload = request.param
+        payload = json.loads(payload)
         if source == "nhl":
             return NhlRosterService(
                 http_client=MemoryHttpClient(
@@ -509,6 +516,10 @@ class TestIncompleteTeamDiscovery:
 
 
 class TestOwnedRosterHttpErrors:
+    @pytest.fixture
+    def client(self):
+        return JsonHttpClient()
+
     @pytest.fixture(
         params=[
             pytest.param(None, id="closed-error-response"),
@@ -544,9 +555,9 @@ class TestOwnedRosterHttpErrors:
         finally:
             BytesIO.close(body)
 
-    def test_caught_error_is_closed_without_replacing_primary(self, scenario):
+    def test_caught_error_is_closed_without_replacing_primary(self, scenario, client):
         with pytest.raises(BaseException) as raised:
-            JsonHttpClient().get_json("https://feed.test/roster")
+            client.get_json("https://feed.test/roster")
         assert raised.value is scenario.response
         if scenario.close_failure is None:
             assert scenario.body.closed
