@@ -2,9 +2,16 @@
 
 import logging
 import sys
+from time import monotonic_ns
+from uuid import uuid4
 from starlette.types import Scope
 
-from app.shared.observability.domain import LogLevel, LoggingSettings
+from app.shared.observability.domain import (
+    CommandOutcome,
+    InvocationContext,
+    LogLevel,
+    LoggingSettings,
+)
 from app.shared.observability.formatting import SafeFormatter
 from app.shared.observability.errors import (
     LoggingOwnershipError,
@@ -25,6 +32,26 @@ from app.shared.observability.sinks import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def start_command(source: str) -> InvocationContext:
+    context = InvocationContext(
+        invocation_id=uuid4().hex, source=source, started_ns=monotonic_ns()
+    )
+    logger.info("Command started", extra=context.fields | {"event": "command.started"})
+    return context
+
+
+def finish_command(context: InvocationContext, outcome: CommandOutcome) -> None:
+    logger.info(
+        "Command finished",
+        extra=context.fields
+        | {
+            "event": "command.finished",
+            "outcome": outcome.value,
+            "duration_ms": context.duration_ms,
+        },
+    )
 
 
 def retain_lifespan_cleanup(primary: BaseException, cleanup: BaseException) -> None:

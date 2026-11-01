@@ -28,6 +28,28 @@ class RequestOutcome(StrEnum):
     CANCELLED = auto()
 
 
+class CommandOutcome(StrEnum):
+    COMPLETED = auto()
+    FAILED = auto()
+    INCOMPLETE = auto()
+    CANCELLED = auto()
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class InvocationContext:
+    invocation_id: str
+    source: str
+    started_ns: int
+
+    @property
+    def fields(self) -> dict[str, object]:
+        return {"invocation_id": self.invocation_id, "source": self.source}
+
+    @property
+    def duration_ms(self) -> float:
+        return (monotonic_ns() - self.started_ns) / 1_000_000
+
+
 @dataclass(slots=True, kw_only=True, frozen=True)
 class RequestContext:
     request_id: str

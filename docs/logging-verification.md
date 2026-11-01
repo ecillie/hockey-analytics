@@ -300,4 +300,39 @@ retention, permissions and sink limits remain phase-5 gates; the two harmless
 pre-lifespan Uvicorn status lines still use the host format. Existing phase-7
 semantic acceptance remains outstanding. No production promotion is authorized
 by these local results.
+
+## Phase 2 publication and phase 3 start
+
+Published phase-2 head `6759bff47ea120506c3f7f80b5edf0d0363e2dd7` as non-draft
+[#167](https://github.com/ecillie/hockey-analytics/pull/167), targeting `Dev`.
+Dev workflow `41272654327`, both Vercel previews and all required checks passed.
+Automation merged it at `2026-11-01T04:23:37Z` as
+`180eff469dc458efd48993c64a1fddd6a068fcd1`. No pipeline fixes or manual merge
+were needed. Probe containers were removed; disposable PostgreSQL remains for
+phase-3 verification and the unrelated existing container is untouched.
+
+Started `feature/logging-03-jobs-commands` from refreshed `origin/Dev` at that
+merge. Its initial checkpoint migrates OpenAPI export to shared logging settings
+resolved from the explicit process environment, without adding dotenv or database
+requirements. Only `main()` installs handlers, after argument validation. A frozen
+invocation context carries generated identity, source and monotonic duration;
+start/finish summaries and translated errors share that identity. Requested stdout,
+stale-contract behavior and exit codes are preserved. Invalid logging values are
+usage errors before writes, without echoing the supplied value.
+
+Fourteen fresh-process scenarios pass across INFO/DEBUG, JSON/text, successful
+export, verification failure, execution failure and invalid configuration. Existing
+command contract tests retain caplog visibility through a fixture that restores
+logger state and closes its owned handler after each test.
+
+Checkpoint verification: Ruff lint/format, ty, structural rules, export/OpenAPI
+parity, isolated package boundaries and ML gate passed. After applying migrations
+to newly provisioned PostgreSQL database `tradevalue_test_logging03_checkpoint`,
+the complete suite passed **902 tests, zero skips**, **91.71%** coverage in
+**47.80 seconds**, with the API/calendar gate at **100%**. Isolated units passed
+**852 tests**, with 50 integration tests deselected, in **34.68 seconds**. The first
+full attempt found the new database's missing schema; it was initialized before
+this successful acceptance run. No phase-3 PR is open yet. Other commands, ingestion
+and worker correlation, commit-aware summaries, ML boundaries, Alembic, cancellation
+and cleanup evidence remain to complete this phase.
 The dedicated checkpoint PostgreSQL container was removed after verification.
