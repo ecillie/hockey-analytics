@@ -10,6 +10,9 @@ from bs4 import BeautifulSoup, Tag
 from pydantic import BaseModel, Field, InstanceOf, ValidationError
 
 
+type PageSnapshots = tuple[dict[str, object], ...]
+
+
 class ContractPage(BaseModel):
     player: dict[str, object] | None = None
     person: dict[str, object] | None = None
@@ -39,7 +42,7 @@ class SourceDocument(BaseModel):
     root: InstanceOf[BeautifulSoup]
 
     @property
-    def next_data(self) -> tuple[dict[str, object], ...]:
+    def next_data(self) -> PageSnapshots:
         return tuple(
             payload
             for node in self.root.find_all("script", id="__NEXT_DATA__")

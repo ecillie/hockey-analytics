@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from app.shared.cleanup import complete_cleanup as close_run_resources
 from app.database import connect_database
 from app.ScriptingFiles.FullDataScript.tracking.errors import (
     ConcurrentIngestionError,
@@ -135,28 +136,6 @@ class RunUnlocker:
             "SELECT pg_advisory_unlock(%s)", (advisory_lock_key(self.job_name),)
         )
         self.connection.commit()
-
-
-def retain_cleanup_failure(
-    primary: BaseException | None, cleanup: BaseException
-) -> BaseException:
-    if primary is None:
-        return cleanup
-    primary.add_note(f"Ingestion cleanup also failed: {cleanup!r}")
-    return primary
-
-
-def close_run_resources(
-    operations: tuple[Callable[[], object], ...], primary: BaseException | None
-) -> None:
-    failure = primary
-    for operation in operations:
-        try:
-            operation()
-        except BaseException as cleanup:
-            failure = retain_cleanup_failure(failure, cleanup)
-    if primary is None and failure is not None:
-        raise failure
 
 
 @contextmanager

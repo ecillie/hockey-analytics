@@ -14,6 +14,7 @@ from app.ScriptingFiles.FullDataScript.contracts.errors import (
     ReconciliationFailure,
 )
 from app.ScriptingFiles.FullDataScript.contracts.schemas import SourceDocument
+from app.ScriptingFiles.FullDataScript.contracts.schemas.documents import PageSnapshots
 from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
     embedded_nhl_id,
     mapping_rows,
@@ -24,16 +25,17 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.util import slug_from_na
 
 
 def capwages_document_matches(
-    document: SourceDocument, candidate: Candidate, url: str
+    document: SourceDocument,
+    candidate: Candidate,
+    url: str,
+    *,
+    pages: PageSnapshots | None = None,
 ) -> bool:
+    payloads = document.next_data if pages is None else pages
     try:
-        identity = embedded_nhl_id(document)
+        identity = embedded_nhl_id(payloads)
         player = next(
-            (
-                row
-                for payload in document.next_data
-                if len(row := page_player(payload)) > 0
-            ),
+            (row for payload in payloads if len(row := page_player(payload)) > 0),
             {},
         )
     except CapSpaceParseError:

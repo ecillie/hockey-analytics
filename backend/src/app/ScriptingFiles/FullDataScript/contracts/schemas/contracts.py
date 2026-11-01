@@ -17,6 +17,7 @@ from app.ScriptingFiles.FullDataScript.contracts.errors import (
     DocumentFailure,
     ProfileIdentityError,
 )
+from app.ScriptingFiles.FullDataScript.contracts.schemas.documents import PageSnapshots
 from app.ScriptingFiles.FullDataScript.contracts.schemas import (
     SourceDocument,
     parse_source_document,
@@ -44,10 +45,10 @@ def page_player(payload: dict[str, object]) -> dict[str, object]:
     return {} if page.person is None else page.person
 
 
-def embedded_nhl_id(document: SourceDocument) -> str | None:
+def embedded_nhl_id(payloads: PageSnapshots) -> str | None:
     identities = {
         str(identity)
-        for payload in document.next_data
+        for payload in payloads
         if (identity := page_player(payload).get("nhlId")) is not None
     }
     if len(identities) > 1:
@@ -289,10 +290,12 @@ def contract_from_table(block: Tag) -> ParsedContract | None:
     )
 
 
-def document_contracts(document: SourceDocument) -> list[ParsedContract]:
+def document_contracts(
+    document: SourceDocument, pages: PageSnapshots
+) -> list[ParsedContract]:
     parsed_json: list[ParsedContract] | None = None
     failure: CapSpaceParseError | None = None
-    payloads = iter(document.next_data)
+    payloads = iter(pages)
     while (parsed_json is None or len(parsed_json) == 0) and (
         payload := next(payloads, None)
     ) is not None:
@@ -344,14 +347,16 @@ def parse_contract_document(
     *,
     expected_nhl_id: str | None = None,
     require_nhl_id: bool = False,
+    pages: PageSnapshots | None = None,
 ) -> tuple[ParsedContract, ...]:
+    payloads = document.next_data if pages is None else pages
     if expected_nhl_id is not None:
-        actual = embedded_nhl_id(document)
+        actual = embedded_nhl_id(payloads)
         if (require_nhl_id and actual is None) or (
             actual is not None and actual != expected_nhl_id
         ):
             raise ProfileIdentityError(expected=expected_nhl_id, actual=actual)
-    return tuple(document_contracts(document))
+    return tuple(document_contracts(document, payloads))
 
 
 def parse_capspace_page(

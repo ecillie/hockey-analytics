@@ -279,7 +279,8 @@ def request_capwages_slug(
             ),
         )
     document = parse_source_document(response.text)
-    if not _capwages_document_matches(document, candidate, url):
+    pages = document.next_data
+    if not _capwages_document_matches(document, candidate, url, pages=pages):
         return ContinueSlugSearch(
             result=ProfileResult(
                 candidate=candidate,
@@ -293,7 +294,9 @@ def request_capwages_slug(
             )
         )
     try:
-        contracts = _parse_contract_document(document, expected_nhl_id=candidate.nhl_id)
+        contracts = _parse_contract_document(
+            document, expected_nhl_id=candidate.nhl_id, pages=pages
+        )
     except CapSpaceError as failure:
         return ProfileResult(
             candidate=candidate,
