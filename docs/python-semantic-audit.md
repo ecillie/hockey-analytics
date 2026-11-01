@@ -3,7 +3,7 @@
 File-by-file content inspection is complete; findings remain unresolved. This is
 not phase-7 acceptance. Scope is all
 237 tracked/new Python files in the acceptance worktree, with source digests
-updated after `3123d0d`. Digests identify exactly what was inspected; changed
+updated after `1ab2069`. Digests identify exactly what was inspected; changed
 files require re-review.
 Generated artifacts, environments and retired `.py.txt` loaders are not source
 entries. The structural gate separately checks all supported executable roots.
@@ -80,12 +80,33 @@ Record findings and fixes before assigning final acceptance.
   the real HTTP/log verifiers now enforce exact IDs, strict bodies, severity,
   mode thresholds and absence of orphan errors. Actual logged correlation counts
   distinguish the intentionally silent INFO health request.
-- Remaining inspected-test findings include legacy expected-input/body arrangement,
-  shared mutable decorator examples, additional native test resource ownership
-  and generated host-program main setup. Migration admin/test engines and
-  OpenAPI/ML import-time path resolution are now resolved.
-  Complete those with the legacy role/interface work and
-  precise framework/historical dispositions; green checks do not waive them.
+- The final two inspected-test findings, ingestion scenario arrangement and
+  startup host-program resource ownership, are resolved below. Source-only
+  native fault doubles still need their precise final disposition with the
+  legacy role/interface work and framework/historical decisions; green checks
+  do not waive those decisions.
+
+## Ingestion scenarios and startup ownership findings resolved
+
+Ingestion expected summaries are immutable pairs; each stage receives a fresh
+native dictionary. Roster-command failures are constructed in fixtures rather
+than shared across parametrized calls. Invalid native rows and ambiguous-player
+SQL setup now belong to fixtures, including the original precondition checks.
+Retained-stage observations and MoneyPuck results use frozen named bindings.
+Their event buffer and borrowed engine retain their native fixture owners;
+MoneyPuck summaries remain immutable domain values. All 60 collected test IDs
+and the existing native boundary, SQL, rollback and retention assertions remain.
+
+Generated startup probes have explicit main/module guards and shared exit codes.
+ExitStack/closing own host capture streams and handlers, unregister host/root
+attachments and close on failed setup or assertions. Engine factories enter the
+existing primary-preserving SQLite guard before constructing sessions. A bounded
+fresh-process fault probe injects session construction failure and cancellation:
+the preceding programs dispose zero engines on that path; the current programs
+dispose once and preserve each original failure. The repeated lifespan timeout,
+real Vercel entry import and approved hook remain unchanged. The generated host
+is deliberately a process entry point; it does not authorize import-time logging
+configuration in application libraries.
 
 ## HTTP and host observation findings resolved
 
@@ -248,7 +269,7 @@ require fixes or precise decisions. Passing gates does not accept them implicitl
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/fixtures.py` | `b99b82190b26` | Reviewed/fixed: all CSV/payload arrangement is fixture-owned. Disposable engine setup/yield/teardown uses the production resource guard, including pre-yield setup faults; test transactions delegate to the production guard with explicit disposable settings/context instead of copying weaker cleanup. File writes/environment patches remain scoped fixtures. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/identities.py` | `8aed5600a218` | Reviewed: pure Hypothesis scenario factory generates equivalent numeric ID representations, independent raw input dictionaries, original hashes and frozen typed jobs/layouts. Mutable rows are deliberately fixture-owned validation inputs; immutable metadata and expected hashes are separate. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/responses.py` | `015d5898a453` | Reviewed: source-only response/session templates build fresh native JSON/CSV graphs on request. Frozen primitive configuration has no shared mutable buffers; lifecycle observations are per fixture. Native throw points and nullcontext factories simulate actual transport/borrowed-client boundaries, without network or import I/O. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/scenarios.py` | `da9bde234966` | Re-reviewed/fixed: pagination client/page limit, owned session/failure mode, native TypeAdapter/typed failure and quality report/bounds/expected-error bundles are frozen named cases. Their actual fake clients/native adapters are per-fixture handles; immutable source snapshots and typed repository pairs remain distinct from local mutable observations. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/scenarios.py` | `af4cc2101eed` | Re-reviewed/fixed: retained stages have a constrained name and native event buffer; retained MoneyPuck observations name their borrowed engine and immutable summaries. Existing pagination/session/validator/quality and typed repository bundles remain frozen. Native fake clients/adapters/engines and local event observations retain fixture ownership rather than claiming immutable resource graphs. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/strategies.py` | `b39f66564425` | Reviewed: pure named optional-number Hypothesis strategy deliberately includes nonfinite/missing numeric boundaries; no shared mutable examples or resource state. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/util.py` | `91298dbbc223` | Reviewed/fixed: file opening moved to the source repository adapter; pure CSV parsing/normalization remains here. Finite Decimal conversion, stable row hashing and shared season calendar remain unchanged. The moved internal helper has no compatibility wrapper because its sole actual caller was updated. |
 | `backend/src/app/ScriptingFiles/FullDataScript/team_stints.py` | `017d75971d62` | Reviewed/fixed: both planning and applying borrow the connection and obtain their cursor only through the primary-preserving shared guard. Original SQL assignments, ordered-range check and report fields are unchanged; close-only errors still propagate. Canonical role placement remains a final layout disposition. |
@@ -375,11 +396,11 @@ require fixes or precise decisions. Passing gates does not accept them implicitl
 | `tests/backend/test_database_cleanup.py` | `76c05f4b11e1` | Re-reviewed: existing transaction/engine/adapter fault suites retain primary/cause and exact close order. Four added source-only SQLite scope cases verify operation/cancellation/interrupt and disposal-only faults through the canonical helper. Scope/native resource acquisition remains fixture-bound and all observations belong to each scenario; no global resource creation. |
 | `tests/backend/test_database_transactions.py` | `a720ac970200` | Reviewed/fixed: disposable table setup/drop use separate production transactions and guarded cursors rather than a raw connection spanning fixture yield. Native commit/rollback and connection-close behavior plus exactly one contextual event are asserted. Deliberate in-transaction failure is the act needed to verify rollback, not a runtime policy implementation. |
 | `tests/backend/test_historical_options.py` | `6b5661805392` | Reviewed: frozen option/limit fixtures verify canonical defaults and actual compatibility exports, inclusive boundaries, mutation rejection and caller overrides. Parser Namespace is intentionally inspected as parser output, not passed through an application main boundary. |
-| `tests/backend/test_ingestion.py` | `ca406b123cf0` | Reviewed content: real disposable ingestion proves deduplication/idempotence, typed values, cross-source identity, retained rows, failure tracking/locks, rollback and roster transactions. Backfill/advisory-lock connections now use explicit disposable Dev settings with production transaction/cursor ownership; no raw connection construction in bodies. Remaining findings: shared class dictionary/exception templates, in-body invalid-row/identity SQL arrangement and positional retained-result/stage collaborator bundles should become fresh frozen fixture scenarios. Parser/native boundary actions retain their published outcomes. |
+| `tests/backend/test_ingestion.py` | `c445e252289a` | Re-reviewed/fixed: immutable expected pairs produce fresh dictionaries, native command failures are constructed per fixture, invalid row and ambiguous identity SQL arrangement belongs to fixtures, and retained stages/results have named frozen bindings. Original precondition assertions, native parser actions, deduplication/idempotence, typed values, identity, retained rows, tracking/locks, rollback and roster transaction checks remain. Disposable Dev connections retain production ownership; SQL assertions inspect actual results. |
 | `tests/backend/test_ingestion_logging.py` | `6b68352b32c8` | Reviewed/fixed: failed-status tracking wrapper belongs to a fixture; captured event-list guards use explicit lengths. Native retry-response/BytesIO streams are context-owned before initialization/yield, providing cleanup after setup/request failure. Durable identity, committed progress, bounded worker context, runner failure/cleanup, safe retry and native recovery-count assertions remain unchanged. |
 | `tests/backend/test_lifecycle_logging.py` | `0d2a15f72f09` | Re-reviewed/fixed: no-false-stopped assertions now inspect retained setup-phase records, with a positive ready-count control for successful startup. The preceding call-phase capture accepted eight deliberately false stopped events; current observations reject all eight. Native protocol failure/identity/severity/bounds and context-owned fixture cleanup assertions remain intact; prior green capture evidence alone did not prove the stopped-event property. |
 | `tests/backend/test_logging_policy.py` | `794138dce27d` | Reviewed/fixed: complete generated formatter/record inputs replace Hypothesis setup in the body, preserving nonempty Unicode secrets and both output formats. Normalized/invalid settings mappings and hostile formatter construction are fixture-owned with immutable parameter descriptions. Existing rendering limits, native metadata faults, sink behavior, snapshot mutation and real-capture verifier assertions remain intact. |
-| `tests/backend/test_logging_startup.py` | `762d56384b27` | Reviewed content: bounded source-only main programs verify idempotent handler ownership, host coexistence, silent import/resource deferral, repeated real Vercel lifespan hook ownership, invalid logging before DB resolution and exact conflict leaves. Findings: host program engine/handler resources should have fallback context ownership; retain explicit task timeout around repeated lifespan work. |
+| `tests/backend/test_logging_startup.py` | `fb48149ba858` | Re-reviewed/fixed: generated process mains use module guards/shared exit codes; native ExitStack/closing own captures and handlers, and the shared SQLite guard owns fallback cleanup before session construction. Actual fresh-process failure/cancellation proves disposal once and original identity. The existing host snapshot/idempotence, deferred real Vercel export, repeated approved hook, exact conflict/invalid-setting leaves and task/subprocess timeouts remain. |
 | `tests/backend/test_migration_tooling.py` | `c3ebfdb6090b` | Reviewed/fixed: disposable migration admin/temporary engines now use guarded ownership, including setup before yield; six fault cases retain primary identity/cancellation and always dispose. Unversioned schema setup belongs to a fixture; expected payloads/URLs are immutable descriptions and native HTTP responses are fresh fixture-owned values. Real lifecycle keeps checksum, offline/online upgrade, idempotence, downgrade, schema and reference contracts. Historical private revision calls verify its exact frozen compatibility boundary. |
 | `tests/backend/test_openapi_contract.py` | `4d4c54f96fc4` | Reviewed/fixed: root derives from module-file metadata without filesystem work during import; committed schema input belongs to a fixture. Actual schema generation remains the act. All 18 public operations retain success/shared error refs and no native 422 public envelope. |
 | `tests/backend/test_operational_errors.py` | `325a496df6d8` | Reviewed/fixed: environment mappings are fresh fixture values from immutable descriptions. Backfill options are fixture-owned and RepairFailureScenario names all native error/probe/cause collaborators. Original empty-setting semantics, native failure/cancellation/interrupt, commit/rollback/close order, primary cause/notes and caller-specific smoke contracts retain their assertions. Pure values/expected pairs remain boundary data rather than resource dependency bundles. |

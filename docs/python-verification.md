@@ -1,5 +1,20 @@
 # Python verification
 
+The startup/ingestion checkpoint resolves the final two explicit inspected-test
+findings. Generated host mains own capture handlers and fallback SQLite engines;
+native failure/cancellation probes prove disposal once and original identity.
+Ingestion scenarios use immutable expected pairs, fresh native exceptions,
+fixture-owned invalid rows/identity SQL setup and named retained observations.
+All **60** compared test IDs are unchanged; focused nonintegration checks pass
+**44**, with 16 integrations deselected. Fresh migrated
+`tradevalue_test_logging05_startup_scenarios` passes **1,439 tests, zero skips**,
+**91.26%** aggregate coverage in **131.43 seconds**, with the **100%** API/calendar
+gate. Isolated units pass **1,389**, with 50 integrations deselected, in
+**113.45 seconds**. Static, package/export, migration/schema/API and ML gates pass.
+All 237 source digests match the re-reviewed ledger. Runtime role/interface,
+precise framework/historical/fault-double dispositions, hosted NonProd and final
+combined acceptance/release work remain; this checkpoint does not accept phase 7.
+
 The ongoing final semantic review is recorded source by source in
 [Python semantic audit checkpoint](python-semantic-audit.md). Its ML checkpoint
 separates command adapters from domain, repository, service and utility roles,

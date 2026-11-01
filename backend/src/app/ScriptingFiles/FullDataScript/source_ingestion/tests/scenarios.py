@@ -1,13 +1,15 @@
 """Frozen collaborator bundles for source-stage scenarios."""
 
 from dataclasses import dataclass
+from sqlalchemy import Engine
+from app.ScriptingFiles.FullDataScript.source_ingestion.domain import MoneyPuckSummary
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import (
     MoneyPuckSnapshot,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.domain import (
     NhlStatsSnapshot,
 )
-from typing import TypedDict
+from typing import Literal, TypedDict
 from pydantic import TypeAdapter
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import DataQualityReport
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
@@ -99,6 +101,22 @@ class IdentityRepositories:
 class RosterFeedScenario:
     nhl: FixedRosterFeed
     ahl: FixedRosterFeed
+
+
+type RetainedStage = Literal["capwages", "historical", "moneypuck"]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class RetainedStageScenario:
+    failed_stage: RetainedStage
+    events: list[str]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class RetainedMoneyPuckScenario:
+    database: Engine
+    first: MoneyPuckSummary
+    second: MoneyPuckSummary
 
 
 class MoneyPuckFixtureOptions(TypedDict):

@@ -14,21 +14,29 @@ class TestLoggingBootstrap:
         import json
         import logging
         import os
+        from contextlib import ExitStack, closing
         from io import StringIO
+        from app.shared.cli import ExitCode
         from app.shared.observability.domain import read_logging_settings
         from app.shared.observability.services import configure_logging
 
-        def main():
-            host_output = StringIO()
+        def main() -> int:
+            with ExitStack() as resources:
+                return exercise_host(resources)
+
+        def exercise_host(resources: ExitStack) -> int:
+            host_output = resources.enter_context(StringIO())
             root = logging.getLogger()
-            host_handler = logging.StreamHandler(host_output)
+            host_handler = resources.enter_context(closing(logging.StreamHandler(host_output)))
             root.addHandler(host_handler)
+            resources.callback(root.removeHandler, host_handler)
             host_logger = logging.getLogger("uvicorn.error")
             host_logger.addHandler(host_handler)
+            resources.callback(host_logger.removeHandler, host_handler)
             host_logger.propagate = False
             host_snapshot = (tuple(root.handlers), root.level, tuple(host_logger.handlers), host_logger.level, host_logger.propagate)
             settings = read_logging_settings(os.environ)
-            configure_logging(settings)
+            resources.enter_context(closing(configure_logging(settings)))
             first = logging.getHandlerByName("tradevalue.diagnostics")
             configure_logging(settings)
             assert first is logging.getHandlerByName("tradevalue.diagnostics")
@@ -42,21 +50,24 @@ class TestLoggingBootstrap:
             logging.getLogger("httpx").warning("secret URL", extra={"event": "secret"})
             host_logger.warning("host preserved")
             print(json.dumps({"host": host_output.getvalue(), "count": len(logging.getLogger("app").handlers)}))
-            return 0
+            return ExitCode.SUCCESS
 
-        raise SystemExit(main())
+        if __name__ == "__main__":
+            raise SystemExit(main())
     """)
     lifespan_script = dedent("""
         import json
         import logging
         import os
         import httpx
+        from contextlib import ExitStack
         from unittest.mock import patch
         import asyncio
-        from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
         import app.main
         from app.database import DatabaseResources
+        from app.shared.cli import ExitCode
+        from app.shared.tests.resources import open_sqlite_engine
         from app.shared.observability.tests.requests import parse_probe_number
 
         async def request_failure(application):
@@ -77,14 +88,18 @@ class TestLoggingBootstrap:
                         responses.append(await request_failure(application))
             return responses
 
-        def main():
+        def main() -> int:
+            with ExitStack() as resources:
+                return exercise_lifespans(resources)
+
+        def exercise_lifespans(resources: ExitStack) -> int:
             calls = []
             actual_create_app = app.main.create_app
             def build_resources(settings):
                 assert logging.getHandlerByName("tradevalue.diagnostics") is not None
                 assert settings.database_url == "postgresql://unused.invalid/tradevalue_test_startup"
                 calls.append(settings.environment.value)
-                engine = create_engine("sqlite://")
+                engine = resources.enter_context(open_sqlite_engine())
                 return DatabaseResources(engine=engine, sessions=sessionmaker(bind=engine))
             def build_application(*args, **kwargs):
                 return actual_create_app(*args, **kwargs, resource_factory=build_resources)
@@ -98,9 +113,10 @@ class TestLoggingBootstrap:
             responses = asyncio.run(run_lifespans(backend.index.app))
             assert dict(os.environ) == before
             print(json.dumps({"calls": calls, "handlers": len(logging.getLogger("app").handlers), "database": backend.index.app.state.database, "responses": responses}))
-            return 0
+            return ExitCode.SUCCESS
 
-        raise SystemExit(main())
+        if __name__ == "__main__":
+            raise SystemExit(main())
     """)
 
     @pytest.fixture(
@@ -203,17 +219,19 @@ class TestInvalidLoggingStartup:
         import logging
         from unittest.mock import patch
         from app.main import create_runtime_app
+        from app.shared.cli import ExitCode
         from app.shared.observability.domain import LoggingSettingsError
 
-        def main():
+        def main() -> int:
             with patch("app.main.get_database_settings", side_effect=AssertionError("database settings read")):
                 try:
                     create_runtime_app()
                 except LoggingSettingsError as error:
                     print(json.dumps({"field": error.field, "handler": logging.getHandlerByName("tradevalue.diagnostics") is not None}))
-            return 0
+            return ExitCode.SUCCESS
 
-        raise SystemExit(main())
+        if __name__ == "__main__":
+            raise SystemExit(main())
     """)
 
     @pytest.fixture(
@@ -258,30 +276,31 @@ class TestConfigurationOwnershipFailures:
     script = dedent("""
         import json
         import logging
+        from contextlib import closing
         from io import StringIO
+        from app.shared.cli import ExitCode
         from app.shared.observability.domain import LogLevel, LoggingSettings
         from app.shared.observability.services import configure_logging, LoggingOwnershipError, LoggingConfigurationConflictError
 
-        def main():
-            foreign = logging.StreamHandler(StringIO())
-            foreign.set_name("tradevalue.diagnostics")
-            try:
-                configure_logging(LoggingSettings())
-            except LoggingOwnershipError:
-                assert logging.getHandlerByName("tradevalue.diagnostics") is foreign
-                assert logging.getLogger("app").handlers == []
-            foreign.close()
-            configure_logging(LoggingSettings(), stream=StringIO())
-            first = logging.getHandlerByName("tradevalue.diagnostics")
-            try:
-                configure_logging(LoggingSettings(level=LogLevel.DEBUG))
-            except LoggingConfigurationConflictError:
-                assert first is logging.getHandlerByName("tradevalue.diagnostics")
-                assert logging.getLogger("app").level == logging.INFO
-                print(json.dumps({"handlers": len(logging.getLogger("app").handlers), "level": first.level}))
-            return 0
+        def main() -> int:
+            with StringIO() as foreign_output, closing(logging.StreamHandler(foreign_output)) as foreign:
+                foreign.set_name("tradevalue.diagnostics")
+                try:
+                    configure_logging(LoggingSettings())
+                except LoggingOwnershipError:
+                    assert logging.getHandlerByName("tradevalue.diagnostics") is foreign
+                    assert logging.getLogger("app").handlers == []
+            with StringIO() as output, closing(configure_logging(LoggingSettings(), stream=output)) as first:
+                try:
+                    configure_logging(LoggingSettings(level=LogLevel.DEBUG))
+                except LoggingConfigurationConflictError:
+                    assert first is logging.getHandlerByName("tradevalue.diagnostics")
+                    assert logging.getLogger("app").level == logging.INFO
+                    print(json.dumps({"handlers": len(logging.getLogger("app").handlers), "level": first.level}))
+            return ExitCode.SUCCESS
 
-        raise SystemExit(main())
+        if __name__ == "__main__":
+            raise SystemExit(main())
     """)
 
     @pytest.fixture

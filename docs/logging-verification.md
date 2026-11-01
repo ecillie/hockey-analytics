@@ -1505,3 +1505,59 @@ all 237 files retain inspection records. Other explicit test/host-program,
 runtime role/interface and exact framework/historical findings remain open,
 along with hosted NonProd mode/correlation and final acceptance/release
 promotion. No acceptance PR or production promotion is made by this checkpoint.
+
+## Startup ownership and ingestion scenario checkpoint
+
+Generated startup mains now use explicit module guards and shared exit codes.
+Native ExitStack/closing own host streams and handlers and unregister host/root
+attachments. Each SQLite engine enters the existing primary-preserving guard
+before session construction, providing fallback cleanup if the factory fails.
+Repeated lifespan work retains its timeout and the real Vercel entry import;
+the approved API lifespan logging hook and application runtime are unchanged.
+
+A temporary fresh-process probe injects RuntimeError and CancelledError during
+session construction. The preceding program performs **zero** disposals on each
+path; the current program performs **one**, preserving each original exception.
+The probe's final engine cleanup also closes the preceding unguarded resources.
+No permanent test merely duplicates the resource helper's existing regressions.
+
+Ingestion expected summaries are immutable pairs; stage results are fresh native
+dictionaries. Native command exceptions are constructed per fixture. Invalid-row
+and ambiguous-player SQL setup belongs to fixtures, including the unchanged
+precondition assertions. Named frozen retained-stage/MoneyPuck bindings replace
+positional collaborator bundles. Native event buffers and borrowed engines keep
+their actual fixture owners; domain summary values remain immutable. Existing
+retention, rollback, identity, typed-value and native parser assertions remain.
+
+Verification under Python 3.12.14:
+
+- All **60** compared ingestion/startup test IDs are unchanged. Focused
+  nonintegration checks pass **44**, with 16 integrations deselected, in
+  **3.48 seconds**. All 12 direct startup tests also passed before the combined run.
+- Fresh migrated `tradevalue_test_logging05_startup_scenarios`: **1,439 passed,
+  zero skips**, **91.26%** coverage in **131.43 seconds**, with **100%** API/calendar
+  coverage. Isolated units pass **1,389**, with 50 integrations deselected, in
+  **113.45 seconds**.
+- Locked sync, Ruff lint/format, ty, structural scope, dependency exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke,
+  clean API/Vercel/ML artifact installs/exclusions and committed-model gates pass.
+- Three dispositions were re-reviewed; all **237** source digests match. No new
+  prohibited forms or comments were added. Installed runtime, public HTTP schema,
+  frontend and committed model inputs remain unchanged. A final combined image
+  and hosted NonProd acceptance remain required.
+
+Evidence uses `/private/tmp/tradevalue-logging05-startup-scenarios-` prefixes:
+`checks.sh`/`checks.txt`, `pytest.txt`, `units.txt`, `schema.json`, `packages.txt`,
+`direct.txt`, `before-nodes.txt`/`after-nodes.txt`, `before-ids.txt`/`after-ids.txt`,
+`fault.py` and `fault-{before,after}-{error,cancelled}.txt`. The reused verification
+script initially retained the preceding HTTP checkpoint's output filenames;
+the current pytest/unit/schema artifacts were copied to these checkpoint paths
+and the script paths corrected after completion. Those three older transcripts
+are superseded by this run; their preceding recorded results remain historical.
+HTTP correlation and false-stopped mutation artifacts were not overwritten.
+
+The explicit inspected-test arrangement/host-ownership findings are now resolved.
+Runtime role/interface work and precise framework, historical migration and
+native fault-double dispositions remain, along with hosted NonProd correlation,
+final combined acceptance and release promotion. No acceptance PR or production
+promotion is made by this checkpoint.

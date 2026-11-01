@@ -53,6 +53,8 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.tests.responses import (
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.scenarios import (
     RosterFeedScenario,
     MoneyPuckFixtureOptions,
+    RetainedStageScenario,
+    RetainedMoneyPuckScenario,
 )
 
 FIXTURES = Path(__file__).parent.joinpath("fixtures", "ingestion")
@@ -157,10 +159,34 @@ class TestRequiredFieldsAndSeasonTypeValidation:
             )
 
 
-def test_validation_rejects_empty_inputs_and_schema_drift():
+@pytest.fixture
+def empty_validation_rows():
+    return []
+
+
+@pytest.fixture
+def fractional_games_rows():
+    return [
+        {
+            "playerId": "1",
+            "season": "2025",
+            "name": "A Player",
+            "games_played": "10.5",
+        }
+    ]
+
+
+@pytest.fixture
+def missing_name_rows():
+    return [{"playerId": "1", "season": "2025"}]
+
+
+def test_validation_rejects_empty_inputs_and_schema_drift(
+    empty_validation_rows, fractional_games_rows, missing_name_rows
+):
     with pytest.raises(ingestion.IngestionValidationError, match="no rows"):
         ingestion.validate_and_deduplicate_rows(
-            [],
+            empty_validation_rows,
             source="fixture",
             required_fields=("playerId",),
             grain_fields=("playerId",),
@@ -170,14 +196,7 @@ def test_validation_rejects_empty_inputs_and_schema_drift():
         ingestion.IngestionValidationError, match="games_played must be"
     ):
         ingestion.validate_and_deduplicate_rows(
-            [
-                {
-                    "playerId": "1",
-                    "season": "2025",
-                    "name": "A Player",
-                    "games_played": "10.5",
-                }
-            ],
+            fractional_games_rows,
             source="fixture",
             required_fields=("playerId", "season", "name", "games_played"),
             grain_fields=("playerId", "season"),
@@ -187,7 +206,7 @@ def test_validation_rejects_empty_inputs_and_schema_drift():
         ingestion.IngestionValidationError, match="missing required columns: name"
     ):
         ingestion.validate_and_deduplicate_rows(
-            [{"playerId": "1", "season": "2025"}],
+            missing_name_rows,
             source="fixture",
             required_fields=("playerId", "season", "name"),
             grain_fields=("playerId", "season"),
@@ -295,17 +314,29 @@ class TestValueCoercionContractMoneyAndCapwagesPlayerParsing:
             parse_active_players([capwages_row], minimum_rows=2)
 
 
-def test_cross_field_stat_invariants_reject_inconsistent_rows():
+@pytest.fixture
+def inconsistent_skater_row():
+    return {"playerId": 1, "goals": 2, "assists": 3, "points": 99}
+
+
+@pytest.fixture
+def inconsistent_goalie_row():
+    return {"playerId": 2, "shotsAgainst": 20, "saves": 18, "goalsAgainst": 3}
+
+
+def test_cross_field_stat_invariants_reject_inconsistent_rows(
+    inconsistent_skater_row, inconsistent_goalie_row
+):
     with pytest.raises(ingestion.IngestionValidationError, match="points must equal"):
         ingestion.validate_stat_invariants(
             "skater",
-            {"playerId": 1, "goals": 2, "assists": 3, "points": 99},
+            inconsistent_skater_row,
             source="fixture",
         )
     with pytest.raises(ingestion.IngestionValidationError, match="shotsAgainst"):
         ingestion.validate_stat_invariants(
             "goalie",
-            {"playerId": 2, "shotsAgainst": 20, "saves": 18, "goalsAgainst": 3},
+            inconsistent_goalie_row,
             source="fixture",
         )
 
@@ -334,13 +365,18 @@ class TestNhlApiParserRejectsSchemaDrift:
 
 
 class TestRetainedSnapshots:
-    expected = {"players": 600, "contracts": 500, "contract_seasons": 900, "cached": 1}
-    historical = {
-        "total_player_seasons": 100,
-        "covered_player_seasons": 100,
-        "missing_player_seasons": 0,
-        "cached": 1,
-    }
+    expected = (
+        ("players", 600),
+        ("contracts", 500),
+        ("contract_seasons", 900),
+        ("cached", 1),
+    )
+    historical = (
+        ("total_player_seasons", 100),
+        ("covered_player_seasons", 100),
+        ("missing_player_seasons", 0),
+        ("cached", 1),
+    )
 
     @pytest.fixture(
         params=[
@@ -399,13 +435,15 @@ class TestRetainedSnapshots:
             (
                 ingestion,
                 "load_capwages_summary",
-                StageOutcome(result=self.expected, name="active-cache", events=events),
+                StageOutcome(
+                    result=dict(self.expected), name="active-cache", events=events
+                ),
             ),
             (
                 capspace,
                 "ingest_historical_contracts",
                 StageOutcome(
-                    result=self.historical,
+                    result=dict(self.historical),
                     failure=RuntimeError("CapSpace down")
                     if request.param == "historical"
                     else None,
@@ -417,7 +455,7 @@ class TestRetainedSnapshots:
                 capspace,
                 "load_historical_contract_summary",
                 StageOutcome(
-                    result=self.historical, name="historical-cache", events=events
+                    result=dict(self.historical), name="historical-cache", events=events
                 ),
             ),
             (
@@ -428,60 +466,58 @@ class TestRetainedSnapshots:
         )
         for module, name, stage in stages:
             monkeypatch.setattr(module, name, stage)
-        return request.param, events
+        return RetainedStageScenario(failed_stage=request.param, events=events)
 
     def test_only_contract_failures_can_retain_the_last_good_snapshot(self, stages):
-        failed_stage, events = stages
-        if failed_stage == "moneypuck":
+        if stages.failed_stage == "moneypuck":
             with pytest.raises(RuntimeError, match="bad stats"):
                 ingestion.run_all()
-            assert events == ["init", "session", "moneypuck"]
+            assert stages.events == ["init", "session", "moneypuck"]
             return
         result = ingestion.run_all()
-        assert result["historical_contracts"] == self.historical
+        assert result["historical_contracts"] == dict(self.historical)
         assert result["schedule"] == {"games": 10}
-        if failed_stage == "capwages":
-            assert result["capwages"] == self.expected
-            assert "active-cache" in events
-        if failed_stage == "historical":
-            assert "historical-cache" in events
+        if stages.failed_stage == "capwages":
+            assert result["capwages"] == dict(self.expected)
+            assert "active-cache" in stages.events
+        if stages.failed_stage == "historical":
+            assert "historical-cache" in stages.events
 
 
 @pytest.mark.usefixtures("isolate_command_logging")
 class TestRosterCommandStatuses:
-    summary = {
-        "statuses_updated": 1,
-        "active_count": 1,
-        "minors_count": 0,
-        "ltir_count": 0,
-        "unknown_count": 0,
-        "preserved_count": 0,
-    }
+    summary = (
+        ("statuses_updated", 1),
+        ("active_count", 1),
+        ("minors_count", 0),
+        ("ltir_count", 0),
+        ("unknown_count", 0),
+        ("preserved_count", 0),
+    )
 
     @pytest.fixture(
         params=[
-            pytest.param((None, 0), id="complete"),
-            pytest.param(
-                (
-                    populate_roster_status.IncompleteRosterFeedError(
-                        errors=("partial",)
-                    ),
-                    2,
-                ),
-                id="incomplete",
-            ),
-            pytest.param((RuntimeError("database unavailable"), 1), id="failed"),
+            pytest.param(("complete", 0), id="complete"),
+            pytest.param(("incomplete", 2), id="incomplete"),
+            pytest.param(("failed", 1), id="failed"),
         ]
     )
     def status(self, request, monkeypatch):
-        failure, status = request.param
+        mode, status = request.param
+        failure = None
+        if mode == "incomplete":
+            failure = populate_roster_status.IncompleteRosterFeedError(
+                errors=("partial",)
+            )
+        if mode == "failed":
+            failure = RuntimeError("database unavailable")
         monkeypatch.setattr(
             populate_roster_status, "init_db", StageOutcome(result=None)
         )
         monkeypatch.setattr(
             populate_roster_status,
             "sync_roster_status",
-            StageOutcome(result=self.summary, failure=failure),
+            StageOutcome(result=dict(self.summary), failure=failure),
         )
         return status
 
@@ -490,14 +526,18 @@ class TestRosterCommandStatuses:
 
 
 class TestMoneypuckIngestionIsIdempotentDeduplicatedAndUpdatesTypedValues:
-    expected_common = {
-        "players": 2,
-        "skater": 2,
-        "goalie": 2,
-        "records_read": 5,
-        "records_skipped": 1,
-        "reconciliation_policy": "retain_missing",
-    }
+    expected_common = (
+        ("players", 2),
+        ("skater", 2),
+        ("goalie", 2),
+        ("records_read", 5),
+        ("records_skipped", 1),
+        ("reconciliation_policy", "retain_missing"),
+    )
+
+    @pytest.fixture
+    def expected(self):
+        return dict(self.expected_common)
 
     @pytest.fixture
     def scenario(self):
@@ -518,15 +558,13 @@ class TestMoneypuckIngestionIsIdempotentDeduplicatedAndUpdatesTypedValues:
 
     @pytest.mark.integration
     def test_moneypuck_ingestion_is_idempotent_deduplicated_and_updates_typed_values(
-        self, scenario, migrated_database, initial_session, updated_session
+        self, scenario, migrated_database, initial_session, updated_session, expected
     ):
         options = scenario
         first = ingestion.ingest_moneypuck(initial_session, **options)
         second = ingestion.ingest_moneypuck(updated_session, **options)
-        assert {key: first[key] for key in self.expected_common} == self.expected_common
-        assert {
-            key: second[key] for key in self.expected_common
-        } == self.expected_common
+        assert {key: first[key] for key in expected} == expected
+        assert {key: second[key] for key in expected} == expected
         assert (first["records_created"], first["records_updated"]) == (4, 0)
         assert (second["records_created"], second["records_updated"]) == (0, 4)
 
@@ -647,15 +685,19 @@ class TestFailedIngestionRollsBackPlayersTeamsAndStats:
 
 
 class TestContractAndSalaryCapIngestionIsIdempotentAndUpserts:
-    expected_common = {
-        "players": 1,
-        "contracts": 1,
-        "contract_seasons": 1,
-        "profile_failures": 0,
-        "records_read": 3,
-        "records_skipped": 0,
-        "reconciliation_policy": "retain_missing",
-    }
+    expected_common = (
+        ("players", 1),
+        ("contracts", 1),
+        ("contract_seasons", 1),
+        ("profile_failures", 0),
+        ("records_read", 3),
+        ("records_skipped", 0),
+        ("reconciliation_policy", "retain_missing"),
+    )
+
+    @pytest.fixture
+    def expected(self):
+        return dict(self.expected_common)
 
     @pytest.fixture
     def initial_session(self):
@@ -667,15 +709,13 @@ class TestContractAndSalaryCapIngestionIsIdempotentAndUpserts:
 
     @pytest.mark.integration
     def test_contract_and_salary_cap_ingestion_is_idempotent_and_upserts(
-        self, migrated_database, initial_session, updated_session
+        self, migrated_database, initial_session, updated_session, expected
     ):
 
         first = ingestion.ingest_capwages(initial_session, minimum_players=1)
         second = ingestion.ingest_capwages(updated_session, minimum_players=1)
-        assert {key: first[key] for key in self.expected_common} == self.expected_common
-        assert {
-            key: second[key] for key in self.expected_common
-        } == self.expected_common
+        assert {key: first[key] for key in expected} == expected
+        assert {key: second[key] for key in expected} == expected
         assert (first["records_created"], first["records_updated"]) == (2, 0)
         assert (second["records_created"], second["records_updated"]) == (0, 2)
 
@@ -755,13 +795,17 @@ class TestContractRejectsNoncontiguousYearsAndImpossibleCapHit:
 
 
 class TestNhlStatsAreDeduplicatedIdempotentAndRetainMissingRows:
-    expected_common = {
-        "skater": 2,
-        "goalie": 2,
-        "records_read": 8,
-        "records_skipped": 4,
-        "reconciliation_policy": "retain_missing",
-    }
+    expected_common = (
+        ("skater", 2),
+        ("goalie", 2),
+        ("records_read", 8),
+        ("records_skipped", 4),
+        ("reconciliation_policy", "retain_missing"),
+    )
+
+    @pytest.fixture
+    def expected(self):
+        return dict(self.expected_common)
 
     @pytest.fixture
     def initial_factory(self):
@@ -773,7 +817,7 @@ class TestNhlStatsAreDeduplicatedIdempotentAndRetainMissingRows:
 
     @pytest.mark.integration
     def test_nhl_stats_are_deduplicated_idempotent_and_retain_missing_rows(
-        self, migrated_database, initial_factory, updated_factory
+        self, migrated_database, initial_factory, updated_factory, expected
     ):
 
         first = ingestion.ingest_nhl_stats(
@@ -782,10 +826,8 @@ class TestNhlStatsAreDeduplicatedIdempotentAndRetainMissingRows:
         second = ingestion.ingest_nhl_stats(
             first_season=2025, last_season=2025, client_factory=updated_factory
         )
-        assert {key: first[key] for key in self.expected_common} == self.expected_common
-        assert {
-            key: second[key] for key in self.expected_common
-        } == self.expected_common
+        assert {key: first[key] for key in expected} == expected
+        assert {key: second[key] for key in expected} == expected
         assert (first["records_created"], first["records_updated"]) == (4, 0)
         assert (second["records_created"], second["records_updated"]) == (0, 4)
         with migrated_database.connect() as connection:
@@ -936,9 +978,9 @@ class TestCrossSourceIdentityUsesExternalIdAndAvoidsAmbiguousNames:
     def contract_session(self):
         return CapWagesSession(player_name="Fixture Skater")
 
-    @pytest.mark.integration
-    def test_cross_source_identity_uses_external_id_and_avoids_ambiguous_names(
-        self, scenario, migrated_database, puck_session, nhl_factory, contract_session
+    @pytest.fixture
+    def ambiguous_identity_database(
+        self, scenario, migrated_database, puck_session, nhl_factory
     ):
         options = scenario
         ingestion.ingest_moneypuck(puck_session, **options)
@@ -967,8 +1009,14 @@ class TestCrossSourceIdentityUsesExternalIdAndAvoidsAmbiguousNames:
             """)
             )
 
+        return migrated_database
+
+    @pytest.mark.integration
+    def test_cross_source_identity_uses_external_id_and_avoids_ambiguous_names(
+        self, ambiguous_identity_database, contract_session
+    ):
         ingestion.ingest_capwages(contract_session, minimum_players=1)
-        with migrated_database.connect() as connection:
+        with ambiguous_identity_database.connect() as connection:
             assert (
                 connection.execute(text("SELECT count(*) FROM players")).scalar_one()
                 == 4
@@ -1218,16 +1266,17 @@ class TestRetainedMoneyPuckRows:
             repository=repository,
             options=source_puck_options,
         ).ingest()
-        return migrated_database, first, second
+        return RetainedMoneyPuckScenario(
+            database=migrated_database, first=first, second=second
+        )
 
     def test_absent_stat_rows_and_external_identity_are_retained(self, results):
-        database, first, second = results
         assert (
-            first.counts.records_created,
-            second.counts.records_created,
-            second.counts.records_updated,
+            results.first.counts.records_created,
+            results.second.counts.records_created,
+            results.second.counts.records_updated,
         ) == (5, 0, 4)
-        with database.connect() as connection:
+        with results.database.connect() as connection:
             assert (
                 connection.execute(
                     text("SELECT count(*) FROM skater_advanced_season_stats")
