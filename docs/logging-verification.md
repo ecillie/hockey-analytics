@@ -725,3 +725,58 @@ resolving both paths corrected that assertion. Final transcript:
 `/private/tmp/tradevalue-logging05-packages.txt`. Full combined checks have started
 against new disposable database `tradevalue_test_logging05_candidate`; their
 results and the final semantic audit remain pending.
+
+## Phase 5 combined gates and hosted configuration boundary
+
+Published dependency-fix checkpoint `80bde1a692f0c9d3a168281440c6cae8c3869e6e`
+on the acceptance branch without opening a PR. Its automatic backend preview is
+`dpl_31FEto4YJHcMtWbfiqdeqeZd6TWc`. The build passed in 12 seconds; invoking
+`/docs` still returned platform `FUNCTION_INVOCATION_FAILED`. Runtime Logs now
+contain application `service.startup_failed` CRITICAL JSON, safe type/frame-only
+ConfigurationError/ValueError chains, matching release metadata and a sanitized
+Uvicorn dependency record. The missing workspace distribution failure is gone.
+The later platform `vc_handler` import error follows the failed application
+startup; it is not evidence that the dependency fix alone completes runtime
+acceptance. No successful hosted request or DEBUG acceptance is claimed.
+
+Read-only project settings explain the remaining startup failure: `ENV` exists
+only in Production; only `PROD_DATABASE_URL` appears for Production and Preview.
+No database values were revealed. An approved NonProd target or branch-scoped
+`ENV=nonprod` and `NONPROD_DATABASE_URL` has been requested. Those dependent hosted
+checks remain pending; no production secret, permission or selector was changed.
+The dashboard identifies a Hobby plan, authenticated log access is available to
+`ecillie`, and observed startup entries were bucketed as Info despite correct
+application ERROR/CRITICAL fields. The runbook records this limitation and the
+current primary-source retention and sink policies without claiming a paid drain,
+extended retention, complete role audit or measured limit exhaustion.
+
+Completed local combined gates on Python **3.12.14**, 2026-11-01:
+
+- Locked all-group sync, Ruff lint/format, ty, structural rules, dependency
+  exports, OpenAPI, linear migrations, preflight, fresh schema migration/snapshot
+  and API smoke all passed.
+- Fresh database `tradevalue_test_logging05_candidate`: **1,205 passed, zero
+  skips**, **90.58%** aggregate coverage in **132.78 seconds**. The service/API/
+  calendar selection remains **100%**. Isolated units passed **1,155**, with 50
+  integration tests deselected, in **110.95 seconds**. The committed ML gate and
+  all API/ML/Vercel clean-install package checks passed.
+- Rebuilt production image `tradevalue-logging05:verified` ran as UID 10001
+  against separate fresh database `tradevalue_test_logging05_probe`. INFO/JSON
+  and DEBUG/text each passed six real HTTP/streaming flows, captured **15 / 22**
+  events, exact request-ID/CORS/body/status checks, single unexpected/streaming
+  error ownership, bounded safe records and graceful exit **0**. Invalid startup
+  produced one sanitized CRITICAL event and exit **3**. Probe containers were
+  removed; both pre-existing PostgreSQL containers remain intact.
+
+Transcripts use `/private/tmp/tradevalue-logging05-` prefixes; image captures are
+under `/private/tmp/tradevalue-logging05-capture` with the reused verifier's
+phase-2 basenames inside that separate directory. The complete commands are in
+`tradevalue-logging05-checks.sh` and `tradevalue-logging05-image-checks.sh` there.
+Frontend phase-4 evidence still applies: no frontend changes were made after its
+verified and merged head. The final full semantic review is tracked file by file
+in [Python semantic audit checkpoint](python-semantic-audit.md), which currently
+records 18 empty modules and 20 inspected nonempty sources while explicitly
+retaining unresolved dispositions and all other files as pending. These passing
+gates do not substitute for that review or the remaining hosted checks. Phase 5
+and release acceptance remain incomplete; the existing release-to-Prod PR stays
+under normal checks and manual approval.
