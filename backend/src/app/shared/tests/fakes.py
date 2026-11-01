@@ -129,8 +129,8 @@ class MigrationConnection:
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class MigrationBind:
-    connection: MigrationConnection
+class MigrationBind[C]:
+    connection: C
 
 
 type SmokeResponse = tuple[int, object, str]

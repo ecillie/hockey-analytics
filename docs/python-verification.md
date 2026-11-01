@@ -1,5 +1,30 @@
 # Python verification
 
+## Current owner decisions
+
+On 2026-11-01 the owner explicitly approved the exact F1/F2/T1 boundaries in
+the [semantic audit](python-semantic-audit.md#exact-owner-decisions-awaiting-response):
+Vercel's native app/settings bootstrap, Alembic's loader bootstrap/success
+return, and the listed source-only native fault operations. The approved API
+lifespan logging hook remains unchanged. These approvals grant no additional
+library import/configuration or production-policy exceptions.
+
+The owner subsequently authorized the H1 Python patch. It is applied on the
+follow-up branch with frozen SQL, revision metadata and schema checksum
+unchanged. Verification covers import purity, typed checksum errors,
+primary-preserving cursor cleanup and the actual direct-script entry point.
+Earlier checkpoints below retain their historical validation results.
+
+The applied H1 patch passes **1,605 tests, zero skips**, **91.85%** aggregate
+coverage and **100%** API/calendar coverage on fresh migrated disposable
+PostgreSQL. Separate no-database units pass **1,555**, with 50 integration cases
+deselected. All required static/export/OpenAPI/schema/API/model/package checks
+pass. A fresh migration-only environment also passes direct history validation,
+empty upgrade, no-op upgrade, downgrade/re-upgrade, catalog checks and API smoke.
+Generated offline SQL is byte-identical to the original. The installed shared
+checksum helper is explicitly imported from a clean API wheel. All **248**
+current Python source digests match their reviewed dispositions.
+
 The active-write/team-stint checkpoint resolves those remaining context/role
 findings. Immutable write values carry resolved scalar team IDs; compatibility
 writer calls retain exact SQL/bindings/outcomes in **216** contract and **24**

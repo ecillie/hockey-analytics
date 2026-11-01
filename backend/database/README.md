@@ -81,6 +81,12 @@ history can round-trip on disposable PostgreSQL, and the resulting catalog
 matches the committed snapshot. CI also publishes the offline upgrade SQL and
 actual catalog snapshots as migration diagnostics.
 
+Owner-approved exception, 2026-11-01: revision `20260910_0001` may receive the
+reviewed Python-only fixes for import-pure path metadata, typed checksum
+validation and primary-preserving cursor cleanup. Its frozen schema SQL,
+checksum and revision identifiers must remain unchanged. This permission does
+not extend to other applied revisions or to schema/data changes.
+
 ## Adopting an existing database
 
 An existing database created from the original `schema.sql` has no
