@@ -2,9 +2,21 @@
 
 import logging
 import sys
+from starlette.types import Scope
 
 from app.shared.observability.domain import LogLevel, LoggingSettings
 from app.shared.observability.formatting import SafeFormatter
+from app.shared.observability.errors import (
+    LoggingOwnershipError,
+    LoggingConfigurationConflictError,
+)
+from app.shared.observability.policy import (
+    ReportedRequestFilter,
+    RequestFailureFilter,
+    LifecycleReportFilter,
+)
+from app.shared.observability.util import build_request_fields, get_request_context
+from app.shared.cleanup import retain_cleanup_failure
 from app.shared.observability.sinks import (
     DiagnosticStream,
     SafeStream,
@@ -12,24 +24,30 @@ from app.shared.observability.sinks import (
 )
 
 
-class LoggingOwnershipError(RuntimeError):
-    def __init__(self, *, name: str) -> None:
-        super().__init__(
-            f"Diagnostic handler name {name} is already owned by another configuration"
-        )
-        self.name = name
+logger = logging.getLogger(__name__)
 
 
-class LoggingConfigurationConflictError(RuntimeError):
-    def __init__(self) -> None:
-        super().__init__(
-            "Logging settings changed within one process; restart to apply new settings"
-        )
+def retain_lifespan_cleanup(primary: BaseException, cleanup: BaseException) -> None:
+    retain_cleanup_failure(primary, cleanup)
+    try:
+        primary.__dict__["tradevalue_cleanup"] = cleanup
+    except Exception:
+        pass
+
+
+def report_request_error(scope: Scope, error: Exception) -> None:
+    fields: dict[str, object] = {"event": "request.failed"}
+    context = get_request_context(scope)
+    if context is not None:
+        fields.update(build_request_fields(scope, context))
+    logger.error("Request failed", exc_info=error, extra=fields)
+    if context is not None:
+        scope["state"]["request_error_reported"] = context.request_id
 
 
 def configure_logging(
     settings: LoggingSettings, *, stream: DiagnosticStream | None = None
-) -> None:
+) -> logging.Handler:
     stream = sys.stderr if stream is None else stream
     name = "tradevalue.diagnostics"
     handler = logging.getHandlerByName(name)
@@ -42,7 +60,9 @@ def configure_logging(
         raise LoggingOwnershipError(name=name)
     if handler.formatter.settings != settings:
         raise LoggingConfigurationConflictError()
-    handler.setStream(SafeStream(stream=stream, format=settings.format))
+    handler.setStream(
+        SafeStream(stream=stream, format=settings.format, minimum_level=settings.level)
+    )
     application_names = ("app", "backend", "ml", "__main__")
     dependency_names = ("sqlalchemy", "httpx", "httpcore", "urllib3", "requests")
     for namespace in application_names + dependency_names:
@@ -54,3 +74,37 @@ def configure_logging(
         )
         target.addHandler(handler)
         target.propagate = False
+    return handler
+
+
+def configure_api_host_logging(
+    settings: LoggingSettings, handler: logging.Handler
+) -> None:
+    host = logging.getLogger("uvicorn")
+    errors = logging.getLogger("uvicorn.error")
+    if len(host.handlers) == 0:
+        host.addHandler(handler)
+    for existing in tuple(host.handlers) + tuple(errors.handlers):
+        existing.setLevel(settings.level)
+        existing.setFormatter(SafeFormatter(settings=settings))
+        if isinstance(existing, logging.StreamHandler) and not isinstance(
+            existing.stream, SafeStream
+        ):
+            existing.setStream(
+                SafeStream(
+                    stream=existing.stream,
+                    format=settings.format,
+                    minimum_level=settings.level,
+                )
+            )
+    host.setLevel(settings.level)
+    host.propagate = False
+    errors.setLevel(min(logging.ERROR, settings.level))
+    errors.propagate = len(errors.handlers) == 0
+    if not any(isinstance(item, ReportedRequestFilter) for item in errors.filters):
+        errors.addFilter(ReportedRequestFilter())
+    if not any(isinstance(item, RequestFailureFilter) for item in errors.filters):
+        errors.addFilter(RequestFailureFilter())
+    if not any(isinstance(item, LifecycleReportFilter) for item in errors.filters):
+        errors.addFilter(LifecycleReportFilter())
+    logging.getLogger("uvicorn.access").disabled = True

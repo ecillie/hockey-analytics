@@ -43,6 +43,14 @@ class ApiSettings:
     cors_origin_regex: str | None = None
 
 
+type EnvironmentSnapshot = tuple[tuple[str, str], ...]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class DatabaseEnvironment:
+    values: EnvironmentSnapshot = field(repr=False)
+
+
 def load_environment(*, env_file: Path | None = None) -> dict[str, str]:
     exported = dict(os.environ)
     selected = (

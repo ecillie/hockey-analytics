@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import re
+from collections.abc import Mapping
 from types import TracebackType
 from typing import Literal
 
@@ -16,6 +17,8 @@ from app.shared.observability.domain import (
     RecordLimits,
 )
 from app.shared.observability.policy import find_record_limits_violation
+from app.shared.observability.schemas import LifecycleReport, read_lifecycle_report
+from app.shared.observability.util import read_cleanup_failure, read_request_failure
 
 
 type DiagnosticFields = dict[str, object]
@@ -61,6 +64,7 @@ def collect_exceptions(
     errors: list[DiagnosticFields] = []
     seen: set[int] = set()
     current: BaseException | None = error
+    cleanup = read_cleanup_failure(error)
     while (
         current is not None
         and id(current) not in seen
@@ -78,12 +82,20 @@ def collect_exceptions(
         following = current.__cause__
         if following is None and not current.__suppress_context__:
             following = current.__context__
+        if following is None and cleanup is not None and id(cleanup) not in seen:
+            following, cleanup = cleanup, None
         current = following
     return DiagnosticCollection(items=tuple(errors), truncated=current is not None)
 
 
 def collect_context(
     record: logging.LogRecord, limits: RecordLimits
+) -> DiagnosticFields:
+    return sanitize_context(record.__dict__, limits)
+
+
+def sanitize_context(
+    values: Mapping[str, object], limits: RecordLimits
 ) -> DiagnosticFields:
     identifiers = (
         "request_id",
@@ -106,11 +118,20 @@ def collect_context(
         "rolled_back",
     )
     context: DiagnosticFields = {}
+    if "route" in values:
+        route = values["route"]
+        context["route"] = (
+            route
+            if type(route) is str
+            and len(route) <= limits.string_characters
+            and re.fullmatch(r"/[a-zA-Z0-9_{}:./-]*", route) is not None
+            else "invalid"
+        )
     for key in identifiers:
-        if key in record.__dict__:
-            context[key] = safe_identifier(record.__dict__[key], limits)
+        if key in values:
+            context[key] = safe_identifier(values[key], limits)
     for key in numbers:
-        value = record.__dict__.get(key)
+        value = values.get(key)
         if (
             isinstance(value, (int, float))
             and type(value) in (int, float)
@@ -128,17 +149,42 @@ def encode_diagnostic(payload: DiagnosticFields, format: LogFormat) -> str:
     return "event " + rendered if format is LogFormat.TEXT else rendered
 
 
-def render_failure_diagnostic(event: DiagnosticFailure, format: LogFormat) -> str:
-    return encode_diagnostic(
-        {
-            "timestamp": datetime.now(UTC).isoformat(),
-            "severity": "ERROR",
-            "event": event,
-            "logger": "logging.safe",
-            "message": event.replace(".", " ").replace("_", " "),
-        },
-        format,
+def render_failure_diagnostic(
+    event: DiagnosticFailure, format: LogFormat, severity: LogLevel = LogLevel.ERROR
+) -> str:
+    timestamp = "1970-01-01T00:00:00+00:00"
+    unavailable = "true"
+    try:
+        candidate = datetime.now(UTC).isoformat()
+        if (
+            type(candidate) is str
+            and len(candidate) <= 40
+            and re.fullmatch(
+                r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?\+00:00",
+                candidate,
+            )
+            is not None
+        ):
+            timestamp, unavailable = candidate, "false"
+    except Exception:
+        pass
+    event = (
+        "logging.sink_failed"
+        if type(event) is str and event == "logging.sink_failed"
+        else "logging.format_failed"
     )
+    severity = severity if isinstance(severity, LogLevel) else LogLevel.ERROR
+    message = (
+        "Diagnostic delivery failed"
+        if event == "logging.sink_failed"
+        else "Diagnostic formatting failed"
+    )
+    rendered = (
+        f'{{"timestamp":"{timestamp}","timestamp_unavailable":{unavailable},'
+        f'"severity":"{severity.name}","event":"{event}",'
+        f'"logger":"logging.safe","message":"{message}"}}'
+    )
+    return "event " + rendered if format is LogFormat.TEXT else rendered
 
 
 def is_application_record(record: logging.LogRecord) -> bool:
@@ -159,6 +205,7 @@ def render_bounded_diagnostic(
         (
             "exceptions",
             "exceptions_truncated",
+            "route",
             "source",
             "stage",
             "outcome",
@@ -195,8 +242,13 @@ class SafeFormatter(logging.Formatter):
         try:
             return self.render_record(record)
         except Exception:
+            severity = LogLevel.ERROR
+            try:
+                severity = LogLevel(max(record.levelno, logging.ERROR))
+            except Exception:
+                pass
             return render_failure_diagnostic(
-                "logging.format_failed", self.settings.format
+                "logging.format_failed", self.settings.format, severity
             )
 
     def render_record(self, record: logging.LogRecord) -> str:
@@ -217,6 +269,34 @@ class SafeFormatter(logging.Formatter):
             "logger": safe_identifier(record.name, limits),
             "message": event.replace(".", " "),
         }
+        if failure := read_request_failure(record):
+            payload.update(sanitize_context(failure.fields, limits))
+            payload.update(
+                {
+                    "event": failure.event,
+                    "severity": failure.level.name,
+                    "message": failure.event.replace(".", " ").capitalize(),
+                }
+            )
+        report = record.__dict__.get("lifecycle_report")
+        report = (
+            report
+            if isinstance(report, LifecycleReport)
+            else read_lifecycle_report(record)
+        )
+        if report is not None:
+            payload.update(
+                {
+                    "event": report.event,
+                    "severity": report.level.name,
+                    "logger": "app.shared.observability.lifecycle",
+                    "message": report.event.replace(".", " ").replace("_", " "),
+                    "exceptions": tuple(
+                        item.model_dump() for item in report.exceptions
+                    ),
+                    "exceptions_truncated": report.exceptions_truncated,
+                }
+            )
         if self.settings.environment in ("dev", "nonprod", "prod"):
             payload["environment"] = self.settings.environment
         release = self.settings.release
