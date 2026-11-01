@@ -1,166 +1,91 @@
 # Hockey Analytics
 
-An NHL analytics project for collecting player and contract data, modeling player value, and translating performance into fair salary-cap value.
+An NHL analytics app for exploring player performance, contracts, teams, and
+estimated salary-cap value. Data comes from the NHL, MoneyPuck, CapWages,
+CapSpace, and AHL HockeyTech/LeagueStat feeds.
 
-## Current Focus
+The stack is React 19, TypeScript, Vite, FastAPI, PostgreSQL, and Python ML tools.
+Use Python 3.12, uv 0.13.1, and Node.js 24.
 
-The project is currently building the data foundation for future NHL analytics features, including:
+## Start the frontend
 
-* NHL player data
-* Player statistics
-* Contracts and cap hits
-* NHL / AHL roster status
-* LTIR tracking
-* Salary-cap calculations
-* Future player-value models
-
-## Data Sources
-
-Current and planned sources include:
-
-* NHL
-* MoneyPuck
-* CapWages
-* AHL HockeyTech / LeagueStat
-
-The project prioritizes free or publicly available data sources.
-
-## Tech Stack
-
-* Python
-* PostgreSQL
-* pytest
-* GitHub Actions
-* React 19
-* TypeScript
-* Vite
-* TypeScript
-* React Router
-
-## Project Structure
-
-```text
-Hockey-Analytics/
-├── .github/
-│   └── workflows/
-├── backend/
-│   ├── app/
-│   ├── database/
-│   └── tests/
-├── frontend/
-│   ├── src/api/
-│   ├── components/
-│   ├── mocks/
-│   └── pages/
-├── ml/
-└── README.md
-```
-
-## Running the Frontend
-
-The frontend currently uses realistic mock valuation data and does not require the backend or database.
+The frontend uses mock data by default and can run without the API or database.
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-Create a production build with `npm run build` and run lint with `npm run lint`.
-Browser diagnostics appear as structured JSON strings in the browser console.
-Application logging is disabled when `ENV=nonprod` or `ENV=prod`, including
-ERROR and CRITICAL records. `ENV=dev` retains the configured severity. Backend
-commands and the approved API lifespan hook apply this rule before output.
-Frontend builds read the same `ENV` value at build time; rebuild after changing
-it. Only the recognized environment name is exposed to the browser.
-`VITE_LOG_LEVEL` defaults to `INFO`; set it to `DEBUG` and rebuild for request
-lifecycle diagnostics. It does not select mock data or change the API origin.
-These records are local to the browser; no central browser collector is installed.
-See [logging event owners](docs/logging-events.md) for correlation and limits.
+To use a running API, create `frontend/.env.local`:
 
-## Running the API
-
-The FastAPI backend implements the complete contract in
-`docs/api-contract.md`. After configuring PostgreSQL and applying the schema:
-
-```bash
-uv sync --locked --all-groups
-cd backend
-uv run uvicorn app.main:create_runtime_app --factory --reload
+```dotenv
+VITE_API_BASE_URL=http://localhost:8000
+VITE_USE_MOCK_API=false
 ```
 
-The API listens on `http://localhost:8000`, serves interactive documentation at
-`/docs`, and exposes a database-aware health check at `/api/health`. See
-`backend/README.md` for frontend cutover, CORS, testing, and container commands.
-For production, follow the complete
-[Vercel and Neon deployment guide](docs/deployment-vercel-neon.md).
+Restart the dev server after changing these settings. Hosted builds need a
+redeployment. See the [API guide](backend/README.md#frontend-connection) for CORS.
 
-## Database
+## Start the API
 
-The frozen initial PostgreSQL schema and versioned migrations are located at:
-
-```text
-backend/database/schema.sql
-backend/migrations/versions/
-```
-
-Install the development dependencies, copy the environment template, and enter your local
-PostgreSQL credentials:
+From the repository root:
 
 ```bash
 uv sync --locked --all-groups
 cp backend/.env.example backend/.env
 ```
 
-Run `uv run python -m alembic -c backend/alembic.ini upgrade head` before a loader. The
-application uses `ENV=dev`, `ENV=nonprod`, or `ENV=prod` to select its database
-configuration. Development can use the individual `DB_*` values. Nonprod and
-prod use `DATABASE_URL` or their scoped `NONPROD_DATABASE_URL` /
-`PROD_DATABASE_URL` value supplied by the deployment environment. The
-application does not create or migrate the schema automatically. See
-`backend/database/README.md` for migration creation, catalog snapshots, existing
-database adoption, and the production release gate.
+Edit `backend/.env` with your local PostgreSQL credentials, then run:
 
-## Running the Data Collection
+```bash
+uv run python -m alembic -c backend/alembic.ini upgrade head
+uv run uvicorn app.main:create_runtime_app --factory --reload
+```
 
-From `backend/`:
+The API serves at `http://localhost:8000`, interactive docs at `/docs`, and a
+database health check at `/api/health`. It never applies migrations on startup.
+See the [database guide](backend/database/README.md) for migration rules.
+
+## Load data and run checks
+
+After applying migrations, run ingestion from the repository root:
 
 ```bash
 uv run python -m app.ScriptingFiles.FullDataScript.run_all
 ```
 
-This loads checked-in player/goalie and current-season MoneyPuck data, NHL rosters,
-historical NHL season statistics, active CapWages contracts, and the current
-schedule, then refreshes roster statuses. Each stage is idempotent and targets
-the schema in `backend/database/schema.sql`.
+The pipeline loads statistics, rosters, contracts, and schedules. See the
+[ingestion guide](backend/src/app/ScriptingFiles/FullDataScript/README.md) for
+individual commands, validation, and historical contract recovery.
 
-The checked-in team and line aggregate CSVs remain source assets: the current
-schema intentionally has player/goalie stat tables but no team- or line-stat
-tables.
-
-To run only the roster-status refresh:
+Python checks:
 
 ```bash
-uv run python -m app.ScriptingFiles.FullDataScript.populate_roster_status
-```
-
-Run tests with:
-
-```bash
+uv run ruff check
+uv run ruff format --check
+uv run ty check
 uv run pytest
 ```
 
-The backend OpenAPI document and frontend TypeScript contract are committed so
-contract drift fails CI. After an intentional API change, regenerate both:
+The full Python suite needs a disposable PostgreSQL database. Follow the
+[verification guide](docs/python-verification.md) for database setup, isolated
+unit tests, coverage gates, and package checks.
+
+Frontend checks, from `frontend/`:
 
 ```bash
-uv run python backend/export_openapi.py
-cd frontend && npm run api:generate
+npm run lint
+npm run test:coverage
+npm run build
 ```
 
-The repository targets Python 3.12 and Node.js 24. Install uv 0.13.1.
-Python dependencies are declared only in `pyproject.toml` and resolved in
-`uv.lock`; deployment requirements are generated exports. After editing dependencies:
+Frontend runtime coverage must remain at 100%. CI publishes coverage reports.
+
+## Change dependencies or the API contract
+
+Python dependencies live in the workspace `pyproject.toml` files and `uv.lock`.
+After editing dependencies, run from the repository root:
 
 ```bash
 uv lock
@@ -168,105 +93,49 @@ bash scripts/export-requirements.sh
 uv sync --locked --all-groups
 ```
 
-Python tests enforce branch coverage and write HTML/XML/LCOV reports under
-`coverage/python/`. Frontend coverage is enforced with
-`cd frontend && npm run test:coverage`, which writes HTML, Cobertura XML, and
-LCOV reports under `frontend/coverage/`. CI uploads both report directories.
-The Python 3.12 regression floor is 58.80% branch-aware aggregate coverage.
-`TradeValueService` and its extracted repository, policy, conversion, and error
-modules have a separate 100% line-and-branch coverage gate, while
-PostgreSQL-backed CI exercises the real query paths. The frontend baseline is 74.04% statements,
-61.95% branches, 65.55% functions, and 77.35% lines. These exact floors prevent
-coverage regressions and should be raised as each subsystem gains tests.
+Deployment requirements are generated; do not edit them directly. Keep the
+workspace compatibility pins until an intentional dependency upgrade.
 
-## Branch Workflow
+After changing API schemas, regenerate the committed contracts:
 
-Development follows:
-
-```text
-Feature branch → Dev → selected Release-x.y.z or Hotfix-x.y.z → manual Prod merge
+```bash
+uv run python backend/export_openapi.py
+cd frontend
+npm run api:generate
 ```
 
-Every PR from a feature branch must target `Dev`, regardless of its title.
-Create feature branches from current `origin/Dev` and use `gh pr create --base Dev`.
-GitHub Actions promotes `Dev` to the highest branch of the selected release type
-and creates Prod promotion PRs. Automatic Dev promotions use the repository
-variable `DEV_PROMOTION_TYPE` (`release` by default, or `hotfix`). The Dev
-workflow also provides a `release_type` dropdown for a one-time promotion.
-See [CI and automatic promotion setup](docs/ci-promotion.md) for the required
-GitHub repository settings, hotfix branch policy, and rollout sequence.
+## Logging and releases
 
-## Roadmap
+Application logs are enabled in Dev and disabled for `ENV=nonprod` and
+`ENV=prod`, including errors. The frontend reads `ENV` at build time; changing
+it requires a rebuild. See [logging configuration and events](docs/logging-events.md).
 
-### Completed foundation
+Create feature branches from current `origin/Dev`; every feature PR targets `Dev`.
+The promotion path is:
 
-* PostgreSQL schema and idempotent ingestion pipeline
-* FastAPI implementation of the frontend API contract
-* React application with a mock/live API switch
-* Player-value training and evaluation pipeline
-* Reproducible Python 3.12 and Node.js 24 environments
-* CI promotion workflow, coverage gates, and Vercel/Neon deployment configuration
+```text
+Feature → Dev → selected Release-x.y.z or Hotfix-x.y.z → manual Prod merge
+```
 
-### Next milestone: live NonProd vertical slice
+See the [release workflow](docs/ci-promotion.md) and
+[Vercel/Neon deployment guide](docs/deployment-vercel-neon.md) for configuration,
+migration approval, and deployment checks.
 
-1. Provision the NonProd Neon database, apply the schema, and load a validated dataset.
-2. Deploy the backend and verify health, seasons, players, teams, contracts, cap, search,
-   overview, and comparison endpoints against real data.
-3. Deploy the frontend with `VITE_USE_MOCK_API=false`, validate CORS and deep links, and
-   complete an end-to-end smoke test.
-4. Add live API contract tests for response shapes, null handling, traded-player totals,
-   pagination, sorting, and error envelopes.
+## Repository map
 
-### Following milestones
+| Location | Purpose |
+| --- | --- |
+| `backend/src/app/` | API, ingestion, and shared Python code |
+| `backend/database/`, `backend/migrations/` | Frozen initial schema, database tools, and migrations |
+| `backend/data/` | Historical source CSVs |
+| `frontend/src/` | React app and API client |
+| `ml/src/ml/` | Features, training, and evaluation |
+| `tests/backend/`, `tests/ml/` | Python tests |
+| `.github/workflows/` | CI and release automation |
 
-1. **Salary-cap accuracy:** implement buried-contract relief, accrued cap space, and LTIR
-   pool rules; add scenario-based cap tests.
-2. **Data reliability:** improve NHL/AHL roster reconciliation, ingestion observability,
-   freshness checks, and failure recovery.
-3. **Model integration:** version and publish trained player-value outputs, expose model
-   freshness/quality metadata, and validate projections before presenting them as current.
-4. **Product depth:** replace remaining development-only messaging, expand player and team
-   analytics, and improve comparison workflows.
-5. **Quality:** raise backend service/ML and frontend HTTP/search/page coverage above the
-   current regression floors as each milestone lands.
+Further references: [API contract](docs/api-contract.md),
+[Python commands](docs/python-commands.md), and [ML guide](ml/README.md).
+Product plans are available on the app's Future Plans page.
 
-## Disclaimer
-
-This is an independent project and is not affiliated with the NHL, AHL, MoneyPuck, CapWages, or their respective organizations.
-
-The uv workspace installs `app` from `backend/src` and `ml` from `ml/src`.
-Run commands from the repository root after `uv sync --locked --all-groups`.
-The `ingestion`, `ml`, and `dev` groups keep job, training, and test tools out
-of the API requirements export. Preserve the compatibility pins in
-`tool.uv.constraint-dependencies` until an intentional dependency upgrade.
-Run `bash scripts/export-requirements.sh --check` to verify generated exports.
-
-Python lint, formatting, and type checks run as blocking steps in backend CI.
-The [Python command inventory](docs/python-commands.md) documents supported
-commands, arguments, output streams, and exit statuses.
-
-Run `uv run ruff check`, `uv run ruff format --check`, and `uv run ty check`
-from the repository root. No check suppressions or reduced coverage
-thresholds are used. The retired loaders are archived as byte-preserved `.py.txt`
-references. The [Python verification guide](docs/python-verification.md) documents
-unit/integration selection, disposable database safety, coverage scope, and
-approved framework and test boundaries.
-
-Build and verify both distributions with `bash scripts/verify-packages.sh`.
-It checks wheel contents and imports non-editable installations from outside
-this checkout. Backend CI runs the same check. The API wheel includes `app`
-without `app.ScriptingFiles`; run ingestion from the trusted workspace with
-`uv sync --locked --all-groups`, which installs the source package in editable
-mode. The ML wheel includes its published metadata resource, but excludes
-training outputs, model binaries, datasets, and tests.
-
-Historical CSVs now live in `backend/data/`. Source ingestion resolves that
-location independently of the current directory; `TRADEVALUE_DATA_DIR` can
-select another dataset directory. Editable ML installations resolve their project directory independently of the
-current working directory; wheel installations use the current working directory.
-When run from the repository root,
-outputs retain their `ml/models/` and `ml/evaluation/outputs/` destinations.
-Override these with `TRADEVALUE_MODEL_DIR` and `TRADEVALUE_EVALUATION_DIR`.
-`TRADEVALUE_ENV_FILE` selects an explicit dotenv file; source installations
-continue to default to `backend/.env`. Deployed applications use exported
-settings and do not bundle dotenv files.
+This independent project is not affiliated with the NHL, AHL, MoneyPuck,
+CapWages, or their organizations.

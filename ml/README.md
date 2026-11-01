@@ -37,5 +37,10 @@ only at invocation, honoring `TRADEVALUE_MODEL_DIR` and
 `TRADEVALUE_EVALUATION_DIR`. Importing the computation modules does not discover
 artifact paths. No published model is retrained or replaced by the test suite.
 
+From the repository root, outputs default to `ml/models/` and
+`ml/evaluation/outputs/`. Editable installs resolve the ML project independently
+of the working directory; wheel installs use the working directory. Set the
+directory overrides when running installed wheels elsewhere.
+
 Validate with `uv run pytest --no-cov -q tests/ml` and
 `uv run python -m ml.evaluation.gate`.
