@@ -161,3 +161,42 @@ and deployed sink limits must be verified during release acceptance; local
 stdout/stderr captures do not establish hosted retention.
 
 Reference: [Vercel FastAPI startup and shutdown](https://vercel.com/docs/frameworks/backend/fastapi#startup-and-shutdown).
+
+## API correlation and failure ownership
+
+All API responses include a newly generated `X-Request-ID`; allowed browser
+origins can read it through CORS, including on error responses. Search the
+JSON `request_id` field in request summaries and exception diagnostics rather
+than copying URLs, headers or bodies into incident logs. INFO records completed
+requests, failed health checks, readiness and successful shutdown. DEBUG adds
+request-start, successful health and expected cancellation events. Database and
+unexpected request failures produce one safe exception diagnostic; invalid
+requests and missing resources use access summaries. A response may already have
+status 200 when a streaming failure occurs: use `outcome=failed` and the matching
+request diagnostic rather than interpreting status alone.
+
+The application does not buffer streaming bodies or change framework exception
+identity. Uvicorn's duplicate traceback is suppressed only for the matching
+already reported error, once; unrelated host errors remain visible. Other
+propagated failures retain safe request context for the host diagnostic.
+The API disables Uvicorn's access stream and preserves host handler objects
+while applying safe formatting. Root platform logging is left in place; API
+and coordinated Uvicorn events avoid propagating raw messages/tracebacks to it.
+
+Database settings are validated during startup after safe logging installation,
+using the immutable environment snapshot captured by the factory. Invalid URLs
+cannot escape through a pre-logging database validation traceback. Lifespan
+failures send validated, bounded type/frame snapshots through the ASGI failure
+message, retaining the original exception and preventing raw traceback strings
+from reaching the host. Startup failure is CRITICAL; shutdown failure is ERROR.
+Expected cancellation is DEBUG, except when a genuine secondary cleanup failure
+also requires an error diagnostic. No exception message, cleanup note, local,
+SQL parameter or model payload is serialized.
+
+The official [Vercel Python runtime source](https://github.com/vercel/vercel/blob/main/python/vercel-runtime/src/vercel_runtime/vc_init.py)
+uses vendored Uvicorn for ASGI lifespan, with access logging disabled and
+`log_config=None`. Its root IPC handler can render raw exception text, which is
+why application/Uvicorn events use the safe stderr path without replacing the
+platform root handler. The local Docker/ASGI probes verify this ownership design;
+actual deployed log retention, limits and delivery still require phase-5 hosted
+acceptance. Do not infer those settings from a successful preview build.

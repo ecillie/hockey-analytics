@@ -7,6 +7,8 @@ import logging
 import pytest
 
 from app.shared.observability.formatting import SafeFormatter
+from app.shared.observability.policy import ReportedRequestFilter, RequestFailureFilter
+from app.shared.observability.domain import RequestFailure, RequestOutcome
 from app.shared.observability.requests import get_request_context
 from app.shared.observability.tests.requests import (
     RecordingTransport,
@@ -51,14 +53,12 @@ class TestRequestCorrelation:
 
     @pytest.fixture(
         params=[
-            pytest.param(RuntimeError("primary_secret"), id="failed-stream"),
-            pytest.param(
-                asyncio.CancelledError("cancel_secret"), id="cancelled-stream"
-            ),
+            pytest.param(RuntimeError, id="failed-stream"),
+            pytest.param(asyncio.CancelledError, id="cancelled-stream"),
         ]
     )
     def failure(self, request):
-        return request.param
+        return request.param("primary_secret")
 
     @pytest.fixture
     def failed_scenario(self, failure, caplog):
@@ -86,6 +86,39 @@ class TestRequestCorrelation:
             else logging.INFO
         )
         assert all(record.exc_info is None for record in caplog.records)
+
+    def test_propagated_failures_keep_correlation_at_the_host_boundary(
+        self, failed_scenario, failure, caplog
+    ):
+        with pytest.raises(type(failure)):
+            failed_scenario.run()
+        record = logging.LogRecord(
+            "uvicorn.error",
+            logging.ERROR,
+            "",
+            1,
+            "Exception in ASGI application\n",
+            (),
+            (type(failure), failure, failure.__traceback__),
+        )
+        assert RequestFailureFilter().filter(record) is True
+        payload = json.loads(SafeFormatter().format(record))
+        assert payload["request_id"] == caplog.records[-1].request_id
+        assert payload["status"] == 200
+        assert payload["event"] == (
+            "request.cancelled"
+            if isinstance(failure, asyncio.CancelledError)
+            else "request.failed"
+        )
+        assert payload["severity"] == (
+            "DEBUG" if isinstance(failure, asyncio.CancelledError) else "ERROR"
+        )
+        assert record.levelno == (
+            logging.DEBUG
+            if isinstance(failure, asyncio.CancelledError)
+            else logging.ERROR
+        )
+        assert "secret" not in json.dumps(payload)
 
     @pytest.fixture(
         params=[pytest.param(200, id="healthy"), pytest.param(503, id="unhealthy")]
@@ -139,3 +172,39 @@ class TestConcurrentRequestContext:
             if (context := get_request_context(scope)) is not None
         } == ids
         assert shared_state == {"existing": "preserved"}
+
+
+class TestReportedHostDuplicates:
+    @pytest.fixture
+    def record(self):
+        error = RuntimeError("primary_secret")
+        error.__dict__["tradevalue_request"] = RequestFailure(
+            request_id="generated-id",
+            method="GET",
+            route="/api/probe",
+            status=500,
+            duration_ms=1.0,
+            outcome=RequestOutcome.FAILED,
+            reported=True,
+        )
+        return logging.LogRecord(
+            "uvicorn.error",
+            logging.ERROR,
+            "",
+            1,
+            "Exception in ASGI application\n",
+            (),
+            (RuntimeError, error, None),
+        )
+
+    def test_matching_report_is_consumed_once_without_hiding_a_later_host_error(
+        self, record
+    ):
+        assert ReportedRequestFilter().filter(record) is False
+        assert ReportedRequestFilter().filter(record) is True
+
+    def test_unrelated_host_record_does_not_consume_the_pending_report(self, record):
+        record.msg = "Unrelated host failure"
+        assert ReportedRequestFilter().filter(record) is True
+        record.msg = "Exception in ASGI application\n"
+        assert ReportedRequestFilter().filter(record) is False

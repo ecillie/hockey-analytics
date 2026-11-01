@@ -231,11 +231,12 @@ both runtime and fixture connections to that URL and disable local dotenv
 loading for the session.
 
 The runtime entrypoint is `app.main:create_runtime_app` with Uvicorn's `--factory`
-flag. It loads a single environment snapshot, validates HTTP and database
-settings, and returns the application. Logging settings are validated first,
-without requiring database configuration. FastAPI lifespan startup installs
-process logging before it creates the
-engine and session factory; shutdown disposes the engine. Each request owns
+flag. It loads a single environment snapshot, validates logging and HTTP
+settings, and returns the application. FastAPI lifespan startup installs
+process logging, validates database settings from the frozen snapshot, then
+creates the engine and session factory. Invalid database configuration therefore
+receives safe startup diagnostics without rereading or changing the environment.
+Shutdown disposes the engine. Each request owns
 and closes its SQLAlchemy session. Existing pooling, LIFO/pre-ping, recycling,
 and connection-timeout settings are retained.
 
@@ -256,10 +257,30 @@ or database selection. Change settings by restarting or redeploying the process.
 The owner-approved API lifespan hook is the hosted exception to main-only
 logging configuration. Ordinary imports, OpenAPI generation and `create_app()`
 construction do not install handlers. The process-owned application handler is
-reused across repeated starts; conflicting settings require a restart. Root and
-Uvicorn handlers remain host-owned. SQL/HTTP dependency diagnostics remain at
-WARNING or above even in application DEBUG mode. Commands adopt the shared
-policy in logging phase 3; API request/lifecycle events follow in phase 2.
+reused across repeated starts; conflicting settings require a restart. Root
+handlers remain untouched. API startup preserves existing Uvicorn handler objects
+while applying safe formatting and coordinating exception/access records.
+SQL/HTTP dependency diagnostics remain at WARNING or above even in application
+DEBUG mode. Commands adopt the shared policy in logging phase 3.
+
+Responses include a generated `X-Request-ID`, exposed through CORS to allowed
+origins, including error responses. Caller IDs, raw paths, query strings and
+bodies are excluded from diagnostics; matched route templates identify requests.
+`request.finished` records report the response status, monotonic duration and
+outcome. Successful health probes and expected cancellations are DEBUG-only.
+Service and unexpected failures have one `request.failed` diagnostic in addition to their access
+summary. Streaming failures retain the original exception, delivered chunks and
+status already sent; they do not append a replacement error body.
+
+The API emits `service.ready` and `service.stopped` from successful lifespan
+protocol events. Startup and cleanup failures cross ASGI as bounded validated
+diagnostics, with safe types/frames and CRITICAL/ERROR severity. The original
+exception/cancellation propagates; secondary cleanup failures retain the primary
+failure. The Uvicorn filter consumes only a proven matching application report
+once, preserving unrelated host errors. Its access stream is disabled because
+the API owns correlated summaries. Docker uses `exec` so SIGTERM reaches Uvicorn
+and invokes shutdown. Host bootstrap status lines before the lifespan hook keep
+the host format; application and coordinated host events use the selected format.
 
 `load_environment()` merges dotenv values with exported variables without
 changing the process environment, including interpolation precedence. Settings

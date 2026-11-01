@@ -106,3 +106,7 @@ async def exercise_concurrent_requests(
         async with asyncio.TaskGroup() as tasks:
             for scope, transport in zip(scopes, transports, strict=True):
                 tasks.create_task(middleware(scope, transport.receive, transport.send))
+
+
+async def parse_probe_number(request: Request) -> Response:
+    return Response(str(int(request.path_params["key"])))

@@ -9,25 +9,19 @@ from uuid import uuid4
 from starlette.routing import Route
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from app.shared.observability.domain import LogLevel, RequestContext, RequestOutcome
+from app.shared.observability.domain import (
+    LogLevel,
+    RequestContext,
+    RequestFailure,
+    RequestOutcome,
+)
+from app.shared.observability.util import (
+    build_request_fields,
+    get_request_context as get_request_context,
+)
 
 
 logger = logging.getLogger(__name__)
-
-
-def get_request_context(scope: Scope) -> RequestContext | None:
-    context = scope.get("state", {}).get("logging_context")
-    return context if isinstance(context, RequestContext) else None
-
-
-def build_request_fields(scope: Scope, context: RequestContext) -> dict[str, object]:
-    fields: dict[str, object] = {
-        "request_id": context.request_id,
-        "method": scope.get("method", "UNKNOWN"),
-    }
-    if isinstance(route := scope.get("route"), Route):
-        fields["route"] = route.path
-    return fields
 
 
 def choose_summary_level(
@@ -88,7 +82,11 @@ class RequestLoggingMiddleware:
         try:
             await self.app(scope, receive, capture_send)
             outcome = (
-                RequestOutcome.COMPLETED
+                (
+                    RequestOutcome.FAILED
+                    if status is not None and status >= 500
+                    else RequestOutcome.COMPLETED
+                )
                 if response_completed
                 else RequestOutcome.INCOMPLETE
             )
@@ -98,6 +96,20 @@ class RequestLoggingMiddleware:
                 if isinstance(error, asyncio.CancelledError)
                 else RequestOutcome.FAILED
             )
+            route = scope.get("route")
+            try:
+                error.__dict__["tradevalue_request"] = RequestFailure(
+                    request_id=context.request_id,
+                    method=scope.get("method", "UNKNOWN"),
+                    route=route.path if isinstance(route, Route) else None,
+                    status=status,
+                    duration_ms=context.duration_ms,
+                    outcome=outcome,
+                    reported=scope["state"].get("request_error_reported")
+                    == context.request_id,
+                )
+            except Exception:
+                pass
             raise
         finally:
             fields = build_request_fields(scope, context) | {

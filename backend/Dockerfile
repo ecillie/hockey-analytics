@@ -9,4 +9,4 @@ COPY database ./database
 RUN useradd --create-home --uid 10001 tradevalue && chown -R tradevalue:tradevalue /app
 USER tradevalue
 EXPOSE 8000
-CMD ["sh", "-c", "uvicorn app.main:create_runtime_app --factory --host 0.0.0.0 --port ${PORT} --proxy-headers"]
+CMD ["sh", "-c", "exec uvicorn app.main:create_runtime_app --factory --host 0.0.0.0 --port ${PORT} --proxy-headers --no-access-log"]

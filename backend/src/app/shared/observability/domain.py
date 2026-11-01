@@ -4,6 +4,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum, auto
 from time import monotonic_ns
+from typing import Literal
+from app.shared.observability.errors import LoggingSettingsError
 
 
 class LogLevel(IntEnum):
@@ -36,11 +38,47 @@ class RequestContext:
         return (monotonic_ns() - self.started_ns) / 1_000_000
 
 
-class LoggingSettingsError(ValueError):
-    def __init__(self, *, field: str, choices: str) -> None:
-        super().__init__(f"{field} must be one of: {choices}")
-        self.field = field
-        self.choices = choices
+type FailedRequestOutcome = Literal[RequestOutcome.FAILED, RequestOutcome.CANCELLED]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class RequestFailure:
+    request_id: str
+    method: str
+    route: str | None
+    status: int | None
+    duration_ms: float
+    outcome: FailedRequestOutcome
+    reported: bool = False
+
+    @property
+    def level(self) -> LogLevel:
+        return (
+            LogLevel.DEBUG
+            if self.outcome is RequestOutcome.CANCELLED
+            else LogLevel.ERROR
+        )
+
+    @property
+    def event(self) -> str:
+        return (
+            "request.cancelled"
+            if self.outcome is RequestOutcome.CANCELLED
+            else "request.failed"
+        )
+
+    @property
+    def fields(self) -> dict[str, object]:
+        values: dict[str, object] = {
+            "request_id": self.request_id,
+            "method": self.method,
+            "status": self.status,
+            "duration_ms": self.duration_ms,
+            "outcome": self.outcome.value,
+        }
+        if self.route is not None:
+            values["route"] = self.route
+        return values
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

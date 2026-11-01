@@ -11,19 +11,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.types import ASGIApp
 
 from app.api.routes import create_router
 from app.api.errors import ApiProblem
 from app.config import (
     ApiSettings,
     DatabaseSettings,
+    DatabaseEnvironment,
     get_api_settings,
     get_database_settings,
     load_environment,
 )
 from app.database import DatabaseResources, create_database_resources
 from app.shared.observability.domain import LoggingSettings, read_logging_settings
-from app.shared.observability.services import configure_logging
+from app.shared.observability.services import (
+    configure_api_host_logging,
+    configure_logging,
+    report_request_error,
+    retain_lifespan_cleanup,
+)
+from app.shared.observability.requests import RequestLoggingMiddleware
+from app.shared.observability.lifecycle import LifecycleLoggingMiddleware
 
 
 logger = logging.getLogger(__name__)
@@ -46,6 +55,23 @@ def remove_validation_responses(schema: dict) -> None:
 
 
 class ContractFastAPI(FastAPI):
+    def build_middleware_stack(self) -> ASGIApp:
+        settings: ApiSettings = self.state.api_settings
+        return LifecycleLoggingMiddleware(
+            settings=self.state.logging_settings,
+            app=RequestLoggingMiddleware(
+                app=CORSMiddleware(
+                    app=super().build_middleware_stack(),
+                    allow_origins=list(settings.cors_origins),
+                    allow_origin_regex=settings.cors_origin_regex,
+                    allow_credentials=False,
+                    allow_methods=["GET"],
+                    allow_headers=["Accept", "Content-Type"],
+                    expose_headers=["X-Request-ID"],
+                )
+            ),
+        )
+
     def openapi(self) -> dict[str, object]:
         if self.openapi_schema is None:
             schema = get_openapi(
@@ -61,7 +87,7 @@ class ContractFastAPI(FastAPI):
 def create_app(
     settings: ApiSettings | None = None,
     *,
-    database_settings: DatabaseSettings | None = None,
+    database_settings: DatabaseSettings | DatabaseEnvironment | None = None,
     logging_settings: LoggingSettings | None = None,
     resource_factory: Callable[
         [DatabaseSettings], DatabaseResources
@@ -72,34 +98,47 @@ def create_app(
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncGenerator[None]:
         if logging_settings is not None:
-            configure_logging(logging_settings)
-        if database_settings is None:
+            handler = configure_logging(logging_settings)
+            configure_api_host_logging(logging_settings, handler)
+        selected_database = (
+            get_database_settings(dict(database_settings.values))
+            if isinstance(database_settings, DatabaseEnvironment)
+            else database_settings
+        )
+        if selected_database is None:
             yield
             return
-        resources = resource_factory(database_settings)
+        resources = resource_factory(selected_database)
         application.state.database = resources
+        primary: BaseException | None = None
         try:
             yield
+        except BaseException as error:
+            primary = error
+            raise
         finally:
             application.state.database = None
-            async with asyncio.timeout(database_settings.cleanup_timeout_seconds):
-                await asyncio.to_thread(resources.engine.dispose)
+            try:
+                async with asyncio.timeout(selected_database.cleanup_timeout_seconds):
+                    await asyncio.to_thread(resources.engine.dispose)
+            except BaseException as cleanup:
+                if primary is None:
+                    raise
+                retain_lifespan_cleanup(primary, cleanup)
 
     application = ContractFastAPI(
         title="TradeValue API", version="1.0.0", lifespan=lifespan
     )
 
-    application.add_middleware(
-        CORSMiddleware,
-        allow_origins=list(settings.cors_origins),
-        allow_origin_regex=settings.cors_origin_regex,
-        allow_credentials=False,
-        allow_methods=["GET"],
-        allow_headers=["Accept", "Content-Type"],
+    application.state.api_settings = settings
+    application.state.logging_settings = (
+        LoggingSettings() if logging_settings is None else logging_settings
     )
 
     @application.exception_handler(ApiProblem)
-    async def api_problem_handler(_request: Request, exc: ApiProblem):
+    async def api_problem_handler(request: Request, exc: ApiProblem):
+        if exc.status >= 500:
+            report_request_error(request.scope, exc)
         return build_api_error(exc.status, exc.code, exc.message, exc.details)
 
     @application.exception_handler(RequestValidationError)
@@ -113,15 +152,15 @@ def create_app(
         )
 
     @application.exception_handler(SQLAlchemyError)
-    async def database_handler(_request: Request, exc: SQLAlchemyError):
-        logger.exception("Database request failed", exc_info=exc)
+    async def database_handler(request: Request, exc: SQLAlchemyError):
+        report_request_error(request.scope, exc)
         return build_api_error(
             503, "DATABASE_UNAVAILABLE", "The data service is temporarily unavailable."
         )
 
     @application.exception_handler(Exception)
-    async def unhandled_handler(_request: Request, exc: Exception):
-        logger.exception("Unhandled API error", exc_info=exc)
+    async def unhandled_handler(request: Request, exc: Exception):
+        report_request_error(request.scope, exc)
         return build_api_error(
             500, "INTERNAL_ERROR", "The API could not complete this request."
         )
@@ -136,6 +175,6 @@ def create_runtime_app() -> FastAPI:
     logging_settings = read_logging_settings(values)
     return create_app(
         get_api_settings(values),
-        database_settings=get_database_settings(values),
+        database_settings=DatabaseEnvironment(values=tuple(values.items())),
         logging_settings=logging_settings,
     )

@@ -216,4 +216,88 @@ passed. On newly provisioned PostgreSQL 15 database
 the API/shared-calendar gate remains **100%**. No frontend or serialized API
 boundary changed at this checkpoint. Final phase-2 package, frontend, container,
 and hosted acceptance gates remain pending the middleware integration above.
+
+## Phase 2 API acceptance
+
+The API integration now wraps the complete HTTP stack in request correlation
+and CORS handling. Every application response receives a generated opaque ID;
+allowed origins can read it, including on error responses. Input IDs, raw paths,
+queries and bodies are excluded from diagnostics. Streaming bytes pass through
+immediately. A failure after headers retains the original response status and
+exception identity while its final summary records the failed outcome.
+
+| Boundary | Diagnostic owner |
+| --- | --- |
+| Successful, invalid, missing and handled-error HTTP responses | Request middleware emits one final summary; successful GET/HEAD health probes are DEBUG only. |
+| API database, unavailable-service and unexpected exceptions | Response handler emits one `request.failed` diagnostic; the canonical propagated Uvicorn duplicate is consumed once. Unrelated host messages remain visible. |
+| Unhandled streaming failures | Uvicorn emits the correlated safe diagnostic from immutable failure metadata; middleware emits the final summary. |
+| Request cancellation | Original cancellation propagates; correlated host diagnostic and summary are DEBUG. |
+| Successful startup/shutdown | Lifespan protocol wrapper emits `service.ready` / `service.stopped`. |
+| Failed startup/shutdown | Wrapper transports bounded validated type/frame data through ASGI failure messages; Uvicorn owns the diagnostic. Startup failure is CRITICAL, shutdown failure ERROR, pure cancellation DEBUG. |
+
+Database environment values are snapshotted at factory construction and resolved
+after logging starts, retaining precedence without exposing invalid URL values
+before safe handlers are installed. A secondary disposal failure remains attached
+to the original primary exception for safe diagnostics. The root host handler is
+preserved; application and Uvicorn namespaces use safe stderr delivery without
+propagating raw exceptions into Vercel's root IPC handler. Existing Uvicorn handler
+objects are retained and access logging is disabled. Docker now uses `exec` so
+SIGTERM reaches Uvicorn and runs graceful shutdown.
+
+Formatter failure uses an encoder-independent bounded fallback. Clock failure
+uses an explicit `timestamp_unavailable` marker and epoch sentinel. A broken
+sink never invokes logging's raw-record error dump. Both formats preserve at
+least ERROR severity, including CRITICAL when selected.
+
+Final local verification on 2026-11-01:
+
+- Ruff lint/format, ty, structural rules, dependency exports, OpenAPI parity,
+  isolated package installs, wheel/sdist boundaries and the ML gate passed.
+- Disposable PostgreSQL 15 database `tradevalue_test_logging02_final`: **888
+  passed, zero skips**, **91.38%** aggregate coverage in **46.58 seconds**.
+  API/shared-calendar coverage remains **100%**. The isolated unit selection
+  passed **838 tests**, with 50 integration tests deselected, in **28.38 seconds**.
+- Frontend contract, lint, 60 tests with 100% measured coverage and production
+  build passed; no frontend implementation changed in this phase.
+- Rebuilt production image `tradevalue-logging02:verified` passed actual INFO and
+  DEBUG HTTP probes against disposable PostgreSQL. Each mode verified six
+  correlated flows: healthy, successful data, invalid input, missing route,
+  unexpected exception and interrupted streaming. Original error envelopes,
+  CORS restrictions and first-chunk delivery were preserved.
+- Captured logs contained 15 INFO-mode and 22 DEBUG-mode events. Each unexpected
+  or streaming failure produced exactly one exception diagnostic. Records stayed
+  within 8 KiB, synthetic secrets were absent, and successful health summaries
+  appeared only in DEBUG. Both containers exited 0 after SIGTERM and emitted one
+  readiness and one stopped event. Invalid startup URL produced one sanitized
+  CRITICAL `ConfigurationError`, no readiness event, and process exit 3.
+- Fresh-process Vercel entrypoint tests cover repeated lifespans, frozen runtime
+  configuration, real HTTP errors and distinct correlation IDs. Host interaction
+  tests cover INFO, DEBUG and CRITICAL thresholds in JSON and text formats.
+
+Repeatable HTTP and captured-log probes are in excluded test support:
+
+```bash
+uv run python -m app.shared.observability.tests.verify_http \
+  http://localhost:58001 http://localhost:58002 \
+  > /private/tmp/tradevalue-logging02-probe-results.json
+uv run python -m app.shared.observability.tests.verify_logs
+```
+
+Run two local containers with `app_probe:create_probe_app --factory`, mount the
+observability test-support directory read-only at `/verification`, and set
+`PYTHONPATH=/verification`. Use ports 58001/58002, INFO/DEBUG respectively, JSON
+format and a disposable test database. Stop them before capturing `docker logs`
+to `/private/tmp/tradevalue-logging02-{info,debug}.log`. Capture the invalid-URL
+startup probe to `tradevalue-logging02-startup-failure.log` and its inspected exit
+code to the adjacent `.exitcode` file. Probe CLI options allow artifact paths to
+be changed. These fakes and probes are excluded from published packages.
+
+Diff review found no added forbidden constructs or comments. Existing structured
+concurrency uses an awaited TaskGroup. ASGI application/send awaits delegate host
+protocol flow control; owned engine cleanup retains its explicit timeout.
+Hosted preview checks and publication follow this record. Actual hosted capture,
+retention, permissions and sink limits remain phase-5 gates; the two harmless
+pre-lifespan Uvicorn status lines still use the host format. Existing phase-7
+semantic acceptance remains outstanding. No production promotion is authorized
+by these local results.
 The dedicated checkpoint PostgreSQL container was removed after verification.
