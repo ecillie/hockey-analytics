@@ -9,6 +9,7 @@ from itertools import product
 import pytest
 
 from app import database
+from app.shared.tests import resources as test_resources
 from app.config import AppEnvironment, DatabaseSettings
 from app.shared.tests.resources import (
     CursorFailureScenario,
@@ -294,6 +295,12 @@ class TestEngineCleanup:
         pytest.param(("scope", RuntimeError, True), id="operation-and-dispose"),
         pytest.param(("scope", KeyboardInterrupt, True), id="scope-interrupt"),
         pytest.param(("scope", None, True), id="dispose-only"),
+        pytest.param(("sqlite", RuntimeError, True), id="sqlite-primary-and-dispose"),
+        pytest.param(
+            ("sqlite", asyncio.CancelledError, True), id="sqlite-cancellation"
+        ),
+        pytest.param(("sqlite", KeyboardInterrupt, False), id="sqlite-interrupt"),
+        pytest.param(("sqlite", None, True), id="sqlite-dispose-only"),
     )
 
     @pytest.fixture(params=cases)
@@ -311,6 +318,7 @@ class TestEngineCleanup:
             failures["sessions"] = primary
         probe = ResourceProbe(failures=failures)
         monkeypatch.setattr(database, "create_engine", probe.create_resource)
+        monkeypatch.setattr(test_resources, "create_engine", probe.create_resource)
         monkeypatch.setattr(database, "sessionmaker", probe.create_sessions)
         return mode, ResourceFailureScenario(
             probe=probe,
@@ -331,8 +339,14 @@ class TestEngineCleanup:
                 with database.open_database_resources(resources.settings):
                     if resources.primary is not None:
                         raise resources.primary
+            if mode == "sqlite":
+                with test_resources.open_sqlite_engine():
+                    if resources.primary is not None:
+                        raise resources.primary
         assert raised.value is resources.expected
-        assert resources.probe.events == ["sessions", "dispose"]
+        assert resources.probe.events == (
+            ["dispose"] if mode == "sqlite" else ["sessions", "dispose"]
+        )
         if resources.primary is not None:
             assert raised.value.__cause__ is resources.cause
         notes = getattr(raised.value, "__notes__", [])

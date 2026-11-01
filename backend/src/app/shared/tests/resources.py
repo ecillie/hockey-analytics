@@ -7,8 +7,15 @@ from io import BytesIO
 from urllib.error import HTTPError
 from app.config import DatabaseSettings
 from collections.abc import Generator
+from contextlib import contextmanager
+from fastapi import Request
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session
+from app.api.routes import get_service
+from app.api.repository import SqlApiRepository
 from app.api.service import TradeValueService
+from app.main import create_app
+from app.shared.cleanup import complete_cleanup
 from app.database import (
     DatabaseResources,
     open_database_cursor,
@@ -135,6 +142,55 @@ class ResourceScenario:
 class RequestSessionScenario:
     session: Session
     dependency: Generator[TradeValueService]
+
+
+@contextmanager
+def open_sqlite_engine() -> Generator[Engine]:
+    engine = create_engine("sqlite://")
+    primary: BaseException | None = None
+    try:
+        yield engine
+    except BaseException as failure:
+        primary = failure
+        raise
+    finally:
+        complete_cleanup((engine.dispose,), primary)
+
+
+@contextmanager
+def open_request_session(
+    resources: DatabaseResources,
+) -> Generator[RequestSessionScenario]:
+    application = create_app()
+    application.state.database = resources
+    request = Request({"type": "http", "app": application})
+    dependency = get_service(request)
+    primary: BaseException | None = None
+    try:
+        service = next(dependency)
+        service.check_health()
+        assert isinstance(service.repository, SqlApiRepository)
+        yield RequestSessionScenario(
+            session=service.repository.session, dependency=dependency
+        )
+    except BaseException as failure:
+        primary = failure
+        raise
+    finally:
+        complete_cleanup((dependency.close,), primary)
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ConfigurationScenario:
+    name: str
+    values: dict[str, str]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class EnvironmentObservation:
+    user: str
+    host: str
+    preserved: bool
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

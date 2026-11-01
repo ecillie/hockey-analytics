@@ -137,6 +137,19 @@ package/export, schema/API and ML checks passed. Other recorded fixture/resource
 role/interface and framework/historical
 findings, hosted NonProd evidence and final release acceptance remain open.
 
+The native-resource fixture checkpoint puts SQLite engine and request dependency
+ownership around setup/yield, retaining primary errors through cleanup. Lifespan
+fixtures use the engine guard around setup and listener removal, with named
+observations and fixture-owned host-record/logging setup. Generated logging
+inputs retain the original Unicode/format spaces, and native retry-response
+streams have fixture ownership. Ten added fault cases cover SQLite disposal and
+native Session health/close failures. Focused checks passed **366**; fresh
+`tradevalue_test_logging05_resource_fixtures` passed **1,439 tests, zero skips**,
+**91.26%** coverage and the **100%** API/calendar gate. Isolated units passed
+**1,389**, with 50 integrations deselected. Static, package/export, schema/API and
+ML checks passed. Other recorded test/host-program, role/interface and exact
+framework/historical findings, hosted NonProd and final acceptance remain open.
+
 The supported runtime is Python 3.12. Install the root uv workspace with
 `uv sync --locked --all-groups`. Runtime, ingestion, ML, and development
 requirements are generated from the same lock. Run these checks at the root:

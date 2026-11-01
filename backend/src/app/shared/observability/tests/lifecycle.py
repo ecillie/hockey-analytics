@@ -1,7 +1,9 @@
 """Owned SQLAlchemy resource and ASGI protocol probes for lifespan failures."""
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
+from fastapi import FastAPI
 
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -44,6 +46,19 @@ class LifecycleTransport:
 
     async def send(self, message: Message) -> None:
         self.outgoing.append(message)
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class LifecycleScenario:
+    application: FastAPI
+    transport: LifecycleTransport
+    resources: LifecycleResources | None = None
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class LifecycleObservation:
+    failure: BaseException
+    record: logging.LogRecord
 
 
 async def exercise_lifespan(

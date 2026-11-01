@@ -1356,3 +1356,54 @@ have content-inspection records; other explicit fixture/resource, host-program,
 runtime role/interface and framework/historical findings still require
 resolution. Hosted NonProd mode/correlation and final combined acceptance/release
 promotion remain outstanding. No acceptance PR or production promotion is made.
+
+## Native test-resource scopes and generated logging inputs
+
+The source-only SQLite engine context establishes disposal before caller setup.
+The request-session context owns its native dependency generator before advancing
+it or checking health, closes it after setup/body failure and borrows its engine.
+Both use the existing shared primary-preserving cleanup helper. Runtime resource
+and lifespan fixtures now use these ownership boundaries, including partial
+construction and listener removal before fallback disposal. Native application
+shutdown is asserted before fixture fallback cleanup runs.
+
+Frozen named lifecycle/configuration observations replace positional bundles.
+Host LogRecord, formatter/filter and caplog setup belong to fixtures. The full
+environment before/after comparison happens within one operation; only selected
+result fields and the preservation boolean escape. Invalid HTTP/logging mapping
+examples are immutable descriptions with fresh fixture values.
+
+Hypothesis now produces complete fresh formatter/record scenarios over the same
+nonempty Unicode secret space and both formats. Retry response/BytesIO streams
+have native fixture context ownership; the failed-status tracking wrapper is
+fixture-arranged and event-list guards use explicit lengths. Re-review found no
+remaining event-list truthiness issue in the transaction logging test, so its
+behavior was retained rather than making an unnecessary edit.
+
+Verification under Python 3.12.14:
+
+- Focused resource/lifecycle/policy/ingestion/transaction checks passed **366** in
+  **1.74 seconds**. Ten added cases exercise SQLite operation/cancellation/
+  interruption/disposal faults and native Session health failures with or without
+  close failure, checking exact primary/cause, dependency close and engine
+  disposal. Full environment snapshots stay local to the fixture.
+- Fresh migrated `tradevalue_test_logging05_resource_fixtures`: **1,439 passed,
+  zero skips**, **91.26%** aggregate coverage in **130.55 seconds**, with the
+  **100%** API/calendar gate. Isolated units passed **1,389**, with 50 integrations
+  deselected, in **114.59 seconds**.
+- Locked sync, Ruff lint/format, ty, structural scope, dependency exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke,
+  clean API/Vercel/ML artifact installs/exclusions and committed-model gates pass.
+- Changes are confined to excluded test/support sources and documentation.
+  Installed application code, frontend, public HTTP schema and committed models
+  are unchanged. Existing API probes describe that installed runtime; a final
+  combined candidate image build remains required for acceptance. No new image
+  build or hosted success is claimed here.
+
+Evidence uses `/private/tmp/tradevalue-logging05-resource-fixtures-` prefixes:
+`focused-final3.txt`, `checks.sh`/`checks.txt`, `pytest.txt`, `units.txt` and
+`packages.txt`. Nine source dispositions were re-reviewed with current digests;
+all 237 files retain inspection records. Other explicit test/host-program,
+runtime role/interface and exact framework/historical findings remain open,
+along with hosted NonProd mode/correlation and final combined acceptance/release
+promotion. No acceptance PR or production promotion is made by this checkpoint.

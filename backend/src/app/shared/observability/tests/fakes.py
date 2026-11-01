@@ -6,6 +6,10 @@ from email.message import Message
 from urllib.error import HTTPError
 
 from sqlalchemy.exc import OperationalError
+from hypothesis import strategies as st
+from hypothesis.strategies import SearchStrategy
+from app.shared.observability.domain import LogFormat, LoggingSettings
+from app.shared.observability.formatting import SafeFormatter
 from app.shared.observability.tests.verify_http import ProbeReport
 from app.shared.observability.tests.verify_logs import ProbeMode, ProbeOptions
 
@@ -15,6 +19,25 @@ class LogCaptureScenario:
     mode: ProbeMode
     options: ProbeOptions
     report: ProbeReport
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class FormattingScenario:
+    formatter: SafeFormatter
+    record: logging.LogRecord
+
+
+def generate_formatting_scenarios() -> SearchStrategy[FormattingScenario]:
+    return st.builds(
+        FormattingScenario,
+        formatter=st.builds(
+            SafeFormatter,
+            settings=st.builds(
+                LoggingSettings, format=st.sampled_from(tuple(LogFormat))
+            ),
+        ),
+        record=st.text(min_size=1).map(build_exception_record),
+    )
 
 
 class HostileValue:

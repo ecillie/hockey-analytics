@@ -1,15 +1,17 @@
 """Resource lifetime and import isolation at composition boundaries."""
 
 import os
+import asyncio
 from pathlib import Path
 import subprocess
 import sys
 from textwrap import dedent
-from fastapi import Request
 from fastapi.testclient import TestClient
 import pytest
-from sqlalchemy import create_engine, event
+from sqlalchemy import event
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session
+from app.api.repository import SqlApiRepository
 from app.config import (
     AppEnvironment,
     DatabaseSettings,
@@ -18,28 +20,35 @@ from app.config import (
     get_api_settings,
     load_environment,
 )
-from app.api.routes import get_service
-from app.api.repository import SqlApiRepository
 from app import database
 from app.database import DatabaseResources
 from app.main import create_app
 from app.shared.tests.resources import (
     ResourceScenario,
-    RequestSessionScenario,
+    ConfigurationScenario,
+    EnvironmentObservation,
+    open_request_session,
+    open_sqlite_engine,
+    ResourceFailureScenario,
+    ResourceProbe,
 )
+from app.shared.tests.fakes import StageOutcome
 
 
 class TestApplicationResources:
     @pytest.fixture
     def scenario(self):
-        engine = create_engine("sqlite://")
-        scenario = ResourceScenario(
-            resources=DatabaseResources(
-                engine=engine, sessions=sessionmaker(bind=engine)
+        with open_sqlite_engine() as engine:
+            scenario = ResourceScenario(
+                resources=DatabaseResources(
+                    engine=engine, sessions=sessionmaker(bind=engine)
+                )
             )
-        )
-        event.listen(engine, "engine_disposed", scenario.record_disposal)
-        return scenario
+            event.listen(engine, "engine_disposed", scenario.record_disposal)
+            try:
+                yield scenario
+            finally:
+                event.remove(engine, "engine_disposed", scenario.record_disposal)
 
     @pytest.fixture
     def application(self, scenario):
@@ -123,34 +132,33 @@ class TestEnvironmentLoading:
         monkeypatch.setenv("DB_USER", "exported-user")
         return path
 
-    def test_dotenv_loading_preserves_environment_and_export_precedence(
-        self, environment_file
-    ):
+    @pytest.fixture
+    def observed_environment(self, environment_file):
         before = dict(os.environ)
         values = load_environment(env_file=environment_file)
-        assert values["DB_USER"] == "exported-user"
-        assert values["DB_HOST"] == "exported-user"
-        assert dict(os.environ) == before
+        return EnvironmentObservation(
+            user=values["DB_USER"],
+            host=values["DB_HOST"],
+            preserved=dict(os.environ) == before,
+        )
+
+    def test_dotenv_loading_preserves_environment_and_export_precedence(
+        self, observed_environment
+    ):
+        assert observed_environment.user == "exported-user"
+        assert observed_environment.host == "exported-user"
+        assert observed_environment.preserved is True
 
 
 class TestRequestSessions:
     @pytest.fixture
     def active_session(self):
-        engine = create_engine("sqlite://")
-        application = create_app()
-        application.state.database = DatabaseResources(
-            engine=engine, sessions=sessionmaker(bind=engine)
-        )
-        request = Request({"type": "http", "app": application})
-        dependency = get_service(request)
-        service = next(dependency)
-        service.check_health()
-        assert isinstance(service.repository, SqlApiRepository)
-        yield RequestSessionScenario(
-            session=service.repository.session, dependency=dependency
-        )
-        dependency.close()
-        engine.dispose()
+        with open_sqlite_engine() as engine:
+            resources = DatabaseResources(
+                engine=engine, sessions=sessionmaker(bind=engine)
+            )
+            with open_request_session(resources) as scenario:
+                yield scenario
 
     def test_session_closes_and_rolls_back_after_success(self, active_session):
         session, dependency = active_session.session, active_session.dependency
@@ -177,28 +185,30 @@ class TestStructuredConfigurationErrors:
     )
     def invalid_database_values(self, request):
         name, value = request.param
-        return name, {
-            "ENV": "prod",
-            "DATABASE_URL": "postgresql://fixture.invalid/test",
-            name: value,
-        }
+        return ConfigurationScenario(
+            name=name,
+            values={
+                "ENV": "prod",
+                "DATABASE_URL": "postgresql://fixture.invalid/test",
+                name: value,
+            },
+        )
 
     def test_database_configuration_error_identifies_field(
         self, invalid_database_values
     ):
-        name, values = invalid_database_values
         with pytest.raises(ConfigurationError) as failure:
-            get_database_settings(values)
-        assert failure.value.field == name
+            get_database_settings(invalid_database_values.values)
+        assert failure.value.field == invalid_database_values.name
 
     @pytest.fixture(
         params=[
-            pytest.param({"CORS_ORIGINS": " , "}, id="empty-origins"),
-            pytest.param({"CORS_ORIGIN_REGEX": "["}, id="malformed-regex"),
+            pytest.param((("CORS_ORIGINS", " , "),), id="empty-origins"),
+            pytest.param((("CORS_ORIGIN_REGEX", "["),), id="malformed-regex"),
         ]
     )
     def invalid_http_values(self, request):
-        return request.param
+        return dict(request.param)
 
     def test_http_configuration_error_is_structured(self, invalid_http_values):
         with pytest.raises(ConfigurationError) as failure:
@@ -209,22 +219,25 @@ class TestStructuredConfigurationErrors:
 class TestResourceConstructionFailure:
     @pytest.fixture
     def failing_factory(self, monkeypatch):
-        engine = create_engine("sqlite://")
-        disposed = []
+        with open_sqlite_engine() as engine:
+            disposed = []
 
-        def record_disposal(engine):
-            disposed.append(True)
+            def record_disposal(engine):
+                disposed.append(True)
 
-        def provide_engine(*args, **kwargs):
-            return engine
-
-        def reject_session_factory(*args, **kwargs):
-            raise RuntimeError("session factory failed")
-
-        event.listen(engine, "engine_disposed", record_disposal)
-        monkeypatch.setattr(database, "create_engine", provide_engine)
-        monkeypatch.setattr(database, "sessionmaker", reject_session_factory)
-        return disposed
+            event.listen(engine, "engine_disposed", record_disposal)
+            monkeypatch.setattr(database, "create_engine", StageOutcome(result=engine))
+            monkeypatch.setattr(
+                database,
+                "sessionmaker",
+                StageOutcome(
+                    result=None, failure=RuntimeError("session factory failed")
+                ),
+            )
+            try:
+                yield disposed
+            finally:
+                event.remove(engine, "engine_disposed", record_disposal)
 
     @pytest.fixture
     def settings(self):
@@ -262,3 +275,76 @@ class TestConfigurationRedaction:
     def test_settings_representation_omits_credentials(self, settings):
         assert "fixture-password" not in repr(settings)
         assert "database_url" not in repr(settings)
+
+
+class TestRequestSessionSetupCleanup:
+    @pytest.fixture(
+        params=[
+            pytest.param(RuntimeError, id="health-error"),
+            pytest.param(asyncio.CancelledError, id="health-cancelled"),
+            pytest.param(KeyboardInterrupt, id="health-interrupted"),
+        ]
+    )
+    def primary(self, request):
+        failure = request.param("health failed")
+        failure.__cause__ = ValueError("original cause")
+        return failure
+
+    @pytest.fixture(
+        params=[pytest.param(False, id="closed"), pytest.param(True, id="close-failed")]
+    )
+    def scenario(self, request, primary, monkeypatch):
+        cause = primary.__cause__
+        cleanup = OSError("close failed") if request.param else None
+        probe = ResourceProbe(
+            failures={} if cleanup is None else {"session.close": cleanup}
+        )
+        monkeypatch.setattr(
+            SqlApiRepository,
+            "check_health",
+            StageOutcome(
+                result=None, failure=primary, name="health", events=probe.events
+            ),
+        )
+        monkeypatch.setattr(
+            Session,
+            "close",
+            StageOutcome(
+                result=None, failure=cleanup, name="session.close", events=probe.events
+            ),
+        )
+        return ResourceFailureScenario(
+            probe=probe,
+            primary=primary,
+            expected=primary,
+            cause=cause,
+            settings=DatabaseSettings(
+                environment=AppEnvironment.DEV, database_url="sqlite://"
+            ),
+        )
+
+    @pytest.fixture
+    def observed(self, scenario):
+        def record_disposal(engine):
+            scenario.probe.events.append("dispose")
+
+        with pytest.raises(BaseException) as raised:
+            with open_sqlite_engine() as engine:
+                event.listen(engine, "engine_disposed", record_disposal)
+                resources = DatabaseResources(
+                    engine=engine, sessions=sessionmaker(bind=engine)
+                )
+                with open_request_session(resources):
+                    raise AssertionError("health failure entered session scope")
+        return raised.value
+
+    def test_setup_failure_closes_dependency_and_engine_without_masking_primary(
+        self, scenario, observed
+    ):
+        assert observed is scenario.primary
+        assert observed.__cause__ is scenario.cause
+        assert scenario.probe.events == ["health", "session.close", "dispose"]
+        if "session.close" in scenario.probe.failures:
+            assert (
+                observed.tradevalue_cleanup is scenario.probe.failures["session.close"]
+            )

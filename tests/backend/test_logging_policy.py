@@ -10,7 +10,7 @@ from io import StringIO
 from pathlib import Path
 import httpx
 
-from hypothesis import given, strategies as st
+from hypothesis import given
 import pytest
 
 from app.shared.observability import formatting
@@ -32,6 +32,7 @@ from app.shared.observability.tests.fakes import (
     build_connection_error_record,
     build_http_error_record,
     MetadataAccessError,
+    generate_formatting_scenarios,
 )
 from app.shared.observability.tests import verify_http, verify_logs
 from app.shared.observability.sinks import build_diagnostic_handler
@@ -59,6 +60,10 @@ class TestImmutableDiagnosticSnapshots:
 
 
 class TestHostileFailureMetadata:
+    @pytest.fixture
+    def formatter(self):
+        return SafeFormatter()
+
     @pytest.fixture(
         params=[
             pytest.param(RuntimeError, id="metadata-error"),
@@ -72,9 +77,11 @@ class TestHostileFailureMetadata:
         record.exc_info = (type(primary), primary, None)
         return record
 
-    def test_metadata_fault_does_not_escape_diagnostic_rendering(self, record):
+    def test_metadata_fault_does_not_escape_diagnostic_rendering(
+        self, record, formatter
+    ):
         try:
-            rendered = SafeFormatter().format(record)
+            rendered = formatter.format(record)
         except BaseException as failure:
             assert False, f"metadata fault escaped: {type(failure).__name__}"
         payload = json.loads(rendered)
@@ -97,25 +104,24 @@ class TestLoggingSettings:
     def selected_level(self, request):
         return request.param
 
-    def test_levels_are_normalized(self, selected_level):
-        assert (
-            read_logging_settings(
-                {"LOG_LEVEL": f" {selected_level.name.lower()} "}
-            ).level
-            is selected_level
-        )
+    @pytest.fixture
+    def selected_values(self, selected_level):
+        return {"LOG_LEVEL": f" {selected_level.name.lower()} "}
+
+    def test_levels_are_normalized(self, selected_level, selected_values):
+        assert read_logging_settings(selected_values).level is selected_level
 
     @pytest.fixture(
         params=[
-            pytest.param({"LOG_LEVEL": ""}, id="empty-level"),
-            pytest.param({"LOG_LEVEL": "warn"}, id="alias-rejected"),
-            pytest.param({"LOG_LEVEL": "secret\nvalue"}, id="unsafe-level"),
-            pytest.param({"LOG_FORMAT": ""}, id="empty-format"),
-            pytest.param({"LOG_FORMAT": "xml"}, id="unknown-format"),
+            pytest.param((("LOG_LEVEL", ""),), id="empty-level"),
+            pytest.param((("LOG_LEVEL", "warn"),), id="alias-rejected"),
+            pytest.param((("LOG_LEVEL", "secret\nvalue"),), id="unsafe-level"),
+            pytest.param((("LOG_FORMAT", ""),), id="empty-format"),
+            pytest.param((("LOG_FORMAT", "xml"),), id="unknown-format"),
         ]
     )
     def invalid_values(self, request):
-        return request.param
+        return dict(request.param)
 
     def test_invalid_values_do_not_echo_input(self, invalid_values):
         with pytest.raises(LoggingSettingsError) as raised:
@@ -159,13 +165,9 @@ class TestSafeFormatter:
         assert '"source":"unsupported"' in rendered
         assert '"duration_ms":4.5' in rendered
 
-    @given(secret=st.text(min_size=1), format=st.sampled_from(tuple(LogFormat)))
-    def test_messages_and_nested_exception_values_are_never_serialized(
-        self, secret, format
-    ):
-        rendered = SafeFormatter(settings=LoggingSettings(format=format)).format(
-            build_exception_record(secret)
-        )
+    @given(scenario=generate_formatting_scenarios())
+    def test_messages_and_nested_exception_values_are_never_serialized(self, scenario):
+        rendered = scenario.formatter.format(scenario.record)
         payload = json.loads(rendered.removeprefix("event "))
         assert payload["message"] == "job failed"
         assert payload["exceptions"] == [
