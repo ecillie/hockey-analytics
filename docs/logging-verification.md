@@ -2033,3 +2033,28 @@ process, never the worktree implementation.
 No hosted environment settings, credentials, retention or collection controls
 were changed. This checkpoint is pushed on the existing acceptance branch;
 it does not create a phase-five PR, manually merge or approve production.
+
+## Owner approval of the first three audit boundaries
+
+On 2026-11-01 the owner explicitly approved F1/F2/T1 after receiving their
+individual explanations. The semantic audit records the exact approved scopes:
+native Vercel app/settings bootstrap, native Alembic loader bootstrap/success
+return, and the listed source-only intentional fault operations. The approved
+API lifespan hook and dev-only logging gate remain unchanged. This is an
+explicit owner decision, not an inference from green checks or automatic merges.
+
+H1 remains pending. No canonical historical revision or frozen SQL was changed.
+A private review proposal removes revision-import path resolution, returns a
+typed checksum-policy violation, and uses the shared primary-preserving cursor
+owner. Its 202 focused migration/cleanup tests pass; 11 new expectations fail
+against the exact original revision, with ten controls passing. Generated
+offline SQL is byte-identical, and schema bytes, revision metadata and
+upgrade/downgrade function AST are unchanged. The proposal passes lint, format,
+type and non-applying patch checks. Evidence uses `/private/tmp/tradevalue-h1-`;
+the review artifact is `/private/tmp/tradevalue-h1-review.patch`.
+
+Phase-five PR #173 merged into Dev at 16757a9; automated release PR #174 merged
+at 9abe26f. Dev validation 41318341617, release validation 41319067993,
+post-release validation 41319870064 and production-PR validation 41319876296
+all passed. The last verified production PR #122 remained OPEN with all checks
+green and autoMergeRequest null. No manual production approval was performed.

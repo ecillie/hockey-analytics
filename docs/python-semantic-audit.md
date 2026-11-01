@@ -15,24 +15,24 @@ behavior to assess. 207 other files have received the content review
 recorded below; unresolved findings and layout/boundary decisions are explicit.
 Inspection does not accept the recorded findings.
 
-Open release decisions include Vercel's exported ASGI application, Alembic's
-framework-executed bootstrap, intentional source-only failing test doubles,
-and frozen historical migration compatibility.
-The previously approved API lifespan logging hook is the only recorded owner
-approval; this ledger creates no additional blanket exception.
+The remaining owner decision concerns frozen historical migration compatibility.
+On 2026-11-01 the owner explicitly approved F1, F2 and T1 as the first three
+audit decisions in this conversation. Those exact approvals supplement the
+previously approved API lifespan logging hook; they grant no blanket exception.
 
 ## Exact owner decisions awaiting response
 
 Plan §4.1 requires an explicit owner decision for a remaining framework
-exception; passing checks do not grant one. The approved API lifespan logging
-hook remains the only approved exception. The following requests are pending:
+exception; passing checks do not grant one. F1/F2/T1 are now owner-approved
+within the exact boundaries below. H1 remains pending while the owner reviews
+the explanation and the non-applied proposal.
 
-| ID | Exact boundary | Proposed bounded disposition |
-| --- | --- | --- |
-| F1 | `backend/index.py`: `app = create_runtime_app()` | Retain Vercel's native exported ASGI application and its factory's environment/dotenv settings bootstrap at framework load. This permits that exported mutable framework application and that bootstrap only. Database resources and handler configuration remain owned by the approved lifespan hook; ordinary library imports remain pure. |
-| F2 | `backend/migrations/env.py`: framework-load `main()` call and success return | Retain Alembic's native loader entry: run the command adapter when Alembic loads env.py, return control on success, and raise SystemExit only for a nonzero exit code. A conventional `__main__` guard would prevent Alembic from executing migrations. This permits neither import bootstrap in ordinary libraries nor new logging owners. |
-| T1 | Source-only native fault operations listed below | Retain intentionally throwing native operations and fail-fast resource guards in excluded test support. Returning an exception would change the native operation's contract and stop exercising the failure. Application invariant policies still return violations; this permits no production raise-only helper. |
-| H1 | `backend/migrations/versions/20260910_0001_initial_schema.py` | Separate question pending: allow Python-only ownership/error/import fixes, or explicitly retain the exact historical revision with its confirmed findings. The database guide says never to edit an applied revision. SQL and revision metadata remain unchanged under either option. |
+| ID | Status | Exact boundary | Bounded disposition |
+| --- | --- | --- | --- |
+| F1 | Owner-approved | `backend/index.py`: `app = create_runtime_app()` | Retain Vercel's native exported ASGI application and its factory's environment/dotenv settings bootstrap at framework load. This permits that exported mutable framework application and that bootstrap only. Database resources and handler configuration remain owned by the approved lifespan hook; ordinary library imports remain pure. |
+| F2 | Owner-approved | `backend/migrations/env.py`: framework-load `main()` call and success return | Retain Alembic's native loader entry: run the command adapter when Alembic loads env.py, return control on success, and raise SystemExit only for a nonzero exit code. A conventional `__main__` guard would prevent Alembic from executing migrations. This permits neither import bootstrap in ordinary libraries nor new logging owners. |
+| T1 | Owner-approved | Source-only native fault operations listed below | Retain intentionally throwing native operations and fail-fast resource guards in excluded test support. Returning an exception would change the native operation's contract and stop exercising the failure. Application invariant policies still return violations; this permits no production raise-only helper. |
+| H1 | Pending | `backend/migrations/versions/20260910_0001_initial_schema.py` | Allow Python-only ownership/error/import fixes, or explicitly retain the exact historical revision with its confirmed findings. The database guide says never to edit an applied revision. SQL and revision metadata remain unchanged under either option. Approval of F1/F2/T1 does not decide H1. |
 
 T1 is limited to these twelve sole-raise operations:
 
@@ -44,7 +44,7 @@ T1 is limited to these twelve sole-raise operations:
   `BrokenStream.flush`.
 - `app/shared/tests/fakes.py`: `FailingAction.__call__`, `reject_network_access`.
 
-The same request includes `parse_source_number` in observability test support,
+The approved T1 boundary also includes `parse_source_number` in observability test support,
 which deliberately calls native `int` on invalid text to produce a real
 conversion traceback. HostileValue and BrokenStream now use frozen, slotted,
 keyword-only dataclasses with immutable failure-message fields; their methods
@@ -86,9 +86,9 @@ startup are outside this application delivery gate.
 
 This explicit scope change supersedes the earlier requirement for hosted
 NonProd diagnostic emission/correlation and its missing target. Disabled modes
-are verified with local production artifacts and disposable data. F1/F2/T1/H1
-owner decisions remain pending; disabling output grants no further Python-rule
-exceptions.
+are verified with local production artifacts and disposable data. F1/F2/T1
+subsequently received explicit owner approval; H1 remains pending. Disabling
+output itself grants no Python-rule exceptions.
 
 ## ML findings resolved in this checkpoint
 
@@ -391,7 +391,8 @@ accepted by HistoricalContractService now reaches ProfileFetcher; invalid direct
 worker counts open no sessions, and concurrent owned sessions all close. The
 existing public worker argument and default limit remain compatible.
 
-Required framework and historical-migration dispositions above remain open.
+The framework/test boundaries above are owner-approved. Only the historical
+migration disposition remains open.
 Do not rewrite frozen history or introduce a global-state approximation.
 All 245 files have content-inspection dispositions; unresolved findings still
 require fixes or precise decisions. Passing gates does not accept them implicitly.
@@ -413,8 +414,8 @@ require fixes or precise decisions. Passing gates does not accept them implicitl
 | `backend/database/verify_migrations.py` | `e2c57a5e94bd` | Reviewed: report collection over native Alembic history, explicit path conversion, frozen command options, main-owned diagnostics/status and no import-time history reads. Compatibility alias retained. |
 | `backend/database/verify_python_rules.py` | `dac613daa2be` | Reviewed: immutable rule IDs/findings, typed scope failure, pure AST classification, explicit root traversal without imports, fail-closed scope, main-owned lazy diagnostics and deterministic exits. Manual scope limits remain documented. |
 | `backend/export_openapi.py` | `4832c775dc48` | Re-reviewed/fixed: render_schema_text is a public descriptive helper and all actual callers/injected command seams use it. Schema-only construction, deterministic JSON, frozen options, main-owned diagnostics and check/write paths are unchanged; full AST comparison permits only the helper rename. |
-| `backend/index.py` | `6a1e64c5ed23` | Reviewed content: required ASGI export calls runtime factory at module load; mutable application and dotenv/factory import work need exact owner disposition. |
-| `backend/migrations/env.py` | `68e8ae9c844a` | Reviewed content: thin Alembic-executed main adapter; success returns to framework, failures exit. Load-time bootstrap disposition remains open. |
+| `backend/index.py` | `6a1e64c5ed23` | Reviewed: owner-approved F1 permits the exact native ASGI export and factory settings bootstrap at framework load. Database resources and handlers remain in the approved lifespan hook; ordinary libraries acquire no new import bootstrap permission. |
+| `backend/migrations/env.py` | `68e8ae9c844a` | Reviewed: owner-approved F2 permits the thin native Alembic loader to invoke main at framework load, return on success and exit on failure. Main retains configuration ownership; no general library import exception is granted. |
 | `backend/migrations/versions/20260910_0001_initial_schema.py` | `7e09b5e51a37` | Reviewed content: frozen checksum/schema and revision metadata; external reads/SQL only during revision execution. Historical generic guard error, else branch and cleanup contract require frozen-migration disposition; do not rewrite history silently. |
 | `backend/migrations/versions/20260920_0002_capspace_source.py` | `935a3ecabd9c` | Reviewed: immutable revision metadata and fixed SQL only in upgrade/downgrade; history preservation included in frozen-migration disposition. |
 | `backend/src/app/ScriptingFiles/FullDataScript/capspace.py` | `59f079d89351` | Re-reviewed: supported inbound contract command/composition boundary preserves public keywords, frozen options, policy calls, dependency assembly and compatibility exports. Canonical services/repositories own contract business work and persistence. Per-call public report assembly, argparse/stdout and main-only logging belong to this edge. No executable changes or additional framework exception. |
@@ -538,7 +539,7 @@ require fixes or precise decisions. Passing gates does not accept them implicitl
 | `backend/src/app/shared/observability/sinks.py` | `030f130cf27d` | Re-reviewed/fixed: built diagnostic handlers reject disabled environments through the native filter before formatting, fallback rendering or stream writes. SafeStream still bounds ordinary sink failures without recursion and preserves cancellation/interrupt. Invalid limits still fail before handler construction; no files or persistence sinks added. |
 | `backend/src/app/shared/observability/tests/__init__.py` | `0bd51b497d66` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/shared/observability/tests/app_probe.py` | `65720d0ca9e8` | Reviewed: excluded read-only probe factory adds deterministic native numeric and streaming failures to the production app only when called. Stream yields its first chunk before native conversion failure; endpoint metadata stays outside OpenAPI. No module-level app or import-time resource startup. |
-| `backend/src/app/shared/observability/tests/fakes.py` | `cc64031607eb` | Re-reviewed/fixed: EnvironmentLogObservation retains only immutable enabled/line-tuple results after owned native stream/handler cleanup. Existing frozen hostile/sink adapters, generated formatting scenarios and native fault metadata retain behavior. Exact pending T1 scope is unchanged; support remains excluded from artifacts. |
+| `backend/src/app/shared/observability/tests/fakes.py` | `cc64031607eb` | Re-reviewed/fixed: EnvironmentLogObservation retains only immutable enabled/line-tuple results after owned native stream/handler cleanup. Existing frozen hostile/sink adapters, generated formatting scenarios and native fault metadata retain behavior. Owner-approved T1 is limited to the exact listed native fault operations; support remains excluded from artifacts. |
 | `backend/src/app/shared/observability/tests/fixtures.py` | `9acfed4652a5` | Reviewed: native logger/excepthook settings are isolated with pytest monkeypatch and per-fixture handler ownership; only a newly installed diagnostic handler is closed. No logging configuration or database/resource acquisition occurs at module import. |
 | `backend/src/app/shared/observability/tests/lifecycle.py` | `f79c39a28fbf` | Re-reviewed/fixed: LifecycleObservation now retains its actual captured records as well as the native failure/host record. This prevents call-phase resets from making no-false-stopped assertions vacuous. Frozen scenario/resource bindings and bounded native ASGI exercise remain unchanged; native log objects are fixture-owned handles. |
 | `backend/src/app/shared/observability/tests/requests.py` | `0a29e894792c` | Re-reviewed/fixed: frozen HTTP, streaming, propagated-host and concurrent request observations replace positional collaborator bundles. CapturedRecords preserves each actual log set across pytest phases; scope/transport aliases preserve native ASGI shapes. HostFilters contains distinct reported-filter instances so cross-instance duplicate consumption remains tested. Shared input state is deliberately aliased fixture data; native TaskGroup and timeout behavior are unchanged. |

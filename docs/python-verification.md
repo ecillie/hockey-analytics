@@ -1,5 +1,19 @@
 # Python verification
 
+## Current owner decisions
+
+On 2026-11-01 the owner explicitly approved the exact F1/F2/T1 boundaries in
+the [semantic audit](python-semantic-audit.md#exact-owner-decisions-awaiting-response):
+Vercel's native app/settings bootstrap, Alembic's loader bootstrap/success
+return, and the listed source-only native fault operations. The approved API
+lifespan logging hook remains unchanged. These approvals grant no additional
+library import/configuration or production-policy exceptions.
+
+H1, the applied initial migration, remains undecided. Its canonical source,
+SQL, revision metadata and schema checksum have not changed. The private
+Python-only proposal is a review artifact, not an applied or merged fix.
+Earlier checkpoints below retain their historical validation results.
+
 The active-write/team-stint checkpoint resolves those remaining context/role
 findings. Immutable write values carry resolved scalar team IDs; compatibility
 writer calls retain exact SQL/bindings/outcomes in **216** contract and **24**
