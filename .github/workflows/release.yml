@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited, ready_for_review, converted_to_draft]
+    branches: ['Release-*.*.*', 'Hotfix-*.*.*']
+  push:
+    branches: ['Release-*.*.*', 'Hotfix-*.*.*']
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate-branch:
+    name: Validate release branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check branch name
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
+          SOURCE_BRANCH: ${{ github.head_ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TARGET_BRANCH" =~ ^(Release|Hotfix)-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected a Release-x.y.z or Hotfix-x.y.z branch: $TARGET_BRANCH"
+            exit 1
+          fi
+
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            if [ "$SOURCE_BRANCH" != Dev ]; then
+              echo "Only Dev promotion PRs may target release or hotfix branches. Feature PRs must target Dev."
+              exit 1
+            fi
+            shopt -s nocasematch
+            if [[ "$PR_TITLE" =~ (^|[^[:alnum:]])hotfix([^[:alnum:]]|$) ]]; then
+              [[ "$PR_TITLE" =~ ^hotfix([^[:alnum:]]|$) ]] || {
+                echo "Hotfix PR titles must start with Hotfix."
+                exit 1
+              }
+              PREFIX=Hotfix-
+            else
+              PREFIX=Release-
+            fi
+            EXPECTED_BRANCH=$(gh api "repos/${{ github.repository }}/branches" --paginate \
+              --jq '.[].name' | awk -v prefix="$PREFIX" '$0 ~ ("^" prefix "[0-9]+[.][0-9]+[.][0-9]+$")' \
+              | sort -V | tail -1)
+            if [ -z "$EXPECTED_BRANCH" ] || [ "$TARGET_BRANCH" != "$EXPECTED_BRANCH" ]; then
+              echo "PR title requires the current $EXPECTED_BRANCH branch, but this PR targets $TARGET_BRANCH."
+              exit 1
+            fi
+          fi
+
+  ci:
+    name: CI
+    uses: ./.github/workflows/_reusable-ci.yml
+
+  required:
+    name: Release required
+    if: ${{ always() }}
+    needs: [validate-branch, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify required jobs
+        env:
+          VALIDATE_RESULT: ${{ needs.validate-branch.result }}
+          CI_RESULT: ${{ needs.ci.result }}
+        run: test "$VALIDATE_RESULT" = "success" && test "$CI_RESULT" = "success"
+
+  merge-to-release:
+    name: Enable automatic merge to release
+    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && needs.required.result == 'success' }}
+    needs: [required]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Enable auto-merge for the validated pull request
+        env:
+          GH_TOKEN: ${{ secrets.PROMOTION_TOKEN }}
+        run: |
+          is_draft=$(gh pr view "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" --json isDraft --jq '.isDraft')
+          if [ "$is_draft" != false ]; then
+            echo "PR is currently a draft; skipping auto-merge."
+            exit 0
+          fi
+          gh pr merge "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" \
+            --auto \
+            --merge
+
+  promote:
+    name: Promote release to Prod
+    if: ${{ github.event_name == 'push' && needs.required.result == 'success' }}
+    needs: [required]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: environment-promotion
+      cancel-in-progress: false
+    steps:
+      - name: Create or find promotion pull request
+        env:
+          GH_TOKEN: ${{ secrets.PROMOTION_TOKEN }}
+          RELEASE_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          AHEAD=$(gh api "repos/${{ github.repository }}/compare/Prod...$RELEASE_BRANCH" --jq '.ahead_by')
+          if [ "$AHEAD" -eq 0 ]; then
+            echo "$RELEASE_BRANCH has no commits to promote to Prod."
+            exit 0
+          fi
+
+          if [ -z "$(gh pr list --repo "${{ github.repository }}" \
+            --base Prod --head "$RELEASE_BRANCH" --state open \
+            --json number --jq '.[0].number')" ]; then
+            gh pr create --repo "${{ github.repository }}" \
+              --base Prod --head "$RELEASE_BRANCH" \
+              --title "Promote $RELEASE_BRANCH to Prod" \
+              --body "Automated promotion from $RELEASE_BRANCH to Prod. Merge manually after all Prod requirements pass."
+          fi

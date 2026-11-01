@@ -1,61 +1,121 @@
 """Repair missing season-ending team assignments from typed season statistics."""
 
-from __future__ import annotations
-
 import argparse
 import json
-import sys
-from pathlib import Path
-
-# Allow this maintenance script to be executed directly without requiring callers
-# to configure PYTHONPATH. The application package lives one directory above it.
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
-if str(BACKEND_ROOT) not in sys.path:
-    sys.path.insert(0, str(BACKEND_ROOT))
+import logging
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 from app.database import connect_database, init_db
 from app.ScriptingFiles.FullDataScript.team_stints import (
     apply_team_stint_backfill,
     plan_team_stint_backfill,
 )
+from app.ScriptingFiles.FullDataScript.team_stints.repository import TeamStintQuery
+from app.shared.cleanup import complete_cleanup
+from app.shared.cli import CommandOptionError, ExitCode
+from app.config import load_environment
+from app.shared.observability.domain import CommandOutcome, read_logging_settings
+from app.shared.observability.errors import LoggingSettingsError
+from app.shared.observability.services import (
+    configure_logging,
+    start_command,
+    configure_command_exceptions,
+    finish_command,
+)
 
 
-def arguments() -> argparse.Namespace:
+@dataclass(slots=True, kw_only=True, frozen=True)
+class CommandOptions:
+    apply: bool
+    first_season: int | None
+    last_season: int | None
+
+
+logger = logging.getLogger(__name__)
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--apply", action="store_true", help="commit the repair; default is a dry run")
+    parser.add_argument(
+        "--apply", action="store_true", help="commit the repair; default is a dry run"
+    )
     parser.add_argument("--first-season", type=int)
     parser.add_argument("--last-season", type=int)
-    return parser.parse_args()
+    return parser
 
 
-def main() -> int:
-    args = arguments()
+def find_option_violation(options: CommandOptions) -> CommandOptionError | None:
+    if (
+        options.first_season is not None
+        and options.last_season is not None
+        and options.first_season > options.last_season
+    ):
+        return CommandOptionError(option="season range", requirement="must be ordered")
+    return None
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
+    options = CommandOptions(**vars(parser.parse_args(argv)))
+    if violation := find_option_violation(options):
+        parser.error(str(violation))
+    try:
+        settings = read_logging_settings(load_environment())
+    except LoggingSettingsError as error:
+        parser.error(str(error))
+    configure_logging(settings)
+    context = start_command("backfill_team_stints")
+    configure_command_exceptions(context)
+    try:
+        result = repair_team_stints(options)
+    except Exception:
+        logger.exception(
+            "Team-stint repair failed; changes were rolled back",
+            extra=context.fields | {"event": "command.failed"},
+        )
+        finish_command(context, CommandOutcome.FAILED)
+        return ExitCode.FAILURE
+    print(json.dumps(result, sort_keys=True))
+    finish_command(context, CommandOutcome.COMPLETED)
+    return ExitCode.SUCCESS
+
+
+def repair_team_stints(
+    options: CommandOptions, *, query: TeamStintQuery | None = None
+) -> dict:
+    query = (
+        (apply_team_stint_backfill if options.apply else plan_team_stint_backfill)
+        if query is None
+        else query
+    )
     init_db()
     connection = connect_database()
+    primary: BaseException | None = None
     try:
-        if args.apply:
-            result = apply_team_stint_backfill(
+        if options.apply:
+            result = query(
                 connection,
-                first_season=args.first_season,
-                last_season=args.last_season,
+                first_season=options.first_season,
+                last_season=options.last_season,
             )
             connection.commit()
             result["applied"] = True
-        else:
-            result = plan_team_stint_backfill(
-                connection,
-                first_season=args.first_season,
-                last_season=args.last_season,
-            )
-            connection.rollback()
-            result["applied"] = False
-    except Exception:
+            return result
+        result = query(
+            connection,
+            first_season=options.first_season,
+            last_season=options.last_season,
+        )
         connection.rollback()
+        result["applied"] = False
+        return result
+    except BaseException as failure:
+        primary = failure
+        complete_cleanup((connection.rollback,), primary)
         raise
     finally:
-        connection.close()
-    print(json.dumps(result, sort_keys=True))
-    return 0
+        complete_cleanup((connection.close,), primary)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,10 @@
 .env
-.pytest_cache
+.env.*
+.venv
 __pycache__
-tests
-app/ScriptingFiles
 *.pyc
+data
+legacy_loaders
+src/app/ScriptingFiles
+
+src/app/api/tests

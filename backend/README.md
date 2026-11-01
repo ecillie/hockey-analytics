@@ -1,47 +1,48 @@
 # TradeValue backend API
 
-The backend is a read-only FastAPI service backed by an Alembic-managed
-PostgreSQL schema. It implements every route in `docs/api-contract.md`,
-including player and team browsing, Hockey Value, contracts, cap estimates,
-search, overview aggregates, and comparison.
+A read-only FastAPI service backed by PostgreSQL. It serves players, teams,
+statistics, Hockey Value, contracts, cap estimates, search, and comparisons.
+See the [API contract](../docs/api-contract.md) for endpoints and response shapes.
 
 ## Local development
 
-From the repository root:
+Run from the repository root:
 
 ```bash
-python -m pip install -r backend/requirements-dev.txt
+uv sync --locked --all-groups
 cp backend/.env.example backend/.env
-python -m alembic -c backend/alembic.ini upgrade head
-cd backend
-uvicorn app.main:app --reload
 ```
 
-If you use the individual `DB_*` variables instead of `DATABASE_URL`, apply the
-schema with the equivalent connection arguments. The API is available at
-`http://localhost:8000`; interactive OpenAPI documentation is at
-`http://localhost:8000/docs`.
-
-Health check:
+Edit `backend/.env` with your local database credentials, then run:
 
 ```bash
-curl http://localhost:8000/api/health
+uv run python -m alembic -c backend/alembic.ini upgrade head
+uv run uvicorn app.main:create_runtime_app --factory --reload
 ```
 
-The health endpoint checks database connectivity. A database failure returns a
-shared `DATABASE_UNAVAILABLE` error with HTTP 503.
+- API: `http://localhost:8000`
+- Interactive docs: `http://localhost:8000/docs`
+- Health: `curl http://localhost:8000/api/health`
 
-The season catalog is intentionally historical/current only. A season becomes
-available on July 1 of its start year, so 2026–27 is hidden through June 30,
-2026 and becomes available on July 1, 2026. The same centralized cutoff powers
-the current-season default, `/api/seasons`, and validation on every
-season-scoped endpoint; inserting future contract seasons does not expose them
-as selectable statistics seasons.
+Health checks database connectivity; an unavailable database returns HTTP 503
+with `DATABASE_UNAVAILABLE`. The API never creates or migrates tables on startup.
 
-Hockey Value is calculated from the canonical all-situations advanced-stat row
-using the repository's position/season replacement-level definition. A stored
-next-season projection is returned only when a prediction payload explicitly
-contains `predicted_hockey_value`; otherwise that field remains `null`.
+## Configuration
+
+Use `ENV=dev`, `nonprod`, or `prod`. Dev accepts local `DB_*` components or a
+connection URL. Deployed environments use `DATABASE_URL` or the matching scoped
+URL (`NONPROD_DATABASE_URL` or `PROD_DATABASE_URL`); scoped URLs take precedence.
+See [database setup](database/README.md#initial-setup).
+
+Exported variables override dotenv values. Source installations default to
+`backend/.env`; `TRADEVALUE_ENV_FILE` selects another file. Deployed applications
+use exported settings and do not bundle dotenv files. Configuration loading does
+not mutate the process environment or include database URLs in error messages.
+
+Application logging is disabled in nonprod and prod. In Dev, `LOG_LEVEL`
+defaults to `INFO` and `LOG_FORMAT` to `json`; use `DEBUG` for more detail or
+`text` for terminal output. Restart after changing Python settings. See
+[logging configuration and events](../docs/logging-events.md).
 
 ## Frontend connection
 
@@ -52,149 +53,82 @@ VITE_API_BASE_URL=http://localhost:8000
 VITE_USE_MOCK_API=false
 ```
 
-Set `CORS_ORIGINS` in `backend/.env` to a comma-separated list of actual browser
-origins. Do not use `*` when credentials are introduced later.
+Set backend `CORS_ORIGINS` to the exact browser origins, separated by commas.
+Use a narrowly scoped `CORS_ORIGIN_REGEX` for preview URLs. Restart the frontend
+dev server or rebuild a hosted frontend after changing its environment.
+
+Responses carry a generated `X-Request-ID`, exposed to allowed origins through
+CORS. Caller-supplied IDs are ignored. Logs use route templates and safe fields;
+raw URLs, bodies, query strings, and credentials are excluded.
+
+## API behavior
+
+- A season becomes available on July 1 of its start year. The same cutoff
+  controls the default season, `/api/seasons`, and season validation.
+- Hockey Value uses canonical all-situations advanced stats and the
+  position/season replacement level. Next-season projections stay `null`
+  unless the stored prediction explicitly supplies `predicted_hockey_value`.
+- Missing values stay `null`. Money is integer cents; percentages are ratios.
+- Each request owns and closes its session. The lifespan hook creates database
+  resources and configures logging, then disposes the engine on shutdown.
+- `create_app()` supports schema inspection and injected test resources without
+  reading configuration or opening a database. Runtime serving uses
+  `create_runtime_app()`.
 
 ## Tests
 
-```bash
-PYTHONPATH=backend pytest -q backend/tests ml/tests
-```
-
-HTTP and service tests verify response contracts, validation errors, route
-coverage, CORS, and service-layer branching. PostgreSQL integration tests run
-when `TEST_DATABASE_URL` is set; the target database must be disposable because
-the tests truncate application tables. CI provisions a dedicated PostgreSQL
-service, migrates an empty database to Alembic head, verifies the catalog and a
-downgrade/re-upgrade cycle, then runs the integration suite automatically.
-
-The ingestion gate uses small checked-in MoneyPuck and CapWages-shaped fixtures;
-it never calls live NHL, MoneyPuck, or CapWages services. It validates source
-schemas and required values, season coverage, player/season/stat deduplication,
-idempotent typed-field upserts, salary-cap reference data, foreign-key behavior,
-and transaction rollback after a failed batch.
-
-Every schema-native ingestion stage records `running`, `succeeded`, `failed`, or
-`cancelled` state in `ingestion_runs`. PostgreSQL advisory locks reject a second
-copy of the same stage while one is active. Successful rows are upserted and
-source rows absent from a later snapshot are deliberately retained; loaders do
-not infer deletion from absence. MoneyPuck coverage, volume, and duplicate-ratio
-thresholds, NHL roster and schedule minimums, NHL stat invariants, and CapWages
-profile-success thresholds fail before writes. An incomplete roster feed rolls
-back the entire roster-status update.
-
-The production defaults expect MoneyPuck seasons 2008 through 2025, at least 30
-NHL teams, 500 active NHL players, 100 regular-season schedule games, and a 98%
-CapWages profile success rate. Tests override only the volume values so tiny
-fixtures exercise the identical validation and persistence paths.
-
-To run the integration tests against a dedicated local test database:
+Run from the repository root:
 
 ```bash
-createdb tradevalue_test
-DATABASE_URL=postgresql://localhost/tradevalue_test \
-  python -m alembic -c backend/alembic.ini upgrade head
-TEST_DATABASE_URL=postgresql://localhost/tradevalue_test \
-  PYTHONPATH=backend pytest -q backend/tests/test_postgres_integration.py
+uv run pytest -q tests/backend tests/ml
 ```
 
-## Container
+Use only a disposable database named `tradevalue_test...`: integration fixtures
+truncate tables. The [verification guide](../docs/python-verification.md) covers
+setup, unit-only runs, coverage, and approved framework boundaries.
+
+CI verifies migration upgrade/no-op/downgrade cycles, schema catalogs, API smoke
+checks, packages, and the 100% API/calendar coverage gate. Ingestion tests use
+saved fixtures rather than live upstream services.
+
+## Data collection
+
+Run loaders separately from the API, after migrations. The
+[ingestion guide](src/app/ScriptingFiles/FullDataScript/README.md) documents the
+full pipeline, roster refresh, historical contract recovery, and team-stint repair.
+[Command options and exit codes](../docs/python-commands.md) are listed separately.
+
+Stages track their state in `ingestion_runs` and use advisory locks to prevent
+concurrent copies. Validation precedes writes; upserts retain rows absent from
+later snapshots. An incomplete roster feed rolls back its update. Historical
+contract batches retain earlier commits if a later batch fails.
+
+The default source checks expect MoneyPuck seasons 2008–2025, at least 30 NHL
+teams, 500 active NHL players, 100 regular-season schedule games, and a 98%
+CapWages profile success rate. Tests lower volume requirements for small fixtures.
+Review local contract coverage and dry-run results before a production load.
+
+Historical CSVs live in `backend/data/`; `TRADEVALUE_DATA_DIR` overrides that
+location. Retired loaders under [legacy_loaders](legacy_loaders/README.md) are
+non-executable recovery references, not database backups.
+
+## Container and deployment
+
+From the repository root:
 
 ```bash
 docker build -t tradevalue-api backend
 docker run --rm -p 8000:8000 --env-file backend/.env tradevalue-api
 ```
 
-Required CI builds this exact Dockerfile, starts the resulting image as a
-non-root user against the disposable PostgreSQL service, waits for readiness,
-and calls `/api/health`, `/api/seasons`, and `/api/teams` over the published
-port. Container logs are printed automatically when the smoke check fails. The
-request-serving image excludes ingestion code and its large local source data;
-loaders run separately from a trusted environment.
+The image runs as a non-root user and excludes ingestion code and local source
+data. Its database must be reachable from inside the container. CI smoke-tests
+health, seasons, and teams against a disposable PostgreSQL service.
 
-The supported ingestion commands are documented in
-`app/ScriptingFiles/FullDataScript/README.md`. CI compiles the complete backend
-application and imports every supported ingestion module in a fresh interpreter
-before running the database-backed suite. Obsolete ORM-based loaders are
-retained under `legacy_loaders/` as non-executable recovery references; they are
-not substitutes for PostgreSQL backups.
+For Vercel, use root directory `backend`; deploy the frontend as a separate
+project rooted at `frontend`. Use pooled Neon URLs for API requests and direct
+URLs for migrations and ingestion. Keep every database URL out of the frontend.
 
-Production must provide `ENV=nonprod` or `ENV=prod`, a corresponding database
-URL, and the deployed frontend origin in `CORS_ORIGINS`. Apply schema changes as
-a separate release step; the API never mutates the schema on startup.
-
-## Vercel + Neon deployment
-
-Import this repository into Vercel twice. Configure the API project with Root
-Directory `backend` and the web project with Root Directory `frontend`.
-`vercel.json` in each directory pins the framework and routing behavior.
-
-For the API project:
-
-1. Add Neon from the Vercel Marketplace and connect it only to the API project,
-   or add an existing Neon pooled connection string as `DATABASE_URL`.
-2. Set `ENV=prod`.
-3. Set `CORS_ORIGINS` to the exact production frontend origin, with no trailing
-   slash, such as `https://tradevalue.example.com`.
-4. Optionally set `CORS_ORIGIN_REGEX` to a project-specific full-match regex for
-   preview URLs. Avoid a regex that permits every `vercel.app` deployment.
-5. Deploy and confirm `/api/health` returns `{"status":"ok"}`.
-
-Use Neon's pooled `-pooler` connection string for the running API. The app keeps
-its local SQLAlchemy pool deliberately small so horizontally scaled Functions do
-not create excessive client connections. Keep a direct, non-pooled Neon URL for
-schema application and ingestion jobs; do not expose either URL to the frontend.
-
-Apply migrations using the direct connection before the API deployment:
-
-```bash
-DATABASE_URL="$NEON_DIRECT_DATABASE_URL" \
-  python -m alembic -c backend/alembic.ini upgrade head
-```
-
-The repository's manually dispatched `Database migration` workflow performs
-this as a separately gated environment operation. Configure a direct,
-non-pooled `DATABASE_URL` secret in both GitHub `nonprod` and `prod`
-Environments, and require reviewers for the `prod` Environment.
-
-For the frontend project, set these variables in both Production and Preview:
-
-```dotenv
-VITE_USE_MOCK_API=false
-VITE_API_BASE_URL=https://your-api-project.vercel.app
-```
-
-Redeploy the frontend after changing either `VITE_` value because Vite embeds
-them into the browser bundle at build time. The frontend's Vercel rewrite keeps
-React Router URLs working when opened or refreshed directly.
-
-The checked-in ingestion CSVs and scripts are excluded from the Vercel Function.
-Run ingestion from a trusted machine or a separate job using
-`requirements-dev.txt` and the direct Neon database URL.
-# Contract ingestion
-
-Current/recent contracts come from CapWages' active-player index. Historical
-gaps are filled by a schema-native source cascade that targets the database's
-missing player-seasons directly: CapSpace by NHL ID first, then CapWages when
-the first source has no contract covering a requested season.
-
-```bash
-PYTHONPATH=backend ENV=dev DATABASE_URL=postgresql://... \
-  python -m app.ScriptingFiles.FullDataScript.capspace --dry-run
-PYTHONPATH=backend ENV=dev DATABASE_URL=postgresql://... \
-  python -m app.ScriptingFiles.FullDataScript.capspace --apply --first-season 2008
-```
-
-CapSpace pages are addressed directly with the NHL ID stored in
-`player_external_ids`. CapWages profiles with an embedded NHL ID must match it;
-older profiles must pass canonical name, slug, and overlapping NHL-stat-season
-checks. Contracts and source snapshots retain the source that supplied them. A
-profile is fetched once even when several seasons are missing. Apply runs fetch
-and commit 100-player batches by
-default, use PostgreSQL bulk inserts for source snapshots and new
-contract-season rows, and retain previously committed batches if a later
-batch fails. Adjust the batch size with `--batch-size`; the HTTP worker cap is
-eight. Run the dry-run and local Pavel Datsyuk smoke case
-(`--nhl-id 8467514`) before any production rollout. Production commands must
-be run only after reviewing the local coverage report; this repository never
-connects to production as part of tests or development.
+Follow the [deployment guide](../docs/deployment-vercel-neon.md) and
+[release workflow](../docs/ci-promotion.md) for environment variables, migration
+approval, and manual production promotion.

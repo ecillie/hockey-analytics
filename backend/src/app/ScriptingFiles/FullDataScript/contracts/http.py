@@ -1,0 +1,26 @@
+"""Compatibility imports for canonical contract repository.http owners."""
+
+from app.ScriptingFiles.FullDataScript.contracts.repository.http import (
+    ProfileResponse as ProfileResponse,
+    ProfileSession as ProfileSession,
+    ActiveProfileResponse as ActiveProfileResponse,
+    ActiveProfileSession as ActiveProfileSession,
+    ProfileSessionFactory as ProfileSessionFactory,
+    open_profile_session as open_profile_session,
+    SynchronizedProfileSession as SynchronizedProfileSession,
+    BorrowedProfileSessionFactory as BorrowedProfileSessionFactory,
+    calculate_retry_delay as calculate_retry_delay,
+    parse_capspace_response as parse_capspace_response,
+    request_capspace_attempt as request_capspace_attempt,
+    fetch_profile as fetch_profile,
+    covers_target_seasons as covers_target_seasons,
+    matches_capwages_identity as matches_capwages_identity,
+    ContinueSlugSearch as ContinueSlugSearch,
+    request_capwages_slug as request_capwages_slug,
+    fetch_capwages_profile as fetch_capwages_profile,
+    fetch_profile_with_fallback as fetch_profile_with_fallback,
+    ActiveSessionFactory as ActiveSessionFactory,
+    open_active_session as open_active_session,
+    SynchronizedActiveSession as SynchronizedActiveSession,
+    BorrowedActiveSessionFactory as BorrowedActiveSessionFactory,
+)

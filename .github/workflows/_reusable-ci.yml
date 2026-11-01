@@ -5,28 +5,71 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
+  changes:
+    name: Select CI areas
+    runs-on: ubuntu-latest
+    outputs:
+      ml: ${{ steps.select.outputs.ml }}
+      backend: ${{ steps.select.outputs.backend }}
+      frontend: ${{ steps.select.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify PR routing and Dev promotion
+        run: |
+          bash scripts/test-pr-routing.sh
+          bash scripts/test-dev-promotion.sh
+      - name: Select affected areas
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" != pull_request || "${GITHUB_BASE_REF:-}" == Prod ]]; then
+            for area in ml backend frontend; do echo "$area=true" >> "$GITHUB_OUTPUT"; done
+            exit 0
+          fi
+
+          files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --paginate --jq '.[].filename')
+          shared=false
+          if grep -Eq '^(\.github/workflows/|docs/openapi\.json$|\.python-version$|\.nvmrc$|constraints\.txt$|pyproject\.toml$|uv\.lock$|scripts/|tests/)' <<< "$files"; then
+            shared=true
+          fi
+          for area in ml backend frontend; do
+            selected=$shared
+            if grep -q "^$area/" <<< "$files"; then selected=true; fi
+            if [[ "$area" == ml ]] && grep -qx 'backend/requirements-dev.txt' <<< "$files"; then selected=true; fi
+            echo "$area=$selected" >> "$GITHUB_OUTPUT"
+          done
+
   ml-gate:
     name: ML correctness and evaluation gate
+    needs: [changes]
+    if: ${{ needs.changes.outputs.ml == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6
         with:
-          python-version-file: .python-version
-          cache: pip
-          cache-dependency-path: ml/requirements.txt
+          version: "0.13.1"
+          enable-cache: true
       - name: Install ML dependencies
-        run: python -m pip install -r backend/requirements-dev.txt
+        run: uv sync --locked --all-groups
       - name: Run ML correctness tests
-        run: PYTHONPATH=. pytest --no-cov -q ml/tests
+        run: uv run pytest --no-cov -q tests/ml
       - name: Enforce metric regression thresholds
-        run: PYTHONPATH=. python -m ml.evaluation.gate
+        run: uv run python -m ml.evaluation.gate
 
   backend:
     name: Backend tests
+    needs: [changes]
+    if: ${{ needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -50,51 +93,58 @@ jobs:
       PGPASSWORD: postgres
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6
         with:
-          python-version-file: .python-version
-          cache: pip
-          cache-dependency-path: |
-            constraints.txt
-            backend/constraints.txt
-            backend/requirements.txt
-            backend/requirements-dev.txt
-            ml/requirements.txt
+          version: "0.13.1"
+          enable-cache: true
       - name: Install backend dependencies
-        run: python -m pip install -r backend/requirements-dev.txt
+        run: uv sync --locked --all-groups
+      - name: Check Python lint, formatting, and types
+        run: |
+          uv run ruff check
+          uv run ruff format --check
+          uv run ty check
+      - name: Verify Python structural rules
+        run: uv run python -m backend.database.verify_python_rules
+      - name: Verify dependency exports
+        run: bash scripts/export-requirements.sh --check
+      - name: Verify isolated wheel installations
+        run: bash scripts/verify-packages.sh
       - name: Validate committed OpenAPI contract
-        run: python backend/export_openapi.py --check
+        run: uv run python backend/export_openapi.py --check
       - name: Compile and import supported backend entrypoints
-        run: PYTHONPATH=backend pytest --no-cov -q backend/tests/test_supported_entrypoints.py
+        run: uv run pytest --no-cov -q tests/backend/test_supported_entrypoints.py
       - name: Validate linear migration history
-        run: python backend/database/verify_migrations.py
+        run: uv run python backend/database/verify_migrations.py
       - name: Generate reviewable migration SQL
         run: |
           mkdir -p coverage/migrations
-          python -m alembic -c backend/alembic.ini upgrade head --sql > coverage/migrations/upgrade.sql
+          uv run python -m alembic -c backend/alembic.ini upgrade head --sql > coverage/migrations/upgrade.sql
       - name: Check database migration preconditions
-        run: python backend/database/migration_preflight.py
+        run: uv run python backend/database/migration_preflight.py
       - name: Upgrade empty database to head
-        run: python -m alembic -c backend/alembic.ini upgrade head
+        run: uv run python -m alembic -c backend/alembic.ini upgrade head
       - name: Verify migrated schema snapshot
-        run: python backend/database/schema_snapshot.py --actual coverage/migrations/schema.actual.json
+        run: uv run python backend/database/schema_snapshot.py --actual coverage/migrations/schema.actual.json
       - name: Verify repeated upgrade is a no-op
         run: |
-          python -m alembic -c backend/alembic.ini upgrade head
-          python -m alembic -c backend/alembic.ini current --check-heads
+          uv run python -m alembic -c backend/alembic.ini upgrade head
+          uv run python -m alembic -c backend/alembic.ini current --check-heads
       - name: Verify downgrade and re-upgrade round trip
         run: |
-          python -m alembic -c backend/alembic.ini downgrade base
-          python -m alembic -c backend/alembic.ini upgrade head
-          python backend/database/schema_snapshot.py --actual coverage/migrations/schema.round-trip.json
+          uv run python -m alembic -c backend/alembic.ini downgrade base
+          uv run python -m alembic -c backend/alembic.ini upgrade head
+          uv run python backend/database/schema_snapshot.py --actual coverage/migrations/schema.round-trip.json
       - name: Smoke-test migrated API
-        run: PYTHONPATH=backend python backend/database/migration_smoke.py
+        run: uv run python backend/database/migration_smoke.py
       - name: Run deterministic ingestion and data-quality gate
-        run: PYTHONPATH=backend pytest --no-cov -q backend/tests/test_ingestion.py
+        run: uv run pytest --no-cov -q tests/backend/test_ingestion.py
+      - name: Run isolated Python unit tests
+        run: env -u DATABASE_URL -u DEV_DATABASE_URL -u TEST_DATABASE_URL ENV='' TRADEVALUE_ENV_FILE=/dev/null uv run pytest --no-cov -m unit -q
       - name: Run backend and ML tests with coverage
-        run: PYTHONPATH=backend pytest -q
+        run: uv run pytest -q
       - name: Enforce complete service-layer coverage
-        run: python -m coverage report --include=backend/app/api/service.py --fail-under=100
+        run: uv run python -m coverage report --include='backend/src/app/api/service.py,backend/src/app/api/repository.py,backend/src/app/api/policy.py,backend/src/app/api/util.py,backend/src/app/api/errors.py,backend/src/app/shared/calendar.py' --fail-under=100
       - name: Build backend container artifact
         run: docker build --tag "tradevalue-api:${{ github.sha }}" backend
       - name: Start and smoke-test backend container artifact
@@ -120,7 +170,7 @@ jobs:
             --env DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:5432/tradevalue_test \
             --env CORS_ORIGINS=http://localhost:5173 \
             "$IMAGE_NAME"
-          python backend/database/container_smoke.py
+          uv run python backend/database/container_smoke.py
       - name: Upload Python coverage reports
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -140,6 +190,8 @@ jobs:
 
   frontend:
     name: Frontend tests and build
+    needs: [changes]
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:

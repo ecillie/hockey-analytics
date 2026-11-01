@@ -1,9 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "fastapi",
+  "installCommand": "uv pip install --no-sources -r requirements.txt",
   "functions": {
     "index.py": {
-      "excludeFiles": "{tests/**,app/ScriptingFiles/**,database/**,Dockerfile,.dockerignore,README.md,requirements-dev.txt}"
+      "excludeFiles": "{tests/**,src/**,data/**,legacy_loaders/**,database/**,Dockerfile,.dockerignore,README.md,requirements-dev.txt}"
     }
   }
 }

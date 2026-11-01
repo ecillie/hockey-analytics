@@ -1,6 +1,7 @@
-# Quarantined legacy loaders
+# Archived legacy loaders
 
-These files are retained as historical recovery references. They document how
+These eight `.py.txt` files preserve the retired Python sources byte for byte
+as non-executable historical recovery references. They document how
 older TradeValue datasets were fetched and transformed, but they are not part
 of the supported application or CI import surface.
 
@@ -34,8 +35,8 @@ set-based repair afterward so those values become normalized season-ending
 assignments:
 
 ```bash
-PYTHONPATH=backend DATABASE_URL=postgresql://... \
-  python backend/database/backfill_team_stints.py --apply
+DATABASE_URL=postgresql://... \
+  uv run python backend/database/backfill_team_stints.py --apply
 ```
 
 The repair never overwrites an existing `player_team_stints` season. It prefers

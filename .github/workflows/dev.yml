@@ -3,9 +3,19 @@ name: Dev
 on:
   pull_request:
     branches: [Dev]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   push:
     branches: [Dev]
   workflow_dispatch:
+    inputs:
+      release_type:
+        description: Destination type for this Dev promotion (includes all pending Dev changes)
+        required: true
+        default: release
+        type: choice
+        options:
+          - release
+          - hotfix
 
 concurrency:
   group: dev-${{ github.event.pull_request.number || github.ref }}
@@ -13,6 +23,7 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   ci:
@@ -33,7 +44,7 @@ jobs:
 
   merge-to-dev:
     name: Enable automatic merge to Dev
-    if: ${{ github.event_name == 'pull_request' && needs.required.result == 'success' }}
+    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft && needs.required.result == 'success' }}
     needs: [required]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -42,14 +53,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PROMOTION_TOKEN }}
         run: |
+          is_draft=$(gh pr view "${{ github.event.pull_request.number }}" \
+            --repo "${{ github.repository }}" --json isDraft --jq '.isDraft')
+          if [ "$is_draft" != false ]; then
+            echo "PR is currently a draft; skipping auto-merge."
+            exit 0
+          fi
           gh pr merge "${{ github.event.pull_request.number }}" \
             --repo "${{ github.repository }}" \
             --auto \
             --merge
 
   promote:
-    name: Promote Dev to NonProd
-    if: ${{ github.event_name == 'push' && needs.required.result == 'success' }}
+    name: Promote Dev to selected release type
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.required.result == 'success' }}
     needs: [required]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -57,26 +74,11 @@ jobs:
       group: environment-promotion
       cancel-in-progress: false
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Create or find promotion pull request
         env:
           GH_TOKEN: ${{ secrets.PROMOTION_TOKEN }}
-        run: |
-          PR_NUMBER=$(gh pr list \
-            --repo "${{ github.repository }}" \
-            --base "NonProd" \
-            --head "Dev" \
-            --state open \
-            --json number \
-            --jq '.[0].number')
-
-          if [ -z "$PR_NUMBER" ]; then
-            PR_URL=$(gh pr create \
-              --repo "${{ github.repository }}" \
-              --base "NonProd" \
-              --head "Dev" \
-              --title "Promote Dev to NonProd" \
-              --body "Automated promotion from \`Dev\` to \`NonProd\`. This PR merges after all NonProd requirements pass.")
-            PR_NUMBER=${PR_URL##*/}
-          fi
-
-          echo "Promotion PR #$PR_NUMBER will be validated and merged by the NonProd workflow."
+          PROMOTION_TYPE: ${{ github.event_name == 'workflow_dispatch' && inputs.release_type || vars.DEV_PROMOTION_TYPE || 'release' }}
+        run: bash scripts/promote-dev.sh

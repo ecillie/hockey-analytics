@@ -4,8 +4,14 @@
 .pytest_cache
 __pycache__
 tests
-app/ScriptingFiles
+src/app/ScriptingFiles
 database
 Dockerfile
 .dockerignore
 requirements-dev.txt
+
+data
+legacy_loaders
+.venv
+
+src/app/api/tests
