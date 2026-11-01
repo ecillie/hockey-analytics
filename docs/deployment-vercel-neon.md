@@ -53,6 +53,8 @@ Add these Production variables:
 
 ```dotenv
 ENV=prod
+LOG_LEVEL=INFO
+LOG_FORMAT=json
 DATABASE_URL=postgresql://...-pooler....neon.tech/...?...sslmode=require
 CORS_ORIGINS=https://YOUR_FRONTEND_PRODUCTION_DOMAIN
 ```
@@ -137,3 +139,25 @@ The migration workflow uses the locked `migration` group for its HTTP smoke
 client. For an equivalent local operational environment, use
 `uv sync --locked --no-default-groups --group migration` and prefix commands with
 `uv run --no-default-groups --group migration python`.
+
+## Logging startup ownership
+
+The API installs its shared process logging policy in the owner-approved FastAPI
+lifespan startup hook, before database resources are created. Docker's factory
+and the Vercel ASGI export supply the same validated settings. Imports and schema
+generation do not install handlers. `LOG_LEVEL` defaults to `INFO` independently
+of `ENV`; `DEBUG` adds application diagnostics. `LOG_FORMAT` accepts `json`
+(default) or `text`. Exported variables override dotenv. Invalid/empty settings
+fail before database settings are resolved. Restart or redeploy after changing
+settings, and restore INFO after troubleshooting. No schema change is needed to
+roll back logging settings or the application artifact.
+
+Container stderr is available through the hosting service's process logs.
+Vercel captures application output in Runtime Logs. Its FastAPI documentation
+supports lifespan startup/shutdown, but states shutdown output is not retained
+in the dashboard and shutdown cleanup is limited to 500 ms. Do not depend on
+shutdown events as hosted delivery confirmation. Platform retention, permissions
+and deployed sink limits must be verified during release acceptance; local
+stdout/stderr captures do not establish hosted retention.
+
+Reference: [Vercel FastAPI startup and shutdown](https://vercel.com/docs/frameworks/backend/fastapi#startup-and-shutdown).
