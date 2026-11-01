@@ -23,6 +23,7 @@ from app.ScriptingFiles.FullDataScript.contracts import (
 from app.ScriptingFiles.FullDataScript.contracts.options import (
     HistoricalContractOptions,
 )
+from app.ScriptingFiles.FullDataScript.contracts.schemas import documents
 from app.ScriptingFiles.FullDataScript.contracts.tests.fakes import (
     EmptyContractRepository,
 )
@@ -637,15 +638,21 @@ class TestCapwagesSuccessParsesTheDocumentOnce:
     def test_capwages_success_parses_the_document_once(self, scenario):
         candidate = scenario.candidate
         session = scenario.session
-        with patch.object(
-            profile_http,
-            "parse_source_document",
-            wraps=profile_http.parse_source_document,
-        ) as parse:
+        with (
+            patch.object(
+                profile_http,
+                "parse_source_document",
+                wraps=profile_http.parse_source_document,
+            ) as parse,
+            patch.object(
+                documents, "decode_page_payload", wraps=documents.decode_page_payload
+            ) as decode,
+        ):
             outcome = profile_http.fetch_capwages_profile(session, candidate)
 
         assert outcome.status == capspace.STATUS_SUCCEEDED
         assert parse.call_count == 1
+        assert decode.call_count == 1
 
 
 class TestTeamResolutionPrefersSourceThenUniqueStint:

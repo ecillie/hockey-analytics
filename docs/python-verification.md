@@ -71,6 +71,19 @@ frames and resource probes; frozen collaborator bundles keep those resource
 identities stable. Probe histories deliberately record observable calls and
 cleanup, while production domain snapshots use immutable values.
 
+Database transactions and engine lifetimes retain the original operation or
+construction failure when rollback, close, or disposal also fails. Cleanup
+attempts continue in order; secondary failures are attached as exception notes.
+A cleanup failure with no earlier failure propagates itself. The same small
+cleanup helper serves ingestion tracking, including cancellation and interrupt
+paths. Failure-injection regressions verify exception identity, original cause,
+notes, and attempted cleanup order.
+
+Contract reconciliation and writes share a frozen context whose season bounds
+derive from the selected seasons. Embedded profile JSON is decoded once within
+each parsing attempt and shared by identity checks and contract extraction.
+Later attempts receive detached snapshots; no exposed mutable cache is retained.
+
 HTTP fakes reject unexpected requests and return saved payloads. SQL catalog
 fakes answer supported catalog queries and reject unknown SQL. Assertions cover
 outcomes, rollback, ownership, retry bounds, and serialized contracts. The
