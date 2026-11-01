@@ -3,6 +3,13 @@
 from psycopg2.extensions import connection as PgConnection
 
 
+class SeasonRangeError(ValueError):
+    def __init__(self, *, first_season: int, last_season: int) -> None:
+        super().__init__("first_season cannot be greater than last_season")
+        self.first_season = first_season
+        self.last_season = last_season
+
+
 _CANDIDATES_SQL = r"""
 WITH candidates AS (
     SELECT s.player_id, s.season_start_year, s.team_id,
@@ -114,7 +121,7 @@ def _params(first_season: int | None, last_season: int | None) -> dict[str, int 
         and last_season is not None
         and first_season > last_season
     ):
-        raise ValueError("first_season cannot be greater than last_season")
+        raise SeasonRangeError(first_season=first_season, last_season=last_season)
     return {"first_season": first_season, "last_season": last_season}
 
 

@@ -149,7 +149,7 @@ class ReadinessScenario:
 @dataclass(slots=True, kw_only=True, frozen=True)
 class StageOutcome[R]:
     result: R
-    failure: Exception | None = None
+    failure: BaseException | None = None
     name: str = "stage"
     events: list[str] = field(default_factory=list)
 
