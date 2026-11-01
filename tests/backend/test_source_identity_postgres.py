@@ -2,10 +2,10 @@
 
 import pytest
 
-from app.database import database_transaction
+from app.database import open_database_transaction
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     PlayerKind,
-    stat_layout,
+    select_stat_layout,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import (
     MoneyPuckSnapshot,
@@ -47,7 +47,7 @@ class TestCanonicalPersistence:
         ]
     )
     def scenario(self, request, disposable_database_url):
-        with database_transaction() as connection, connection.cursor() as cursor:
+        with open_database_transaction() as connection, connection.cursor() as cursor:
             cursor.execute(
                 "TRUNCATE teams, players, ingestion_runs RESTART IDENTITY CASCADE"
             )
@@ -63,8 +63,8 @@ class TestCanonicalPersistence:
             ),
         )
         advanced, basic = (
-            stat_layout(kind, advanced=True),
-            stat_layout(kind, advanced=False),
+            select_stat_layout(kind, advanced=True),
+            select_stat_layout(kind, advanced=False),
         )
         return IdentityPersistence(
             moneypuck=MoneyPuckSnapshot(
@@ -88,8 +88,8 @@ class TestCanonicalPersistence:
     @pytest.fixture
     def repositories(self):
         return PostgresMoneyPuckRepository(
-            transaction=database_transaction
-        ), PostgresNhlStatsRepository(transaction=database_transaction)
+            transaction=open_database_transaction
+        ), PostgresNhlStatsRepository(transaction=open_database_transaction)
 
     def test_aliases_share_one_player_and_one_stat_grain_across_repeat_ingestion(
         self, scenario, repositories
@@ -101,7 +101,7 @@ class TestCanonicalPersistence:
         assert first.counts.records_created == 1
         assert first.counts.records_skipped == 4
         assert nhl.persist(scenario.nhl).counts.records_created == 0
-        with database_transaction() as connection, connection.cursor() as cursor:
+        with open_database_transaction() as connection, connection.cursor() as cursor:
             cursor.execute("SELECT count(*) FROM players")
             assert cursor.fetchone() == (1,)
             cursor.execute(

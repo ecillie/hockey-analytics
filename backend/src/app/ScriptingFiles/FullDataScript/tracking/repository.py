@@ -18,12 +18,12 @@ from psycopg2.extensions import cursor as PgCursor
 from psycopg2.extras import Json
 
 
-def advisory_lock_key(job_name: str) -> int:
+def build_advisory_lock_key(job_name: str) -> int:
     raw = hashlib.sha256(f"tradevalue:{job_name}".encode()).digest()[:8]
     return int.from_bytes(raw, byteorder="big", signed=True)
 
 
-def record_count(summary: Mapping[str, object]) -> int:
+def count_ingested_records(summary: Mapping[str, object]) -> int:
     dimensions = {"players", "teams", "cached", "profile_failures"}
     return sum(
         value
@@ -32,7 +32,9 @@ def record_count(summary: Mapping[str, object]) -> int:
     )
 
 
-def summary_count(summary: Mapping[str, object], key: str, default: int = 0) -> int:
+def count_summary_records(
+    summary: Mapping[str, object], key: str, default: int = 0
+) -> int:
     value = summary.get(key, default)
     return value if isinstance(value, int) else default
 
@@ -44,16 +46,16 @@ class PostgresIngestionRun:
     run_id: int
 
     def succeed(self, summary: Mapping[str, object]) -> None:
-        fallback = record_count(summary)
+        fallback = count_ingested_records(summary)
         self.cursor.execute(
             """UPDATE ingestion_runs SET status='succeeded',finished_at=CURRENT_TIMESTAMP,
                    records_read=%s,records_created=%s,records_updated=%s,
                    records_skipped=%s,metadata=%s WHERE id=%s""",
             (
-                summary_count(summary, "records_read", fallback),
-                summary_count(summary, "records_created"),
-                summary_count(summary, "records_updated", fallback),
-                summary_count(summary, "records_skipped"),
+                count_summary_records(summary, "records_read", fallback),
+                count_summary_records(summary, "records_created"),
+                count_summary_records(summary, "records_updated", fallback),
+                count_summary_records(summary, "records_skipped"),
                 Json(dict(summary)),
                 self.run_id,
             ),
@@ -70,10 +72,10 @@ class PostgresIngestionRun:
                        records_updated=%s,records_skipped=%s,metadata=%s WHERE id=%s""",
                 (
                     str(failure)[:4000],
-                    summary_count(progress, "records_read"),
-                    summary_count(progress, "records_created"),
-                    summary_count(progress, "records_updated"),
-                    summary_count(progress, "records_skipped"),
+                    count_summary_records(progress, "records_read"),
+                    count_summary_records(progress, "records_created"),
+                    count_summary_records(progress, "records_updated"),
+                    count_summary_records(progress, "records_skipped"),
                     Json(
                         {
                             "failure_stage": failure.stage,
@@ -133,7 +135,7 @@ class RunUnlocker:
     def __call__(self) -> None:
         self.connection.rollback()
         self.cursor.execute(
-            "SELECT pg_advisory_unlock(%s)", (advisory_lock_key(self.job_name),)
+            "SELECT pg_advisory_unlock(%s)", (build_advisory_lock_key(self.job_name),)
         )
         self.connection.commit()
 
@@ -152,7 +154,7 @@ def open_ingestion_run(
     try:
         cursor = connection.cursor()
         cursor.execute(
-            "SELECT pg_try_advisory_lock(%s)", (advisory_lock_key(job_name),)
+            "SELECT pg_try_advisory_lock(%s)", (build_advisory_lock_key(job_name),)
         )
         row = cursor.fetchone()
         assert row is not None

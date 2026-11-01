@@ -144,7 +144,7 @@ def seed_player(
             )
 
 
-def counts(engine):
+def count_contract_rows(engine):
     with engine.connect() as connection:
         return tuple(
             connection.execute(

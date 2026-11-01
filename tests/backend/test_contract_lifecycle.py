@@ -19,7 +19,7 @@ from app.ScriptingFiles.FullDataScript.contracts.errors import ReconciliationFai
 from app.ScriptingFiles.FullDataScript.contracts.http import (
     BorrowedProfileSessionFactory,
     SynchronizedProfileSession,
-    retry_delay,
+    calculate_retry_delay,
 )
 from app.ScriptingFiles.FullDataScript.contracts.options import (
     ActiveContractOptions,
@@ -309,7 +309,7 @@ class TestProfileRetryDelay:
     def test_invalid_delay_uses_normal_backoff(
         self, invalid_retry_after, default_options
     ):
-        assert retry_delay(invalid_retry_after, 1, default_options) == 2
+        assert calculate_retry_delay(invalid_retry_after, 1, default_options) == 2
 
 
 class TestContractReconciliationPolicy:

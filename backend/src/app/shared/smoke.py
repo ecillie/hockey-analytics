@@ -1,11 +1,11 @@
 """Shared HTTP smoke payload checks and structured operational failures."""
 
 
-def valid_health(body: object) -> bool:
+def is_valid_health_response(body: object) -> bool:
     return body == {"status": "ok"}
 
 
-def valid_seasons(body: object) -> bool:
+def is_valid_seasons_response(body: object) -> bool:
     return (
         isinstance(body, dict)
         and bool(body.get("availableSeasons"))

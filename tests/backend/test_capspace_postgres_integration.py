@@ -7,7 +7,7 @@ from app.ScriptingFiles.FullDataScript.contracts.tests.postgres import (
     FixtureSession,
     ContractPreviewScenario,
     seed_player,
-    counts,
+    count_contract_rows,
 )
 
 FIXTURE = Path(__file__).parent.joinpath(
@@ -27,11 +27,11 @@ class TestFirstApplySecondRunIsIdempotentAndGapDriven:
         self, scenario, database
     ):
         session = scenario
-        first = capspace._run(
+        first = capspace.run_contract_sync(
             session, dry_run=False, first_season=2008, last_season=2009, workers=1
         )
-        first_counts = counts(database)
-        second = capspace._run(
+        first_counts = count_contract_rows(database)
+        second = capspace.run_contract_sync(
             session, dry_run=False, first_season=2008, last_season=2009, workers=1
         )
 
@@ -40,7 +40,7 @@ class TestFirstApplySecondRunIsIdempotentAndGapDriven:
         assert first["profiles_requested"] == 1
         assert second["candidate_players"] == 0
         assert session.calls == 1
-        assert counts(database) == first_counts
+        assert count_contract_rows(database) == first_counts
 
         with database.connect() as connection:
             row = connection.execute(
@@ -73,7 +73,7 @@ class TestExistingContractGetsMissingSeasonWithoutOverwrite:
                 )
             )
 
-        first = counts(database)
+        first = count_contract_rows(database)
         return first
 
     @pytest.fixture
@@ -89,7 +89,7 @@ class TestExistingContractGetsMissingSeasonWithoutOverwrite:
         self, scenario, database, preview_session, apply_session
     ):
         first = scenario
-        preview = capspace._run(
+        preview = capspace.run_contract_sync(
             preview_session,
             dry_run=True,
             first_season=2008,
@@ -98,9 +98,9 @@ class TestExistingContractGetsMissingSeasonWithoutOverwrite:
         )
 
         assert preview["contract_seasons_created"] == 1
-        assert counts(database) == first
+        assert count_contract_rows(database) == first
 
-        result = capspace._run(
+        result = capspace.run_contract_sync(
             apply_session,
             dry_run=False,
             first_season=2008,
@@ -110,7 +110,7 @@ class TestExistingContractGetsMissingSeasonWithoutOverwrite:
 
         assert result.get("contracts_created", 0) == 0
         assert result["contracts_matched"] == 1
-        assert counts(database)[0] == first[0]
+        assert count_contract_rows(database)[0] == first[0]
         with database.connect() as connection:
             assert (
                 connection.execute(
@@ -133,7 +133,7 @@ class TestDryRunAndConflictAreMutationFree:
     def scenario(self, database):
         seed_player(database, 8003)
         session = FixtureSession(body=FIXTURE.read_text(encoding="utf-8"))
-        before = counts(database)
+        before = count_contract_rows(database)
         return ContractPreviewScenario(session=session, before=before)
 
     @pytest.fixture
@@ -146,11 +146,11 @@ class TestDryRunAndConflictAreMutationFree:
     ):
         session = scenario.session
         before = scenario.before
-        preview = capspace._run(
+        preview = capspace.run_contract_sync(
             session, dry_run=True, first_season=2008, last_season=2008, workers=1
         )
         assert preview["records_created"] == 0
-        assert counts(database) == before
+        assert count_contract_rows(database) == before
 
         with database.begin() as connection:
             source_id = connection.execute(
@@ -162,7 +162,7 @@ class TestDryRunAndConflictAreMutationFree:
                 ),
                 {"s": source_id},
             )
-        result = capspace._run(
+        result = capspace.run_contract_sync(
             conflicting_session,
             dry_run=False,
             first_season=2008,
@@ -208,14 +208,14 @@ class TestTransactionRollsBackPartialPersistence:
     ):
         database = scenario
         with pytest.raises(RuntimeError, match="fixture failure"):
-            capspace._run(
+            capspace.run_contract_sync(
                 failed_session,
                 dry_run=False,
                 first_season=2008,
                 last_season=2008,
                 workers=1,
             )
-        assert counts(database)[0:2] == (0, 0)
+        assert count_contract_rows(database)[0:2] == (0, 0)
 
 
 @pytest.mark.integration
@@ -234,13 +234,13 @@ class TestAmbiguousContractMatches:
             )
         return ContractPreviewScenario(
             session=FixtureSession(body=FIXTURE.read_text(encoding="utf-8")),
-            before=counts(database),
+            before=count_contract_rows(database),
         )
 
     def test_ambiguous_matches_are_preserved_without_season_writes(
         self, scenario, database
     ):
-        result = capspace._run(
+        result = capspace.run_contract_sync(
             scenario.session,
             dry_run=False,
             first_season=2008,
@@ -249,4 +249,4 @@ class TestAmbiguousContractMatches:
         )
         assert result["reconciliation_conflicts"] == 1
         assert result.get("contracts_created", 0) == 0
-        assert counts(database)[:2] == scenario.before[:2] == (2, 0)
+        assert count_contract_rows(database)[:2] == scenario.before[:2] == (2, 0)

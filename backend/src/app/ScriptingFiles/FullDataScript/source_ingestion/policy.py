@@ -154,7 +154,7 @@ def validate_rows(
     )
 
 
-def stat_violation(
+def find_stat_violation(
     kind: str, row: Mapping[str, object], *, source: str
 ) -> StatConsistencyViolation | None:
     fields = (
@@ -195,7 +195,7 @@ class CountPolicy:
         return None
 
 
-def quality_options_violation(
+def find_quality_options_violation(
     minimum_rows: int, maximum_duplicate_ratio: float
 ) -> OptionsViolation | None:
     if (

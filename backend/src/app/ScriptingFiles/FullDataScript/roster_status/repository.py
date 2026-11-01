@@ -7,6 +7,7 @@ from typing import Protocol, runtime_checkable
 from psycopg2.extensions import connection as PgConnection
 
 from app.ScriptingFiles.FullDataScript.roster_status.domain import (
+    StoredRoster,
     RosterStatus,
     StoredPlayer,
 )
@@ -14,7 +15,7 @@ from app.ScriptingFiles.FullDataScript.roster_status.domain import (
 
 @runtime_checkable
 class RosterRepository(Protocol):
-    def load_players(self) -> tuple[StoredPlayer, ...]: ...
+    def load_players(self) -> StoredRoster: ...
 
     def load_active_ltir_player_ids(self, as_of: date) -> frozenset[int]: ...
 
@@ -30,7 +31,7 @@ class RosterRepository(Protocol):
 class PostgresRosterRepository:
     connection: PgConnection
 
-    def load_players(self) -> tuple[StoredPlayer, ...]:
+    def load_players(self) -> StoredRoster:
         query = """
             SELECT
                 p.id,

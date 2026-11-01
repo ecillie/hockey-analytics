@@ -11,7 +11,7 @@ from alembic.script import ScriptDirectory
 from app.shared.cli import ExitCode
 
 
-def validate(config_path: Path) -> list[str]:
+def validate_migration_history(config_path: Path) -> list[str]:
     config = Config(str(config_path))
     scripts = ScriptDirectory.from_config(config)
     errors: list[str] = []
@@ -32,6 +32,9 @@ def validate(config_path: Path) -> list[str]:
             errors.append(f"migration {revision.revision} is an unapproved merge point")
 
     return errors
+
+
+validate = validate_migration_history
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -64,7 +67,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def execute_command(options: CommandOptions) -> int:
-    errors = validate(options.config.resolve())
+    errors = validate_migration_history(options.config.resolve())
     if len(errors) > 0:
         for error in errors:
             logger.error("%s", error)

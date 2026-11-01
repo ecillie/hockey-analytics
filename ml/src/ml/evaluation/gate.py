@@ -30,7 +30,7 @@ METRICS = tuple(Metric)
 SPLITS = tuple(Split)
 
 
-def temporal_splits(df: pd.DataFrame) -> dict[Split, pd.DataFrame]:
+def split_temporal_data(df: pd.DataFrame) -> dict[Split, pd.DataFrame]:
     if "target_season" not in df.columns:
         raise MissingTargetSeasonError(columns=tuple(df.columns))
     invalid = (
@@ -51,7 +51,7 @@ def temporal_splits(df: pd.DataFrame) -> dict[Split, pd.DataFrame]:
     }
 
 
-def prediction_frame(df: pd.DataFrame, predictions: np.ndarray) -> pd.DataFrame:
+def build_prediction_frame(df: pd.DataFrame, predictions: np.ndarray) -> pd.DataFrame:
     validate_frame(
         df,
         required=("player_id", "target_season"),
@@ -115,7 +115,7 @@ def validate_committed_model_metadata(path: Path) -> ModelMetadata:
     return validate_metadata(metadata)
 
 
-def stable_metadata_json(metadata: object) -> str:
+def serialize_metadata_json(metadata: object) -> str:
     parsed = validate_metadata(metadata)
     return (
         json.dumps(
@@ -163,6 +163,10 @@ def execute_command() -> None:
         )
     print("ML correctness and metric gate passed")
 
+
+temporal_splits = split_temporal_data
+prediction_frame = build_prediction_frame
+stable_metadata_json = serialize_metadata_json
 
 if __name__ == "__main__":
     raise SystemExit(main())

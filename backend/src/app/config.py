@@ -104,7 +104,7 @@ def read_integer(
     return value
 
 
-def development_database_url(values: Mapping[str, str]) -> str:
+def resolve_development_database_url(values: Mapping[str, str]) -> str:
     user = values.get("DB_USER", "").strip()
     database = values.get("DB_NAME", "").strip()
     if user == "" or database == "":
@@ -142,7 +142,7 @@ def get_database_settings(values: Mapping[str, str] | None = None) -> DatabaseSe
                 field=scoped_name,
                 reason=f"or DATABASE_URL is required for ENV={environment.value}",
             )
-        database_url = development_database_url(values)
+        database_url = resolve_development_database_url(values)
     try:
         make_url(database_url)
     except (ArgumentError, ValueError) as error:

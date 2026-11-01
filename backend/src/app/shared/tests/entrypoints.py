@@ -35,11 +35,11 @@ QUARANTINED_LOADERS = frozenset(
 )
 
 
-def supported_python_files() -> list[Path]:
+def find_supported_python_files() -> list[Path]:
     return sorted(path for path in APP.rglob("*.py") if "__pycache__" not in path.parts)
 
 
-def full_data_modules() -> list[str]:
+def find_full_data_modules() -> list[str]:
     return [
         ".".join(path.relative_to(BACKEND.joinpath("src")).with_suffix("").parts)
         for path in sorted(FULL_DATA_SCRIPT.rglob("*.py"))
@@ -47,7 +47,7 @@ def full_data_modules() -> list[str]:
     ]
 
 
-def imported_modules(path: Path) -> set[str]:
+def find_imported_modules(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     imports = set()
     for node in ast.walk(tree):

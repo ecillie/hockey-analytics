@@ -398,12 +398,12 @@ class TestLegacyCapwagesIdentityRequiresNameSlugAndNhlStatsOverlap:
     ):
         candidate = scenario.candidate
         html = scenario.html
-        assert profile_http.capwages_identity_matches(
+        assert profile_http.matches_capwages_identity(
             html,
             candidate,
             "https://capwages.com/players/cory-stillman",
         )
-        assert not profile_http.capwages_identity_matches(
+        assert not profile_http.matches_capwages_identity(
             html,
             capspace.Candidate(
                 player_id=8,
@@ -461,7 +461,7 @@ class TestLegacyCapwagesIdentityRequiresPositiveNhlGames:
     def test_legacy_capwages_identity_requires_positive_nhl_games(self, scenario):
         candidate = scenario.candidate
         html = scenario.html
-        assert not profile_http.capwages_identity_matches(
+        assert not profile_http.matches_capwages_identity(
             html,
             candidate,
             "https://capwages.com/players/cory-stillman",
@@ -508,7 +508,7 @@ class TestCapwagesFallbackTriesDisambiguatedSlugAndPreservesSource:
         assert outcome.fallback_attempted is True
         assert outcome.primary_status == "no_contracts"
         assert outcome.url.endswith("/colin-white-1")
-        assert profile_http.target_seasons_covered(outcome) == {2010}
+        assert profile_http.covers_target_seasons(outcome) == {2010}
 
 
 class TestMissingCapwagesBaseSlugDoesNotFanOutNumberedRequests:
@@ -640,7 +640,7 @@ class TestProfileMetricsAndSourceGroupingAreCentralized:
             nhl_id=None,
             missing_seasons=(2008,),
         )
-        success = contract_domain.parsed_profile(
+        success = contract_domain.build_parsed_profile(
             candidate=covered,
             url="https://capwages.com/players/pavel-datsyuk",
             source_code=capspace.CAPWAGES_SOURCE,
@@ -667,8 +667,8 @@ class TestProfileMetricsAndSourceGroupingAreCentralized:
         missing_id = scenario.missing_id
         success = scenario.success
         failure = scenario.failure
-        metrics = contract_reporting.profile_metrics([success, failure])
-        grouped = contract_reporting.source_records_by_code(
+        metrics = contract_reporting.calculate_profile_metrics([success, failure])
+        grouped = contract_reporting.group_source_records(
             [covered, missing_id], [success]
         )
 
@@ -860,7 +860,7 @@ class TestTargetedPlayerStillSelectsOnlyMissingSeasonsWithoutForce:
 )
 def test_run_rejects_unsafe_worker_and_batch_bounds(options):
     with pytest.raises(ValueError):
-        capspace._run(None, dry_run=True, **options)
+        capspace.run_contract_sync(None, dry_run=True, **options)
 
 
 class TestRunReturnsCompleteEmptySummaryWithoutFetching:

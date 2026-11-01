@@ -5,11 +5,11 @@ import logging
 from collections.abc import Sequence
 
 from app.config import get_database_settings
-from app.database import database_resources
+from app.database import open_database_resources
 from app.main import create_runtime_app
 from app.shared.smoke import (
-    valid_health,
-    valid_seasons as valid_season_payload,
+    is_valid_health_response,
+    is_valid_seasons_response as valid_season_payload,
     SmokeResponseError,
     ReferenceDataError,
 )
@@ -32,11 +32,11 @@ def validate_reference_data(session) -> None:
         raise ReferenceDataError(sources=list(source_codes), seasons=season_count)
 
 
-def smoke_checks(client) -> None:
+def build_smoke_checks(client) -> None:
     checks = {
-        "/api/health": valid_health,
-        "/api/seasons": valid_seasons,
-        "/api/teams": valid_teams,
+        "/api/health": is_valid_health_response,
+        "/api/seasons": is_valid_seasons_response,
+        "/api/teams": is_valid_teams_response,
     }
     for path, validate in checks.items():
         response = client.get(path)
@@ -53,13 +53,13 @@ def smoke_checks(client) -> None:
             )
 
 
-def valid_seasons(body: object) -> bool:
+def is_valid_seasons_response(body: object) -> bool:
     if not valid_season_payload(body) or not isinstance(body, dict):
         return False
     return body["currentSeason"] >= 2005
 
 
-def valid_teams(body: object) -> bool:
+def is_valid_teams_response(body: object) -> bool:
     return body == []
 
 
@@ -82,14 +82,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def execute_command() -> int:
     with (
-        database_resources(get_database_settings()) as resources,
+        open_database_resources(get_database_settings()) as resources,
         resources.sessions() as session,
     ):
         validate_reference_data(session)
         print("PASS initial reference data")
 
     with TestClient(create_runtime_app()) as client:
-        smoke_checks(client)
+        build_smoke_checks(client)
         print("PASS /api/health")
         print("PASS /api/seasons")
         print("PASS /api/teams")

@@ -11,7 +11,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     StatLayout,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.http import SourceClient
-from app.ScriptingFiles.FullDataScript.source_ingestion.domain import stat_layout
+from app.ScriptingFiles.FullDataScript.source_ingestion.domain import select_stat_layout
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import (
     MoneyPuckOptions,
     MoneyPuckSnapshot,
@@ -20,7 +20,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.policy import (
     find_quality_violation,
     RowPolicy,
     validate_rows,
-    quality_options_violation,
+    find_quality_options_violation,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.schemas import (
     MoneyPuckRow,
@@ -32,7 +32,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
     parse_csv,
     normalize_position,
     read_csv,
-    source_row_hash,
+    hash_source_row,
 )
 
 
@@ -48,7 +48,7 @@ class MoneyPuckService:
     options: MoneyPuckOptions
 
     def ingest(self) -> MoneyPuckSummary:
-        if violation := quality_options_violation(
+        if violation := find_quality_options_violation(
             self.options.minimum_rows_per_kind, self.options.maximum_duplicate_ratio
         ):
             raise violation
@@ -81,7 +81,7 @@ class MoneyPuckService:
                 maximum_duplicate_ratio=self.options.maximum_duplicate_ratio,
             ):
                 raise violation
-            layout = stat_layout(kind, advanced=True)
+            layout = select_stat_layout(kind, advanced=True)
             rows.extend(normalize_row(row, kind, layout) for row in valid)
             reports.append(report)
         return self.repository.persist(
@@ -116,6 +116,6 @@ def normalize_row(
         game_type=2,
         situation=value.situation[:24],
         metrics=metrics,
-        source_row_hash=source_row_hash(raw),
+        source_row_hash=hash_source_row(raw),
         extra_metrics_json=json.dumps(extra),
     )

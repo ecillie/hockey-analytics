@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 import pandas as pd
 from app.config import get_database_settings
-from app.database import database_resources
+from app.database import open_database_resources
 from app.shared.cli import ExitCode
 from sqlalchemy import Connection, text
 from ml.errors import MinimumGamesError
@@ -287,7 +287,7 @@ def load_player_stats(
         raise MinimumGamesError(field="min_games", value=min_games)
     if connection is None:
         with (
-            database_resources(get_database_settings()) as resources,
+            open_database_resources(get_database_settings()) as resources,
             resources.engine.connect() as owned,
         ):
             return load_player_stats(min_games, connection=owned)

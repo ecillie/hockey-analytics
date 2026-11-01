@@ -14,11 +14,16 @@ and `ModelOptions` own configurable defaults; the default model, percentile,
 training eligibility, target joins, chronological splits, and seed are preserved.
 
 `train_model(training_data)` returns the fitted model and canonical metadata
-without console output or artifact writes. `train(frame)` likewise computes
+without console output or artifact writes. `train_skater_model(frame)` likewise computes
 only; pass `paths=ArtifactPaths(model=..., metadata=...)` to persist explicitly.
 `save_model` validates metadata before writing, and `load_model` validates it
 before loading the estimator. Model metadata preserves JSON lists and sorted,
 indented serialization, with a final newline.
+
+`evaluate_training_split` computes typed split metrics and
+`calculate_prediction_metrics` computes evaluation diagnostics. Existing
+`train`, `evaluate`, and `metrics` imports remain direct aliases to these
+functions, with the same arguments and results.
 
 `evaluate_predictions(model, metadata, training_data)` computes raw model and
 benchmark evaluation columns without I/O. `prediction_frame` provides the

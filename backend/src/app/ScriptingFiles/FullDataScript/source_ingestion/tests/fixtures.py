@@ -108,7 +108,7 @@ def migrated_database(monkeypatch, tmp_path, disposable_database_url):
         finally:
             connection.close()
 
-    monkeypatch.setattr(ingestion, "database_transaction", test_transaction)
+    monkeypatch.setattr(ingestion, "open_database_transaction", test_transaction)
     for folder, name, fixture_name in (
         ("skater advanced", "skaters_2008_to_2024.csv", "moneypuck_skaters.csv"),
         ("goalie_advanced", "goalies_2008_to_2024.csv", "moneypuck_goalies.csv"),

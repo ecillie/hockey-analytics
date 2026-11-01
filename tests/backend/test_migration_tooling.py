@@ -1,4 +1,4 @@
-from app.shared.tests.fakes import migration_scripts, revision
+from app.shared.tests.fakes import build_migration_history, build_migration_revision
 from pathlib import Path
 from collections.abc import Generator
 from app.shared.tests.fakes import (
@@ -23,7 +23,7 @@ from backend.database import (
 from app.shared.tests.fakes import (
     RevisionScenario,
     SnapshotScenario,
-    response,
+    build_http_response,
 )
 from app.shared.tests.migrations import (
     load_initial_revision,
@@ -94,28 +94,42 @@ class TestFrozenRevision:
 class TestMigrationHistory:
     @pytest.fixture(
         params=[
-            pytest.param((migration_scripts(revision("one")), None), id="linear"),
             pytest.param(
-                (migration_scripts(revision(), heads=()), "exactly one migration head"),
+                (build_migration_history(build_migration_revision("one")), None),
+                id="linear",
+            ),
+            pytest.param(
+                (
+                    build_migration_history(build_migration_revision(), heads=()),
+                    "exactly one migration head",
+                ),
                 id="no-head",
             ),
             pytest.param(
                 (
-                    migration_scripts(revision(), heads=("one", "two")),
+                    build_migration_history(
+                        build_migration_revision(), heads=("one", "two")
+                    ),
                     "exactly one migration head",
                 ),
                 id="multiple-heads",
             ),
             pytest.param(
-                (migration_scripts(heads=("one",)), "migration history is empty"),
+                (build_migration_history(heads=("one",)), "migration history is empty"),
                 id="empty-history",
             ),
             pytest.param(
-                (migration_scripts(revision(doc="")), "has no description"),
+                (
+                    build_migration_history(build_migration_revision(doc="")),
+                    "has no description",
+                ),
                 id="missing-description",
             ),
             pytest.param(
-                (migration_scripts(revision(merge=True)), "unapproved merge point"),
+                (
+                    build_migration_history(build_migration_revision(merge=True)),
+                    "unapproved merge point",
+                ),
                 id="merge-point",
             ),
         ]
@@ -168,12 +182,12 @@ class TestMigrationDatabaseSettings:
     def test_url_precedence_and_required_value(self, url):
         if url is None:
             with pytest.raises(RuntimeError, match="DATABASE_URL or TEST_DATABASE_URL"):
-                schema_snapshot.database_url()
+                schema_snapshot.resolve_database_url()
             with pytest.raises(RuntimeError, match="DATABASE_URL or TEST_DATABASE_URL"):
-                migration_preflight.database_url()
+                migration_preflight.resolve_database_url()
             return
-        assert schema_snapshot.database_url() == url
-        assert migration_preflight.database_url() == url
+        assert schema_snapshot.resolve_database_url() == url
+        assert migration_preflight.resolve_database_url() == url
 
 
 def test_schema_snapshot_render_is_deterministic():
@@ -196,7 +210,9 @@ class TestSchemaSnapshot:
     @pytest.fixture
     def catalog(self, monkeypatch):
         catalog = {"tables": [{"table_name": "players"}]}
-        monkeypatch.setattr(schema_snapshot, "snapshot", StageOutcome(result=catalog))
+        monkeypatch.setattr(
+            schema_snapshot, "capture_schema_catalog", StageOutcome(result=catalog)
+        )
         return catalog
 
     @pytest.mark.usefixtures("catalog")
@@ -256,9 +272,9 @@ def test_migration_preflight_decisions(tables, versions, expected):
 
     if expected is None:
         assert error is None
-    else:
-        assert error is not None
-        assert expected in error
+        return
+    assert error is not None
+    assert expected in error
 
 
 class TestMigrationPreflightInspectsTablesAndRevision:
@@ -328,11 +344,11 @@ class TestApiSmokeAcceptsExpectedEmptyDatabaseResponses:
                 zip(
                     ("/api/health", "/api/seasons", "/api/teams"),
                     [
-                        response(200, {"status": "ok"}),
-                        response(
+                        build_http_response(200, {"status": "ok"}),
+                        build_http_response(
                             200, {"availableSeasons": [{}], "currentSeason": 2026}
                         ),
-                        response(200, []),
+                        build_http_response(200, []),
                     ],
                 )
             )
@@ -341,7 +357,7 @@ class TestApiSmokeAcceptsExpectedEmptyDatabaseResponses:
 
     def test_api_smoke_accepts_expected_empty_database_responses(self, scenario):
         client = scenario
-        migration_smoke.smoke_checks(client)
+        migration_smoke.build_smoke_checks(client)
 
         assert client.paths == [
             "/api/health",
@@ -352,20 +368,28 @@ class TestApiSmokeAcceptsExpectedEmptyDatabaseResponses:
 
 class TestApiSmokeRejectsBadStatusOrPayload:
     cases = [
-        pytest.param([response(503, {"error": "down"})], id="unhealthy-status"),
-        pytest.param([response(200, {"status": "wrong"})], id="invalid-health"),
+        pytest.param(
+            [build_http_response(503, {"error": "down"})], id="unhealthy-status"
+        ),
+        pytest.param(
+            [build_http_response(200, {"status": "wrong"})], id="invalid-health"
+        ),
         pytest.param(
             [
-                response(200, {"status": "ok"}),
-                response(200, {"availableSeasons": [], "currentSeason": 2026}),
+                build_http_response(200, {"status": "ok"}),
+                build_http_response(
+                    200, {"availableSeasons": [], "currentSeason": 2026}
+                ),
             ],
             id="missing-seasons",
         ),
         pytest.param(
             [
-                response(200, {"status": "ok"}),
-                response(200, {"availableSeasons": [{}], "currentSeason": 2026}),
-                response(200, [{"id": 1}]),
+                build_http_response(200, {"status": "ok"}),
+                build_http_response(
+                    200, {"availableSeasons": [{}], "currentSeason": 2026}
+                ),
+                build_http_response(200, [{"id": 1}]),
             ],
             id="nonempty-teams",
         ),
@@ -384,21 +408,21 @@ class TestApiSmokeRejectsBadStatusOrPayload:
     def test_api_smoke_rejects_bad_status_or_payload(self, scenario):
         client = scenario
         with pytest.raises(RuntimeError, match="post-migration smoke check failed"):
-            migration_smoke.smoke_checks(client)
+            migration_smoke.build_smoke_checks(client)
 
 
 class TestApiSmokeRejectsInvalidJson:
     @pytest.fixture
     def scenario(self):
         client = SavedApiClient(
-            responses={"/api/health": response(200, {}, "not-json")}
+            responses={"/api/health": build_http_response(200, {}, "not-json")}
         )
         return client
 
     def test_api_smoke_rejects_invalid_json(self, scenario):
         client = scenario
         with pytest.raises(RuntimeError, match="body=not-json"):
-            migration_smoke.smoke_checks(client)
+            migration_smoke.build_smoke_checks(client)
 
 
 def test_alembic_environment_rejects_non_postgresql_database(tmp_path):

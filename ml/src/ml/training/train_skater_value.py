@@ -25,11 +25,15 @@ from ml.configuration import (
     FeatureOptions,
     ModelOptions,
 )
-from ml.evaluation.gate import stable_metadata_json, temporal_splits, validate_metadata
+from ml.evaluation.gate import (
+    serialize_metadata_json,
+    split_temporal_data,
+    validate_metadata,
+)
 from ml.features.replacement_level import (
     calculate_replacement_level,
 )
-from ml.paths import artifact_directory
+from ml.paths import resolve_artifact_directory
 from ml.schemas import ModelMetadata, SplitMetrics, validate_frame
 from ml.domain import Split
 from ml.errors import TrainingRowsError, TrainingTargetsError
@@ -155,7 +159,7 @@ def build_model(options: ModelOptions | None = None) -> Pipeline:
     )
 
 
-def evaluate(
+def evaluate_training_split(
     model: Pipeline,
     df: pd.DataFrame,
 ) -> SplitMetrics:
@@ -197,7 +201,7 @@ class TrainingResult:
 
     @property
     def metadata_json(self) -> str:
-        return stable_metadata_json(self.metadata_value)
+        return serialize_metadata_json(self.metadata_value)
 
 
 def train_model(
@@ -221,7 +225,7 @@ def train_model(
         raise TrainingTargetsError(
             invalid_rows=int(data["next_season_hockey_value"].isna().sum())
         )
-    splits = temporal_splits(data)
+    splits = split_temporal_data(data)
     validation_season = int(splits[Split.VALIDATION]["target_season"].iloc[0])
     test_season = int(splits[Split.TEST]["target_season"].iloc[0])
     columns = list(NUMERIC_FEATURES + CATEGORICAL_FEATURES)
@@ -229,7 +233,9 @@ def train_model(
     model.fit(
         splits[Split.TRAIN][columns], splits[Split.TRAIN]["next_season_hockey_value"]
     )
-    split_metrics = {name: evaluate(model, frame) for name, frame in splits.items()}
+    split_metrics = {
+        name: evaluate_training_split(model, frame) for name, frame in splits.items()
+    }
     final_training = data[data["target_season"] < test_season]
     final_model = build_model(options)
     final_model.fit(final_training[columns], final_training["next_season_hockey_value"])
@@ -250,7 +256,7 @@ def train_model(
     return TrainingResult(model=final_model, metadata_value=validate_metadata(metadata))
 
 
-def train(
+def train_skater_model(
     df: pd.DataFrame | None = None,
     *,
     paths: ArtifactPaths | None = None,
@@ -260,6 +266,10 @@ def train(
     if paths is not None:
         save_model(result.model, result.metadata_value, paths)
     return result.model
+
+
+evaluate = evaluate_training_split
+train = train_skater_model
 
 
 logger = logging.getLogger(__name__)
@@ -273,8 +283,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     build_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO)
     try:
-        directory = artifact_directory("TRADEVALUE_MODEL_DIR", Path("models"))
-        train(
+        directory = resolve_artifact_directory("TRADEVALUE_MODEL_DIR", Path("models"))
+        train_skater_model(
             paths=ArtifactPaths(
                 model=directory.joinpath("skater_value_model.joblib"),
                 metadata=directory.joinpath("skater_value_model_metadata.json"),

@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from dataclasses import asdict
 from datetime import date
 
-from app.database import database_transaction, init_db
+from app.database import open_database_transaction, init_db
 from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingestion
 from app.ScriptingFiles.FullDataScript.roster_status.ahl_roster_service import (
     AhlRosterService,
@@ -57,7 +57,7 @@ def sync_roster_status(
             season_id=os.environ.get("AHL_SEASON_ID"),
         )
         ahl_service = AhlRosterService(http_client=JsonHttpClient(), options=options)
-    with database_transaction() as connection:
+    with open_database_transaction() as connection:
         service = RosterStatusService(
             repository=PostgresRosterRepository(connection=connection),
             nhl_service=nhl_service,

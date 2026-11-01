@@ -171,7 +171,7 @@ class ProfileResult:
         return len(self.target_seasons_covered) > 0
 
 
-def parsed_profile(
+def build_parsed_profile(
     *,
     candidate: Candidate,
     url: str,

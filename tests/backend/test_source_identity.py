@@ -22,12 +22,12 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.policy import (
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.identities import (
     IdentityRows,
-    equivalent_identity_rows,
+    build_equivalent_identity_rows,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.util import source_row_hash
+from app.ScriptingFiles.FullDataScript.source_ingestion.util import hash_source_row
 
 
-@given(equivalent_identity_rows())
+@given(build_equivalent_identity_rows())
 def test_equivalent_player_ids_normalize_without_changing_source_snapshots(
     scenario: IdentityRows,
 ):
@@ -51,12 +51,12 @@ def test_equivalent_player_ids_normalize_without_changing_source_snapshots(
             tuple(row.source_row_hash for row in puck_rows) == scenario.moneypuck_hashes
         )
         assert tuple(row.source_row_hash for row in nhl_rows) == scenario.nhl_hashes
-    assert tuple(map(source_row_hash, scenario.moneypuck)) == scenario.moneypuck_hashes
-    assert tuple(map(source_row_hash, scenario.nhl)) == scenario.nhl_hashes
+    assert tuple(map(hash_source_row, scenario.moneypuck)) == scenario.moneypuck_hashes
+    assert tuple(map(hash_source_row, scenario.nhl)) == scenario.nhl_hashes
     assert len(set(scenario.moneypuck_hashes)) == len(scenario.moneypuck)
 
 
-@given(equivalent_identity_rows())
+@given(build_equivalent_identity_rows())
 def test_integer_grain_deduplicates_aliases_with_last_original_snapshot_winning(
     scenario: IdentityRows,
 ):
@@ -66,7 +66,7 @@ def test_integer_grain_deduplicates_aliases_with_last_original_snapshot_winning(
     assert report.records_valid == 1
     assert report.duplicate_records == 4
     assert report.seasons == (2025,)
-    assert source_row_hash(rows[0]) == scenario.moneypuck_hashes[-1]
+    assert hash_source_row(rows[0]) == scenario.moneypuck_hashes[-1]
 
 
 class TestQualityPolicyPrecedence:

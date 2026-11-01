@@ -8,9 +8,9 @@ from app.shared.tests.entrypoints import (
     LEGACY_LOADERS,
     SUPPORTED_CLI_MODULES,
     QUARANTINED_LOADERS,
-    supported_python_files,
-    full_data_modules,
-    imported_modules,
+    find_supported_python_files,
+    find_full_data_modules,
+    find_imported_modules,
     has_main_guard,
 )
 import os
@@ -21,7 +21,7 @@ import pytest
 
 
 def test_complete_backend_application_compiles(tmp_path):
-    for source in supported_python_files():
+    for source in find_supported_python_files():
         target = tmp_path.joinpath(source.relative_to(APP).with_suffix(".pyc"))
         target.parent.mkdir(parents=True, exist_ok=True)
         py_compile.compile(str(source), cfile=str(target), doraise=True)
@@ -29,8 +29,8 @@ def test_complete_backend_application_compiles(tmp_path):
 
 def test_supported_tree_does_not_reference_removed_orm_or_legacy_loaders():
     failures = []
-    for source in supported_python_files():
-        imports = imported_modules(source)
+    for source in find_supported_python_files():
+        imports = find_imported_modules(source)
         forbidden = sorted(
             name for name in imports if name == "app.models" or ".save_" in name
         )
@@ -59,7 +59,7 @@ def test_supported_cli_manifest_matches_executable_modules():
     assert executable_modules == SUPPORTED_CLI_MODULES
 
 
-@pytest.mark.parametrize("module", full_data_modules())
+@pytest.mark.parametrize("module", find_full_data_modules())
 class TestSupportedIngestionImports:
     @pytest.fixture
     def environment(self):

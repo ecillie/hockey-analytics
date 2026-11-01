@@ -14,19 +14,24 @@ from sklearn.pipeline import Pipeline
 
 from ml.artifacts import ArtifactPaths, load_model, save_predictions
 from ml.configuration import CATEGORICAL_FEATURES, NUMERIC_FEATURES
-from ml.evaluation.gate import prediction_frame, validate_metadata
-from ml.paths import artifact_directory
+from ml.evaluation.gate import build_prediction_frame, validate_metadata
+from ml.paths import resolve_artifact_directory
 from ml.schemas import validate_frame
 from ml.errors import EvaluationRowsError
 from ml.training.train_skater_value import build_training_data
 
 
-def metrics(actual: ArrayLike, predicted: ArrayLike) -> dict[str, float]:
+def calculate_prediction_metrics(
+    actual: ArrayLike, predicted: ArrayLike
+) -> dict[str, float]:
     return {
         "mae": float(mean_absolute_error(actual, predicted)),
         "rmse": float(np.sqrt(mean_squared_error(actual, predicted))),
         "r2": float(r2_score(actual, predicted)),
     }
+
+
+metrics = calculate_prediction_metrics
 
 
 def evaluate_predictions(
@@ -53,7 +58,7 @@ def evaluate_predictions(
     predictions = np.asarray(
         model.predict(result[list(NUMERIC_FEATURES + CATEGORICAL_FEATURES)])
     )
-    prediction_frame(result, predictions)
+    build_prediction_frame(result, predictions)
     result["ml_prediction"] = predictions
     result["naive_prediction"] = result["current_hockey_value"]
     result["prediction_error"] = predictions - result["next_season_hockey_value"]
@@ -80,14 +85,19 @@ def print_metrics(label: str, values: dict[str, float]) -> None:
 
 def print_evaluation_diagnostics(data: pd.DataFrame) -> None:
     actual = data["next_season_hockey_value"]
-    print_metrics("ML MODEL", metrics(actual, data["ml_prediction"]))
     print_metrics(
-        "NAIVE CURRENT-VALUE BENCHMARK", metrics(actual, data["naive_prediction"])
+        "ML MODEL", calculate_prediction_metrics(actual, data["ml_prediction"])
+    )
+    print_metrics(
+        "NAIVE CURRENT-VALUE BENCHMARK",
+        calculate_prediction_metrics(actual, data["naive_prediction"]),
     )
     for position, group in data.groupby("position_group"):
         print_metrics(
             str(position),
-            metrics(group["next_season_hockey_value"], group["ml_prediction"]),
+            calculate_prediction_metrics(
+                group["next_season_hockey_value"], group["ml_prediction"]
+            ),
         )
     calibration = data.groupby("prediction_tier", observed=True).agg(
         players=("player_id", "count"),
@@ -141,8 +151,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def execute_command() -> None:
-    directory = artifact_directory("TRADEVALUE_MODEL_DIR", Path("models"))
-    output = artifact_directory("TRADEVALUE_EVALUATION_DIR", Path("evaluation/outputs"))
+    directory = resolve_artifact_directory("TRADEVALUE_MODEL_DIR", Path("models"))
+    output = resolve_artifact_directory(
+        "TRADEVALUE_EVALUATION_DIR", Path("evaluation/outputs")
+    )
     paths = ArtifactPaths(
         model=directory.joinpath("skater_value_model.joblib"),
         metadata=directory.joinpath("skater_value_model_metadata.json"),

@@ -23,7 +23,7 @@ from app.ScriptingFiles.FullDataScript import (
 from app.ScriptingFiles.FullDataScript.contracts.domain import ActivePlayer
 from app.ScriptingFiles.FullDataScript.contracts.errors import MoneyParseError
 from app.ScriptingFiles.FullDataScript.contracts.schemas.active import (
-    capwages_birth_date,
+    parse_capwages_birth_date,
     parse_active_players,
 )
 from app.ScriptingFiles.FullDataScript.roster_status.domain import (
@@ -56,12 +56,12 @@ FIXTURES = Path(__file__).parent.joinpath("fixtures", "ingestion")
 def test_season_and_ordered_team_helpers():
     assert ingestion._season_start_year(date(2026, 6, 30)) == 2025
     assert ingestion._season_start_year(date(2026, 7, 1)) == 2026
-    assert source_utils.ordered_team_abbreviations("COL,CAR,DAL") == (
+    assert source_utils.order_team_abbreviations("COL,CAR,DAL") == (
         "COL",
         "CAR",
         "DAL",
     )
-    assert source_utils.ordered_team_abbreviations(" TOT, bad value,NYR ") == ("NYR",)
+    assert source_utils.order_team_abbreviations(" TOT, bad value,NYR ") == ("NYR",)
 
 
 def test_csv_parser_rejects_duplicate_columns_and_extra_values():
@@ -220,11 +220,11 @@ class TestValueCoercionContractMoneyAndCapwagesPlayerParsing:
         assert source_utils.parse_number("12", integer=True) == 12
         assert source_utils.parse_number("NaN") is None
         assert source_utils.parse_number("bad") is None
-        assert ingestion._money_cents("$1,234.56") == 123456
+        assert ingestion.parse_legacy_money_cents("$1,234.56") == 123456
         with pytest.raises(MoneyParseError):
-            ingestion._money_cents("bad")
-        assert capwages_birth_date("97-1-13") == "1997-01-13"
-        assert capwages_birth_date("97-99-13") is None
+            ingestion.parse_legacy_money_cents("bad")
+        assert parse_capwages_birth_date("97-1-13") == "1997-01-13"
+        assert parse_capwages_birth_date("97-99-13") is None
 
         assert parse_active_players([capwages_row], minimum_rows=1) == (
             ActivePlayer(
@@ -269,13 +269,13 @@ class TestNhlApiParserRejectsSchemaDrift:
         with pytest.raises(
             ingestion.IngestionValidationError, match="data must be a list"
         ):
-            ingestion._nhl_stats_pages(session, "skater", 2025, 2)
+            ingestion.fetch_nhl_stats_pages(session, "skater", 2025, 2)
 
         session = missing_id_page
         with pytest.raises(
             ingestion.IngestionValidationError, match="missing playerId"
         ):
-            ingestion._nhl_stats_pages(session, "skater", 2025, 2)
+            ingestion.fetch_nhl_stats_pages(session, "skater", 2025, 2)
 
 
 class TestRetainedSnapshots:
@@ -343,7 +343,7 @@ class TestRetainedSnapshots:
             ),
             (
                 ingestion,
-                "existing_capwages_summary",
+                "load_capwages_summary",
                 StageOutcome(result=self.expected, name="active-cache", events=events),
             ),
             (
@@ -360,7 +360,7 @@ class TestRetainedSnapshots:
             ),
             (
                 capspace,
-                "existing_historical_contract_summary",
+                "load_historical_contract_summary",
                 StageOutcome(
                     result=self.historical, name="historical-cache", events=events
                 ),
@@ -1142,7 +1142,7 @@ class TestRetainedMoneyPuckRows:
     @pytest.fixture
     def results(self, migrated_database, source_puck_options, source_puck_csv):
         repository = PostgresMoneyPuckRepository(
-            transaction=ingestion.database_transaction
+            transaction=ingestion.open_database_transaction
         )
         initial_csv = dict(source_puck_csv)
         initial_csv[source_puck_options.skater_url] += (
