@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 import requests
 from sqlalchemy import Engine
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import MoneyPuckSummary
@@ -70,11 +71,9 @@ class SessionScenario:
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class SessionSetupScenario:
+class SessionCloseProbe:
     session: requests.Session
     native_close: Callable[[], None]
-    primary: BaseException
-    cause: ValueError
     cleanup: BaseException | None
     closed: list[bool]
 
@@ -83,6 +82,35 @@ class SessionSetupScenario:
         self.native_close()
         if self.cleanup is not None:
             raise self.cleanup
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class SessionSetupScenario:
+    resource: SessionCloseProbe
+    primary: BaseException
+    cause: ValueError
+
+
+type SessionOwnerFactory = Callable[[], AbstractContextManager[object]]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class SessionLifetimeScenario:
+    factory: SessionOwnerFactory
+    resource: SessionCloseProbe
+    primary: BaseException | None
+    cause: ValueError
+    fail_during_entry: bool
+
+    @property
+    def expected_failure(self) -> BaseException | None:
+        return self.primary if self.primary is not None else self.resource.cleanup
+
+
+def exercise_session_owner(scenario: SessionLifetimeScenario) -> None:
+    with scenario.factory():
+        if scenario.primary is not None and scenario.fail_during_entry is False:
+            raise scenario.primary
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

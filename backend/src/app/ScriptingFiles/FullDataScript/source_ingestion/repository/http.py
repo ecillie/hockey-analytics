@@ -1,7 +1,7 @@
 """Source transport protocols and explicitly owned retry sessions."""
 
 from collections.abc import Generator, Mapping
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 from _thread import LockType
@@ -139,13 +139,27 @@ def configure_http_session(
 
 
 @contextmanager
+def open_owned_http_session(session: requests.Session) -> Generator[requests.Session]:
+    cleanup = ExitStack()
+    cleanup.push(session)
+    primary: BaseException | None = None
+    try:
+        yield session.__enter__()
+    except BaseException as failure:
+        primary = failure
+        raise
+    finally:
+        complete_cleanup((cleanup.close,), primary)
+
+
+@contextmanager
 def open_source_client(
     options: SourceHttpOptions | None = None,
     *,
     context: IngestionContext | None = None,
 ) -> Generator[SourceClient]:
     options = SourceHttpOptions() if options is None else options
-    with open_http_session(options) as session:
+    with open_owned_http_session(open_http_session(options)) as session:
         yield SessionSourceClient(session=session, options=options, context=context)
 
 

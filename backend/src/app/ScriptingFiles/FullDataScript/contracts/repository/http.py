@@ -43,6 +43,7 @@ from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
     open_http_session,
+    open_owned_http_session,
     report_request_recovery,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
@@ -85,7 +86,7 @@ type ProfileSessionFactory = Callable[[], AbstractContextManager[ProfileSession]
 
 @contextmanager
 def open_profile_session() -> Generator[ProfileSession]:
-    with open_http_session() as session:
+    with open_owned_http_session(open_http_session()) as session:
         yield session
 
 
@@ -442,7 +443,7 @@ type ActiveSessionFactory = Callable[[], AbstractContextManager[ActiveProfileSes
 
 @contextmanager
 def open_active_session() -> Generator[ActiveProfileSession]:
-    with open_http_session() as session:
+    with open_owned_http_session(open_http_session()) as session:
         yield session
 
 

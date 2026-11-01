@@ -20,6 +20,9 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.tests.scenarios import (
     PaginationScenario,
     SessionScenario,
     SessionSetupScenario,
+    SessionCloseProbe,
+    SessionLifetimeScenario,
+    exercise_session_owner,
     ValidationBoundary,
 )
 from threading import Barrier, Lock
@@ -44,6 +47,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion import util as source_ut
 from app.ScriptingFiles.FullDataScript.source_ingestion.repository import (
     http as source_http,
 )
+from app.ScriptingFiles.FullDataScript.contracts.repository import http as profile_http
 from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
     SourceHttpOptions,
     SessionSourceClient,
@@ -496,17 +500,21 @@ class TestSessionSetupCleanup:
             primary = failure_kind("session setup failed")
             primary.__cause__ = cause
             scenario = SessionSetupScenario(
-                session=session,
-                native_close=session.close,
+                resource=SessionCloseProbe(
+                    session=session,
+                    native_close=session.close,
+                    cleanup=RuntimeError("session close failed")
+                    if cleanup_fails
+                    else None,
+                    closed=[],
+                ),
                 primary=primary,
                 cause=cause,
-                cleanup=RuntimeError("session close failed") if cleanup_fails else None,
-                closed=[],
             )
             patches.setattr(
                 source_http.requests, "Session", StageOutcome(result=session)
             )
-            patches.setattr(session, "close", scenario.close)
+            patches.setattr(session, "close", scenario.resource.close)
             rejected = StageOutcome(result=None, failure=primary)
             if operation == "retry":
                 patches.setattr(source_http, "Retry", rejected)
@@ -521,9 +529,109 @@ class TestSessionSetupCleanup:
             source_http.open_http_session()
         assert failure.value is scenario.primary
         assert failure.value.__cause__ is scenario.cause
-        assert scenario.closed == [True]
-        if scenario.cleanup is not None:
-            assert failure.value.__dict__["tradevalue_cleanup"] is scenario.cleanup
+        assert scenario.resource.closed == [True]
+        if scenario.resource.cleanup is not None:
+            assert (
+                failure.value.__dict__["tradevalue_cleanup"]
+                is scenario.resource.cleanup
+            )
+
+
+class TestSessionLifetimeCleanup:
+    failure_cases = (
+        pytest.param(None, id="success"),
+        pytest.param(RuntimeError, id="error"),
+        pytest.param(asyncio.CancelledError, id="cancelled"),
+        pytest.param(KeyboardInterrupt, id="interrupted"),
+    )
+
+    @pytest.fixture(params=failure_cases)
+    def primary_kind(self, request):
+        return request.param
+
+    @pytest.fixture(params=failure_cases)
+    def cleanup_kind(self, request):
+        return request.param
+
+    @pytest.fixture(
+        params=[
+            pytest.param("source", id="source-client"),
+            pytest.param("historical", id="historical-profile"),
+            pytest.param("active", id="active-profile"),
+        ]
+    )
+    def factory(self, request):
+        return {
+            "source": source_http.open_source_client,
+            "historical": profile_http.open_profile_session,
+            "active": profile_http.open_active_session,
+        }[request.param]
+
+    @pytest.fixture(
+        params=[
+            pytest.param(True, id="entry"),
+            pytest.param(False, id="body"),
+        ]
+    )
+    def fail_during_entry(self, request):
+        return request.param
+
+    @pytest.fixture
+    def scenario(
+        self, factory, primary_kind, cleanup_kind, fail_during_entry, monkeypatch
+    ):
+        with requests.Session() as session, monkeypatch.context() as patches:
+            cause = ValueError("session lifetime cause")
+            primary = (
+                primary_kind("session lifetime failed")
+                if primary_kind is not None
+                else None
+            )
+            cleanup = (
+                cleanup_kind("session cleanup failed")
+                if cleanup_kind is not None
+                else None
+            )
+            if primary is not None:
+                primary.__cause__ = cause
+            if cleanup is not None:
+                cleanup.__cause__ = cause
+            resource = SessionCloseProbe(
+                session=session, native_close=session.close, cleanup=cleanup, closed=[]
+            )
+            patches.setattr(session, "close", resource.close)
+            created = StageOutcome(result=session)
+            patches.setattr(source_http, "open_http_session", created)
+            patches.setattr(profile_http, "open_http_session", created)
+            if fail_during_entry:
+                patches.setattr(
+                    requests.Session,
+                    "__enter__",
+                    StageOutcome(result=session, failure=primary),
+                )
+            yield SessionLifetimeScenario(
+                factory=factory,
+                resource=resource,
+                primary=primary,
+                cause=cause,
+                fail_during_entry=fail_during_entry,
+            )
+
+    def test_entry_body_and_close_retain_the_correct_failure(self, scenario):
+        expected = scenario.expected_failure
+        if expected is None:
+            exercise_session_owner(scenario)
+        if expected is not None:
+            with pytest.raises(BaseException) as failure:
+                exercise_session_owner(scenario)
+            assert failure.value is expected
+            assert failure.value.__cause__ is scenario.cause
+        assert scenario.resource.closed == [True]
+        if scenario.primary is not None and scenario.resource.cleanup is not None:
+            assert (
+                scenario.primary.__dict__["tradevalue_cleanup"]
+                is scenario.resource.cleanup
+            )
 
 
 class TestInvalidQualityOptions:

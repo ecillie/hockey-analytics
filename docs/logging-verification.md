@@ -1739,3 +1739,62 @@ exact framework/historical/fault-double decisions, hosted NonProd correlation,
 final combined acceptance and release promotion stay open. The approved API
 lifespan hook is unchanged. No acceptance PR or production promotion is made by
 this checkpoint.
+
+## Native Session entry and teardown preservation checkpoint
+
+One shared Session-specific lifetime guard now registers native exit with
+ExitStack before native entry. Its finally path uses complete_cleanup to attempt
+exit once, preserve an existing primary error/cancellation/interruption and cause,
+and retain cleanup as secondary. A sole cleanup failure propagates itself.
+Source-client, historical-profile and active-profile owners use the guard;
+borrowed factories retain caller ownership. Installed requests 2.31.0 source
+confirms native Session entry returns self and exit only calls close, without
+suppression or exception-dependent behavior.
+
+The fixture-only close observer now has one shared resource binding reused by
+setup and lifetime scenarios. Its actual native forwarding method is identical.
+Session resources are context-owned and patches restore before fallback native
+cleanup, including when test assertions fail.
+
+Verification under Python 3.12.14:
+
+- The **96** named owner/entry-or-body/primary/cleanup cases exercise success,
+  RuntimeError, CancelledError and KeyboardInterrupt on both failure axes. Exact
+  preceding owner definitions loaded from `ca349e9` produce **63 failed, 33 passed**;
+  current owners pass all 96. BaseException capture keeps an unexpected injected
+  interrupt inside diagnosis while exact identity/cause assertions still fail.
+  The earlier partial harness stopped on such an unexpected interrupt; the final
+  baseline transcript is the complete comparison.
+- All **68** prior source-test IDs remain. Lifetime plus all 18 setup regressions
+  pass **114** in **0.15 seconds**. Broader source/contract/tracking focus passes
+  **345** in **0.60 seconds**. The original **nine** native teardown probes now
+  preserve their primaries instead of replacing them with close failure.
+- Exact AST comparison against `ca349e9` permits only the shared guard/import and
+  three owner handoffs in the two runtime transport modules. Every request,
+  retry, parser, configuration and borrowed-factory body remains unchanged.
+- Fresh migrated `tradevalue_test_logging05_session_lifetime`: **1,559 passed,
+  zero skips**, **91.34%** coverage in **132.89 seconds**, with **100%** API/calendar
+  coverage. Isolated units pass **1,509**, with 50 integrations deselected, in
+  **113.23 seconds**.
+- Locked sync, Ruff lint/format, ty, structural scope, dependency exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke,
+  clean API/Vercel/ML artifact installs/exclusions and committed-model gates pass.
+  Four dispositions were re-reviewed; all **242** source digests match. No added
+  prohibited forms/comments were found. Public HTTP schema, frontend and
+  committed model inputs remain unchanged. Final combined images, browser and
+  hosted acceptance remain required.
+
+Evidence uses `/private/tmp/tradevalue-logging05-session-lifetime-` prefixes:
+`before-final.txt`, `baseline/native_owners.py`, `after.txt`, `focus.txt`,
+`before-nodes.txt`/`after-nodes.txt`, `before-ids.txt`/`after-existing-ids.txt`,
+`compare.py`/`compare.txt`, `probe-after.py`/`probe-after.txt`, `native-session.txt`,
+`checks.sh`/`checks.txt`, `pytest.txt`, `units.txt`, `schema.json` and `packages.txt`.
+The baseline plugin runs in its own pytest process and executes only the three
+previous owner definitions; no source rewrite, persistent plugin or temporary
+environment patch is left in the current worktree.
+
+The native Session lifetime defect is resolved. Active write-context, source
+helper/entrypoint and exact framework/historical/native fault-double decisions,
+hosted NonProd mode/correlation and final combined acceptance/release promotion
+remain open. The approved API lifespan hook is unchanged. No acceptance PR or
+production promotion is made by this checkpoint.

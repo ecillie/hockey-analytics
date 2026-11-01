@@ -1,5 +1,22 @@
 # Python verification
 
+The native Session lifetime checkpoint fixes the confirmed source/profile teardown
+defect with one shared owner guard. ExitStack registers native exit before entry;
+complete_cleanup preserves an existing primary/cause or propagates a sole cleanup
+failure. The three owned factories use it and borrowed factories are unchanged.
+All **96** native entry/body/primary/cleanup cases pass; the exact preceding owners
+fail **63**, with 33 controls passing. The original nine probes now preserve each
+primary, all 68 prior source-test IDs remain, and setup/lifetime focus passes
+**114**. Broader focus passes **345**. Fresh migrated
+`tradevalue_test_logging05_session_lifetime` passes **1,559 tests, zero skips**,
+**91.34%** coverage in **132.89 seconds**, with the **100%** API/calendar gate.
+Isolated units pass **1,509**, with 50 integrations deselected, in **113.23 seconds**.
+Static, package/export, migration/schema/API and ML gates pass. Four dispositions
+were reviewed and all **242** source digests match. The session-lifetime finding
+is resolved; remaining active write-context, source helper/entrypoint and exact
+framework/historical/fault-double decisions, hosted verification and final
+combined acceptance/release work remain open.
+
 The shared-source checkpoint moves transport adapters into the repository role,
 keeps their exact compatibility bindings, and gives unchanged HTTP options their
 domain owner. Session setup now closes its native resource on failure while
