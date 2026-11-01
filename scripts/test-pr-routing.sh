@@ -60,5 +60,7 @@ assert_route API-Setup Release-1.10.0 'Update API' Dev
 assert_route feature/example Release-1.10.0 'No release branch required' Dev ''
 assert_route Dev Dev 'Promote Dev to Release-1.10.0' Release-1.10.0
 assert_route Dev Release-1.10.0 'Promote Dev to Release-1.10.0' unchanged
+assert_route Dev Release-1.10.0 'Hotfix: Promote Dev to Hotfix-1.0.2' Hotfix-1.0.2
+assert_route Dev Hotfix-1.0.2 'Hotfix: Promote Dev to Hotfix-1.0.2' unchanged
 assert_route Release-1.10.0 Prod 'Promote Release-1.10.0 to Prod' unchanged
 assert_route Hotfix-1.0.2 Prod 'Promote Hotfix-1.0.2 to Prod' unchanged

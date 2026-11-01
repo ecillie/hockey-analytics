@@ -174,12 +174,15 @@ coverage regressions and should be raised as each subsystem gains tests.
 Development follows:
 
 ```text
-Feature branch → Dev → current Release-x.y.z → manual Prod merge
+Feature branch → Dev → selected Release-x.y.z or Hotfix-x.y.z → manual Prod merge
 ```
 
 Every PR from a feature branch must target `Dev`, regardless of its title.
 Create feature branches from current `origin/Dev` and use `gh pr create --base Dev`.
-GitHub Actions promotes `Dev` to the current release and creates Prod promotion PRs.
+GitHub Actions promotes `Dev` to the highest branch of the selected release type
+and creates Prod promotion PRs. Automatic Dev promotions use the repository
+variable `DEV_PROMOTION_TYPE` (`release` by default, or `hotfix`). The Dev
+workflow also provides a `release_type` dropdown for a one-time promotion.
 See [CI and automatic promotion setup](docs/ci-promotion.md) for the required
 GitHub repository settings, hotfix branch policy, and rollout sequence.
 

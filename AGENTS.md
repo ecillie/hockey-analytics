@@ -7,8 +7,9 @@
   work through `Dev` before starting a dependent feature.
 - Use `--base Dev` when creating a feature PR with `gh pr create`.
 - PR titles, including titles containing `Hotfix`, do not change this rule.
-- `Dev` promotes to the current `Release-x.y.z` branch through the release
-  workflow. Release and dedicated hotfix branches promote to `Prod` for manual
+- `Dev` promotes to the current `Release-x.y.z` or `Hotfix-x.y.z` branch using
+  the configured release type or an explicit Dev workflow selection. Release
+  and dedicated hotfix branches promote to `Prod` for manual
   approval. These promotion PRs are distinct from feature PRs.
 - Follow this rule if older plans or historical verification records describe
   feature PRs targeting release branches.
