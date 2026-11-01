@@ -13,6 +13,11 @@ This document is the backend implementation blueprint for the frontend in `front
 - Regular-season requests correspond to database `game_type = 2`. Aggregate player rows should prefer `stat_scope = TOTAL` to avoid double-counting traded players.
 - Hockey Value follows the model metadata definition: next-season `game_score_per_60_above_replacement × TOI hours`. The backend owns this calculation and model version selection.
 - CORS must allow the deployed frontend origin. Authentication is not currently required.
+- Every application HTTP response carries a generated `X-Request-ID`, including
+  validation, missing-route, method, preflight and error responses. Treat it as
+  opaque; caller-supplied IDs are ignored. CORS exposes the response header to
+  allowed frontend origins. Use this ID to correlate diagnostics without adding
+  it to the response body. Existing body/status contracts remain unchanged.
 
 ## Endpoint index and priority
 

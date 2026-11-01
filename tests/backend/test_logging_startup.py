@@ -49,25 +49,40 @@ class TestLoggingBootstrap:
     lifespan_script = dedent("""
         import json
         import logging
+        import os
+        import httpx
         from unittest.mock import patch
         import asyncio
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
         import app.main
         from app.database import DatabaseResources
+        from app.shared.observability.tests.requests import parse_probe_number
+
+        async def request_failure(application):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=application, raise_app_exceptions=False), base_url="http://probe") as client:
+                response = await client.get("/numbers/value_secret", headers={"Origin": "http://localhost:5173"})
+                assert response.status_code == 500
+                assert response.json()["error"]["code"] == "INTERNAL_ERROR"
+                assert response.headers["access-control-expose-headers"] == "X-Request-ID"
+                return response.headers["x-request-id"]
 
         async def run_lifespans(application):
+            responses = []
             async with asyncio.timeout(5):
                 for _ in range(2):
                     async with application.router.lifespan_context(application):
                         app.main.logger.info("secret", extra={"event": "probe.started"})
                         app.main.logger.debug("secret", extra={"event": "probe.debug"})
+                        responses.append(await request_failure(application))
+            return responses
 
         def main():
             calls = []
             actual_create_app = app.main.create_app
             def build_resources(settings):
                 assert logging.getHandlerByName("tradevalue.diagnostics") is not None
+                assert settings.database_url == "postgresql://unused.invalid/tradevalue_test_startup"
                 calls.append(settings.environment.value)
                 engine = create_engine("sqlite://")
                 return DatabaseResources(engine=engine, sessions=sessionmaker(bind=engine))
@@ -77,8 +92,12 @@ class TestLoggingBootstrap:
                 import backend.index
             assert calls == []
             assert logging.getHandlerByName("tradevalue.diagnostics") is None
-            asyncio.run(run_lifespans(backend.index.app))
-            print(json.dumps({"calls": calls, "handlers": len(logging.getLogger("app").handlers), "database": backend.index.app.state.database}))
+            backend.index.app.add_api_route("/numbers/{key}", parse_probe_number)
+            os.environ.update({"ENV": "invalid_secret", "PROD_DATABASE_URL": "postgresql://user:secret@host:invalid/db", "LOG_LEVEL": "CRITICAL", "LOG_FORMAT": "invalid_secret"})
+            before = dict(os.environ)
+            responses = asyncio.run(run_lifespans(backend.index.app))
+            assert dict(os.environ) == before
+            print(json.dumps({"calls": calls, "handlers": len(logging.getLogger("app").handlers), "database": backend.index.app.state.database, "responses": responses}))
             return 0
 
         raise SystemExit(main())
@@ -112,6 +131,7 @@ class TestLoggingBootstrap:
             "PROD_DATABASE_URL": "postgresql://unused.invalid/tradevalue_test_startup",
             "LOG_LEVEL": level,
             "LOG_FORMAT": format,
+            "CORS_ORIGINS": "http://localhost:5173",
         }
 
     @pytest.fixture
@@ -155,18 +175,25 @@ class TestLoggingBootstrap:
         self, hosted, level
     ):
         assert hosted.returncode == 0, hosted.stderr
-        assert json.loads(hosted.stdout) == {
-            "calls": ["prod", "prod"],
-            "handlers": 1,
-            "database": None,
-        }
+        observed = json.loads(hosted.stdout)
+        assert observed["calls"] == ["prod", "prod"]
+        assert observed["handlers"] == 1
+        assert observed["database"] is None
+        assert len(set(observed["responses"])) == 2
         events = [
             json.loads(line.removeprefix("event "))
             for line in hosted.stderr.splitlines()
         ]
         assert [event["event"] for event in events] == (
-            ["probe.started", "probe.debug"] if level == "DEBUG" else ["probe.started"]
+            ["probe.started"]
+            + (["probe.debug", "request.started"] if level == "DEBUG" else [])
+            + ["request.failed", "request.finished"]
         ) * 2
+        assert {
+            event["request_id"]
+            for event in events
+            if event["event"] == "request.failed"
+        } == set(observed["responses"])
         assert "secret" not in hosted.stderr
 
 

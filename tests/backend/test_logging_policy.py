@@ -10,6 +10,7 @@ from io import StringIO
 from hypothesis import given, strategies as st
 import pytest
 
+from app.shared.observability import formatting
 from app.shared.observability.domain import (
     LogFormat,
     LogLevel,
@@ -126,6 +127,51 @@ class TestSafeFormatter:
     def test_corrupt_record_uses_safe_fallback(self, formatter, hostile_record):
         hostile_record.created = float("nan")
         assert "logging.format_failed" in formatter.format(hostile_record)
+
+
+class TestEmergencyDiagnostics:
+    @pytest.fixture(
+        params=[pytest.param(format, id=format.value) for format in LogFormat]
+    )
+    def settings(self, request):
+        return LoggingSettings(format=request.param, level=LogLevel.CRITICAL)
+
+    @pytest.fixture(
+        params=[
+            pytest.param("encode_diagnostic", id="encoder-failure"),
+            pytest.param("datetime", id="clock-failure"),
+        ]
+    )
+    def failed_dependency(self, request, monkeypatch):
+        monkeypatch.setattr(formatting, request.param, None)
+        return request.param
+
+    @pytest.fixture
+    def record(self):
+        record = build_exception_record("secret")
+        record.levelno = logging.CRITICAL
+        return record
+
+    @pytest.fixture
+    def broken_handler(self, settings):
+        return build_diagnostic_handler(settings, BrokenStream())
+
+    def test_formatter_remains_safe_without_encoder_or_clock(
+        self, settings, failed_dependency, record
+    ):
+        rendered = SafeFormatter(settings=settings).format(record)
+        payload = json.loads(rendered.removeprefix("event "))
+        assert payload["event"] == "logging.format_failed"
+        assert payload["severity"] == "CRITICAL"
+        assert payload["timestamp_unavailable"] == (failed_dependency == "datetime")
+        assert "secret" not in rendered
+        assert len(rendered.encode()) < 8192
+
+    def test_failed_sink_never_dumps_raw_record(
+        self, broken_handler, failed_dependency, record, capsys
+    ):
+        broken_handler.handle(record)
+        assert capsys.readouterr().err == ""
 
 
 class TestSafeDelivery:

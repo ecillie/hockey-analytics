@@ -174,3 +174,130 @@ retained in its dashboard and cleanup is limited to 500 ms. Hosted retention,
 access, sink limits and captured-mode acceptance remain phase-5 rollout gates.
 The earlier phase-7 semantic acceptance remains outstanding and is not waived.
 No production promotion or manual PR merge is part of this work.
+
+## Phase 1 publication and phase 2 start
+
+Published exact verified phase-1 head
+`64418853ecf8e2bb4466d00235007169c1c53c94` as non-draft PR
+[#165](https://github.com/ecillie/hockey-analytics/pull/165), targeting `Dev`.
+Dev workflow `41263896315`, both Vercel previews, and all required checks passed.
+Repository automation merged it at `2026-11-01T02:10:27Z` as
+`9f355daf841074a7eee403816589de048c499fe1`. No pipeline fixes or manual merge
+were needed. All phase-1 verification containers were removed; the unrelated
+existing container was untouched.
+
+After confirming the merge, fetched Dev and started `feature/logging-02-api`
+from `9f355da`. Its initial implementation adds a streaming ASGI correlation
+component, immutable per-request context and monotonic duration, generated
+response request IDs, controlled route-template fields, and final outcome
+summaries. Caller/upstream request IDs are replaced. The component copies the
+per-request state mapping before adding its context and keeps summary state
+local to each call, without a module-level ContextVar or request registry.
+
+Six targeted scenarios pass: immediate chunk delivery without body buffering,
+original exception/cancellation identity, quiet successful health probes with
+failed probes retained, and interleaved requests with independent IDs even when
+input scopes share a state mapping. Concurrent test work uses an awaited
+`asyncio.TaskGroup`; its `tasks.create_task` call is structured concurrency,
+not a fire-and-forget task. Raw bodies, paths, query strings and caller IDs do
+not enter serialized diagnostics.
+
+This is a phase-2 checkpoint, not API acceptance. The component is not yet
+installed around the application middleware stack. CORS exposure, ownership of
+error diagnostics and framework propagation, startup/shutdown events, host
+access/error-log coordination, complete response-path coverage, and final
+container/Vercel checks remain before a phase-2 PR. The historical local
+`plan.md` remains untracked and unchanged.
+
+Phase-2 checkpoint verification: Ruff lint/format, ty and structural rules
+passed. On newly provisioned PostgreSQL 15 database
+`tradevalue_test_logging02_checkpoint`, the complete Python suite passed
+**839 tests, zero skips**, **91.75%** aggregate coverage in **39.05 seconds**;
+the API/shared-calendar gate remains **100%**. No frontend or serialized API
+boundary changed at this checkpoint. Final phase-2 package, frontend, container,
+and hosted acceptance gates remain pending the middleware integration above.
+
+## Phase 2 API acceptance
+
+The API integration now wraps the complete HTTP stack in request correlation
+and CORS handling. Every application response receives a generated opaque ID;
+allowed origins can read it, including on error responses. Input IDs, raw paths,
+queries and bodies are excluded from diagnostics. Streaming bytes pass through
+immediately. A failure after headers retains the original response status and
+exception identity while its final summary records the failed outcome.
+
+| Boundary | Diagnostic owner |
+| --- | --- |
+| Successful, invalid, missing and handled-error HTTP responses | Request middleware emits one final summary; successful GET/HEAD health probes are DEBUG only. |
+| API database, unavailable-service and unexpected exceptions | Response handler emits one `request.failed` diagnostic; the canonical propagated Uvicorn duplicate is consumed once. Unrelated host messages remain visible. |
+| Unhandled streaming failures | Uvicorn emits the correlated safe diagnostic from immutable failure metadata; middleware emits the final summary. |
+| Request cancellation | Original cancellation propagates; correlated host diagnostic and summary are DEBUG. |
+| Successful startup/shutdown | Lifespan protocol wrapper emits `service.ready` / `service.stopped`. |
+| Failed startup/shutdown | Wrapper transports bounded validated type/frame data through ASGI failure messages; Uvicorn owns the diagnostic. Startup failure is CRITICAL, shutdown failure ERROR, pure cancellation DEBUG. |
+
+Database environment values are snapshotted at factory construction and resolved
+after logging starts, retaining precedence without exposing invalid URL values
+before safe handlers are installed. A secondary disposal failure remains attached
+to the original primary exception for safe diagnostics. The root host handler is
+preserved; application and Uvicorn namespaces use safe stderr delivery without
+propagating raw exceptions into Vercel's root IPC handler. Existing Uvicorn handler
+objects are retained and access logging is disabled. Docker now uses `exec` so
+SIGTERM reaches Uvicorn and runs graceful shutdown.
+
+Formatter failure uses an encoder-independent bounded fallback. Clock failure
+uses an explicit `timestamp_unavailable` marker and epoch sentinel. A broken
+sink never invokes logging's raw-record error dump. Both formats preserve at
+least ERROR severity, including CRITICAL when selected.
+
+Final local verification on 2026-11-01:
+
+- Ruff lint/format, ty, structural rules, dependency exports, OpenAPI parity,
+  isolated package installs, wheel/sdist boundaries and the ML gate passed.
+- Disposable PostgreSQL 15 database `tradevalue_test_logging02_final`: **888
+  passed, zero skips**, **91.38%** aggregate coverage in **46.58 seconds**.
+  API/shared-calendar coverage remains **100%**. The isolated unit selection
+  passed **838 tests**, with 50 integration tests deselected, in **28.38 seconds**.
+- Frontend contract, lint, 60 tests with 100% measured coverage and production
+  build passed; no frontend implementation changed in this phase.
+- Rebuilt production image `tradevalue-logging02:verified` passed actual INFO and
+  DEBUG HTTP probes against disposable PostgreSQL. Each mode verified six
+  correlated flows: healthy, successful data, invalid input, missing route,
+  unexpected exception and interrupted streaming. Original error envelopes,
+  CORS restrictions and first-chunk delivery were preserved.
+- Captured logs contained 15 INFO-mode and 22 DEBUG-mode events. Each unexpected
+  or streaming failure produced exactly one exception diagnostic. Records stayed
+  within 8 KiB, synthetic secrets were absent, and successful health summaries
+  appeared only in DEBUG. Both containers exited 0 after SIGTERM and emitted one
+  readiness and one stopped event. Invalid startup URL produced one sanitized
+  CRITICAL `ConfigurationError`, no readiness event, and process exit 3.
+- Fresh-process Vercel entrypoint tests cover repeated lifespans, frozen runtime
+  configuration, real HTTP errors and distinct correlation IDs. Host interaction
+  tests cover INFO, DEBUG and CRITICAL thresholds in JSON and text formats.
+
+Repeatable HTTP and captured-log probes are in excluded test support:
+
+```bash
+uv run python -m app.shared.observability.tests.verify_http \
+  http://localhost:58001 http://localhost:58002 \
+  > /private/tmp/tradevalue-logging02-probe-results.json
+uv run python -m app.shared.observability.tests.verify_logs
+```
+
+Run two local containers with `app_probe:create_probe_app --factory`, mount the
+observability test-support directory read-only at `/verification`, and set
+`PYTHONPATH=/verification`. Use ports 58001/58002, INFO/DEBUG respectively, JSON
+format and a disposable test database. Stop them before capturing `docker logs`
+to `/private/tmp/tradevalue-logging02-{info,debug}.log`. Capture the invalid-URL
+startup probe to `tradevalue-logging02-startup-failure.log` and its inspected exit
+code to the adjacent `.exitcode` file. Probe CLI options allow artifact paths to
+be changed. These fakes and probes are excluded from published packages.
+
+Diff review found no added forbidden constructs or comments. Existing structured
+concurrency uses an awaited TaskGroup. ASGI application/send awaits delegate host
+protocol flow control; owned engine cleanup retains its explicit timeout.
+Hosted preview checks and publication follow this record. Actual hosted capture,
+retention, permissions and sink limits remain phase-5 gates; the two harmless
+pre-lifespan Uvicorn status lines still use the host format. Existing phase-7
+semantic acceptance remains outstanding. No production promotion is authorized
+by these local results.
+The dedicated checkpoint PostgreSQL container was removed after verification.
