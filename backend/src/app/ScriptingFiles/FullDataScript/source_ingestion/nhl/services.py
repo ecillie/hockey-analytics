@@ -6,6 +6,12 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from itertools import product
 from typing import Protocol, runtime_checkable
+from dataclasses import replace
+from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
+from app.ScriptingFiles.FullDataScript.tracking.services import (
+    report_ingestion_progress,
+)
+from app.shared.observability.domain import LogLevel
 
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     NhlStatsSummary,
@@ -70,6 +76,7 @@ class NhlStatsService:
     client_factory: SourceClientFactory
     repository: NhlStatsRepository
     options: NhlStatsOptions
+    context: IngestionContext | None = None
 
     def ingest(self) -> NhlStatsSummary:
         if (
@@ -94,9 +101,27 @@ class NhlStatsService:
             futures = {executor.submit(self.fetch_job, job): job for job in jobs}
             for future in as_completed(futures):
                 rows.extend(future.result())
+        report_ingestion_progress(
+            self.context, event="ingestion.validated", values={"validated": len(rows)}
+        )
         return self.repository.persist(NhlStatsSnapshot(rows=tuple(rows)))
 
     def fetch_job(self, job: StatsJob) -> tuple[StatRow, ...]:
+        context = (
+            replace(self.context, stage="nhl_stats_fetch")
+            if self.context is not None
+            else None
+        )
+        report_ingestion_progress(
+            context,
+            event="ingestion.worker_started",
+            values={
+                "season": job.season,
+                "game_type": job.game_type,
+                "player_kind": job.kind.value,
+            },
+            level=LogLevel.DEBUG,
+        )
         with self.client_factory() as client:
             raw = fetch_stats_pages(
                 client, job, self.options.page_size, self.options.maximum_pages
@@ -107,7 +132,20 @@ class NhlStatsService:
                 reason=f"are incomplete for {job.season}/{job.game_type}",
             )
         layout = select_stat_layout(job.kind, advanced=False)
-        return tuple(normalize_stat_row(row, job, layout) for row in raw)
+        rows = tuple(normalize_stat_row(row, job, layout) for row in raw)
+        report_ingestion_progress(
+            context,
+            event="ingestion.worker_finished",
+            values={
+                "season": job.season,
+                "game_type": job.game_type,
+                "player_kind": job.kind.value,
+                "fetched": len(raw),
+                "validated": len(rows),
+            },
+            level=LogLevel.DEBUG,
+        )
+        return rows
 
 
 def fetch_stats_pages(
@@ -224,6 +262,7 @@ class NhlRosterService:
     client: SourceClient
     repository: NhlRosterRepository
     options: NhlRosterOptions
+    context: IngestionContext | None = None
 
     def ingest(self) -> RosterSummary:
         standings = validate_payload(
@@ -280,6 +319,11 @@ class NhlRosterService:
             source="NHL rosters players", minimum=self.options.minimum_active_players
         ).find_violation(len(players)):
             raise violation
+        report_ingestion_progress(
+            self.context,
+            event="ingestion.validated",
+            values={"validated": len(players)},
+        )
         return self.repository.persist(
             NhlRosterSnapshot(
                 season=self.options.season,

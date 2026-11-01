@@ -18,10 +18,10 @@ import requests
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     MissingSourceSnapshotError,
 )
-from app.database import open_database_transaction, init_db
+from app.database import DatabaseTransactionFactory, open_database_transaction, init_db
 from app.ScriptingFiles.FullDataScript import capspace
 from app.ScriptingFiles.FullDataScript.contracts.active_repository import (
-    open_active_repository,
+    ContextualActiveRepositoryFactory,
 )
 from app.ScriptingFiles.FullDataScript.contracts.active_services import (
     ActiveContractService,
@@ -39,6 +39,10 @@ from app.ScriptingFiles.FullDataScript.contracts.options import (
 )
 from app.ScriptingFiles.FullDataScript.contracts.util import parse_money_cents
 from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingestion
+from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
+from app.ScriptingFiles.FullDataScript.tracking.services import build_ingestion_context
+from app.shared.observability.domain import InvocationContext
+from app.shared.cleanup import complete_cleanup
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     DataQualityReport as DataQualityReport,
 )
@@ -54,7 +58,8 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
     SourceClient,
     SourceSession,
     SynchronizedSourceClient,
-    open_source_client,
+    open_source_client as open_source_client,
+    ContextualSourceClientFactory,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
     open_http_session as http_session,
@@ -119,6 +124,7 @@ def ingest_capwages(
     *,
     minimum_players: int = 500,
     minimum_profile_success_ratio: float = 0.98,
+    context: IngestionContext | None = None,
 ) -> dict[str, int | str]:
     options = ActiveContractOptions(
         minimum_players=minimum_players,
@@ -126,12 +132,15 @@ def ingest_capwages(
     )
     if violation := find_active_option_violation(options):
         raise violation
-    return track_active_contracts(session, options)
+    return track_active_contracts(session, options, context=context)
 
 
 @tracked_ingestion("capwages", "ingest_capwages")
 def track_active_contracts(
-    session: ActiveProfileSession | None, options: ActiveContractOptions
+    session: ActiveProfileSession | None,
+    options: ActiveContractOptions,
+    *,
+    context: IngestionContext | None = None,
 ) -> dict[str, int | str]:
     session_factory: ActiveSessionFactory = open_active_session
     if session is not None:
@@ -139,7 +148,9 @@ def track_active_contracts(
             session=SynchronizedActiveSession(session=session)
         )
     return ActiveContractService(
-        session_factory=session_factory, repository_factory=open_active_repository
+        session_factory=session_factory,
+        repository_factory=ContextualActiveRepositoryFactory(context=context),
+        context=context,
     ).run(options)
 
 
@@ -243,6 +254,7 @@ def ingest_moneypuck(
     maximum_duplicate_ratio: float = 0.01,
     options: MoneyPuckOptions | None = None,
     repository: MoneyPuckRepository | None = None,
+    context: IngestionContext | None = None,
 ) -> dict[str, int | str]:
     options = (
         build_moneypuck_options(
@@ -254,15 +266,20 @@ def ingest_moneypuck(
         else options
     )
     repository = (
-        PostgresMoneyPuckRepository(transaction=open_database_transaction)
+        PostgresMoneyPuckRepository(
+            transaction=DatabaseTransactionFactory(
+                transaction=open_database_transaction, context=context
+            )
+        )
         if repository is None
         else repository
     )
     return serialize_summary(
         MoneyPuckService(
-            client=SessionSourceClient(session=session),
+            client=SessionSourceClient(session=session, context=context),
             repository=repository,
             options=options,
+            context=context,
         ).ingest()
     )
 
@@ -275,9 +292,14 @@ def ingest_nhl_rosters(
     minimum_active_players: int = 500,
     season_start_year: int | None = None,
     repository: NhlRosterRepository | None = None,
+    context: IngestionContext | None = None,
 ) -> dict[str, int | str]:
     repository = (
-        PostgresNhlRosterRepository(transaction=open_database_transaction)
+        PostgresNhlRosterRepository(
+            transaction=DatabaseTransactionFactory(
+                transaction=open_database_transaction, context=context
+            )
+        )
         if repository is None
         else repository
     )
@@ -288,9 +310,10 @@ def ingest_nhl_rosters(
     )
     return serialize_summary(
         NhlRosterService(
-            client=SessionSourceClient(session=session),
+            client=SessionSourceClient(session=session, context=context),
             repository=repository,
             options=options,
+            context=context,
         ).ingest()
     )
 
@@ -315,6 +338,7 @@ def ingest_nhl_stats(
     client_factory: SourceClientFactory | None = None,
     repository: NhlStatsRepository | None = None,
     options: NhlStatsOptions | None = None,
+    context: IngestionContext | None = None,
 ) -> dict[str, int | str]:
     options = (
         NhlStatsOptions(first_season=first_season, last_season=last_season)
@@ -322,23 +346,30 @@ def ingest_nhl_stats(
         else options
     )
     repository = (
-        PostgresNhlStatsRepository(transaction=open_database_transaction)
+        PostgresNhlStatsRepository(
+            transaction=DatabaseTransactionFactory(
+                transaction=open_database_transaction, context=context
+            )
+        )
         if repository is None
         else repository
     )
     if client_factory is None:
         client_factory = (
-            open_source_client
+            ContextualSourceClientFactory(context=context)
             if session is None
             else BorrowedSourceClientFactory(
                 client=SynchronizedSourceClient(
-                    client=SessionSourceClient(session=session)
+                    client=SessionSourceClient(session=session, context=context)
                 )
             )
         )
     return serialize_summary(
         NhlStatsService(
-            client_factory=client_factory, repository=repository, options=options
+            client_factory=client_factory,
+            repository=repository,
+            options=options,
+            context=context,
         ).ingest()
     )
 
@@ -358,31 +389,57 @@ def ingest_schedule(
     *,
     minimum_games: int = 100,
     repository: ScheduleRepository | None = None,
+    context: IngestionContext | None = None,
 ) -> dict[str, int | str]:
     repository = (
-        PostgresScheduleRepository(transaction=open_database_transaction)
+        PostgresScheduleRepository(
+            transaction=DatabaseTransactionFactory(
+                transaction=open_database_transaction, context=context
+            )
+        )
         if repository is None
         else repository
     )
     return serialize_summary(
         ScheduleService(
-            client=SessionSourceClient(session=session),
+            client=SessionSourceClient(session=session, context=context),
             repository=repository,
             options=ScheduleOptions(season=season, minimum_games=minimum_games),
+            context=context,
         ).ingest()
     )
 
 
-def run_all() -> dict[str, Mapping[str, object]]:
+def run_all(
+    *, context: InvocationContext | None = None
+) -> dict[str, Mapping[str, object]]:
     init_db()
     session = http_session()
+    primary: BaseException | None = None
     try:
         results: dict[str, Mapping[str, object]] = {}
-        results["moneypuck"] = ingest_moneypuck(session)
-        results["nhl_rosters"] = ingest_nhl_rosters(session)
-        results["nhl_stats"] = ingest_nhl_stats()
+        results["moneypuck"] = ingest_moneypuck(
+            session,
+            context=build_ingestion_context(
+                context, source="moneypuck", stage="ingest_moneypuck"
+            ),
+        )
+        results["nhl_rosters"] = ingest_nhl_rosters(
+            session,
+            context=build_ingestion_context(
+                context, source="nhl", stage="ingest_nhl_rosters"
+            ),
+        )
+        results["nhl_stats"] = ingest_nhl_stats(
+            context=build_ingestion_context(
+                context, source="nhl", stage="ingest_nhl_stats"
+            )
+        )
+        active_context = build_ingestion_context(
+            context, source="capwages", stage="ingest_capwages"
+        )
         try:
-            results["capwages"] = ingest_capwages()
+            results["capwages"] = ingest_capwages(context=active_context)
         except (
             requests.RequestException,
             RuntimeError,
@@ -392,9 +449,16 @@ def run_all() -> dict[str, Mapping[str, object]]:
             LOGGER.warning(
                 "CapWages refresh unavailable; retained last-good database snapshot: %s",
                 exc,
+                extra=({} if active_context is None else active_context.fields)
+                | {"event": "ingestion.snapshot_retained"},
             )
+        historical_context = build_ingestion_context(
+            context, source="capspace", stage="populate_historical_contracts"
+        )
         try:
-            results["historical_contracts"] = capspace.ingest_historical_contracts()
+            results["historical_contracts"] = capspace.ingest_historical_contracts(
+                context=historical_context
+            )
         except (
             requests.RequestException,
             RuntimeError,
@@ -406,11 +470,21 @@ def run_all() -> dict[str, Mapping[str, object]]:
             LOGGER.warning(
                 "Historical contract refresh unavailable; retained last-good snapshot: %s",
                 exc,
+                extra=({} if historical_context is None else historical_context.fields)
+                | {"event": "ingestion.snapshot_retained"},
             )
-        results["schedule"] = ingest_schedule(session)
+        results["schedule"] = ingest_schedule(
+            session,
+            context=build_ingestion_context(
+                context, source="nhl", stage="ingest_schedule"
+            ),
+        )
         return results
+    except BaseException as failure:
+        primary = failure
+        raise
     finally:
-        session.close()
+        complete_cleanup((session.close,), primary)
 
 
 existing_capwages_summary = load_capwages_summary

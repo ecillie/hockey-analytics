@@ -3,6 +3,11 @@
 from dataclasses import dataclass
 from datetime import date
 from typing import Protocol, runtime_checkable
+from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
+from app.ScriptingFiles.FullDataScript.tracking.services import (
+    report_ingestion_progress,
+)
+from app.shared.observability.domain import LogLevel
 
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     Game,
@@ -34,6 +39,7 @@ class ScheduleService:
     client: SourceClient
     repository: ScheduleRepository
     options: ScheduleOptions
+    context: IngestionContext | None = None
 
     def ingest(self) -> ScheduleSummary:
         cursor_date: date | None = date(self.options.season, 10, 1)
@@ -49,6 +55,12 @@ class ScheduleService:
                 source=source,
             )
             normalized = parse_schedule_page(page, source=source)
+            report_ingestion_progress(
+                self.context,
+                event="ingestion.page_read",
+                values={"season": self.options.season, "fetched": len(normalized)},
+                level=LogLevel.DEBUG,
+            )
             records_read += len(normalized)
             games.update((game.external_id, game) for game in normalized)
             next_date = page.nextStartDate
@@ -68,6 +80,11 @@ class ScheduleService:
             minimum=self.options.minimum_games,
         ).find_violation(len(games)):
             raise violation
+        report_ingestion_progress(
+            self.context,
+            event="ingestion.validated",
+            values={"validated": len(games), "season": self.options.season},
+        )
         return self.repository.persist(
             ScheduleSnapshot(
                 season=self.options.season,

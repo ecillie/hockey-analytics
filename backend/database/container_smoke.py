@@ -3,6 +3,7 @@
 import argparse
 import json
 import logging
+import os
 import math
 import time
 from collections.abc import Callable, Sequence
@@ -18,6 +19,14 @@ from app.shared.smoke import (
     ContainerReadinessError,
 )
 from app.shared.cli import CommandOptionError, ExitCode
+from app.shared.observability.domain import CommandOutcome, read_logging_settings
+from app.shared.observability.errors import LoggingSettingsError
+from app.shared.observability.services import (
+    configure_logging,
+    start_command,
+    configure_command_exceptions,
+    finish_command,
+)
 
 
 def is_valid_teams_response(body: object) -> bool:
@@ -137,12 +146,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     options = CommandOptions(**vars(parser.parse_args(argv)))
     if violation := find_option_violation(options):
         parser.error(str(violation))
-    logging.basicConfig(level=logging.INFO)
     try:
-        return execute_command(options)
+        settings = read_logging_settings(os.environ)
+    except LoggingSettingsError as error:
+        parser.error(str(error))
+    configure_logging(settings)
+    context = start_command("container_smoke")
+    configure_command_exceptions(context)
+    try:
+        result = execute_command(options)
     except Exception:
-        logger.exception("Command failed")
+        logger.exception(
+            "Command failed", extra=context.fields | {"event": "command.failed"}
+        )
+        finish_command(context, CommandOutcome.FAILED)
         return ExitCode.FAILURE
+    finish_command(context, CommandOutcome.COMPLETED)
+    return result
 
 
 def execute_command(options: CommandOptions) -> int:

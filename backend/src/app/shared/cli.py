@@ -7,6 +7,7 @@ class ExitCode(IntEnum):
     SUCCESS = 0
     FAILURE = 1
     INCOMPLETE = 2
+    FRAMEWORK_FAILURE = 255
 
 
 class CommandOptionError(ValueError):

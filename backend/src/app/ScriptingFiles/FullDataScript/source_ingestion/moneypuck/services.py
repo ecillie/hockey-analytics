@@ -3,6 +3,11 @@
 from dataclasses import dataclass
 import json
 from typing import Protocol, runtime_checkable
+from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
+from app.ScriptingFiles.FullDataScript.tracking.services import (
+    report_ingestion_progress,
+)
+from app.shared.observability.domain import LogLevel
 
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     MoneyPuckSummary,
@@ -46,6 +51,7 @@ class MoneyPuckService:
     client: SourceClient
     repository: MoneyPuckRepository
     options: MoneyPuckOptions
+    context: IngestionContext | None = None
 
     def ingest(self) -> MoneyPuckSummary:
         if violation := find_quality_options_violation(
@@ -75,6 +81,16 @@ class MoneyPuckService:
                 numeric_fields=frozenset({"icetime"}),
             )
             valid, report = validate_rows(incoming, policy)
+            report_ingestion_progress(
+                self.context,
+                event="ingestion.rows_read",
+                values={
+                    "fetched": len(incoming),
+                    "validated": len(valid),
+                    "player_kind": kind.value,
+                },
+                level=LogLevel.DEBUG,
+            )
             if violation := find_quality_violation(
                 report,
                 minimum_rows=self.options.minimum_rows_per_kind,
@@ -84,6 +100,9 @@ class MoneyPuckService:
             layout = select_stat_layout(kind, advanced=True)
             rows.extend(normalize_row(row, kind, layout) for row in valid)
             reports.append(report)
+        report_ingestion_progress(
+            self.context, event="ingestion.validated", values={"validated": len(rows)}
+        )
         return self.repository.persist(
             MoneyPuckSnapshot(rows=tuple(rows), quality=tuple(reports))
         )

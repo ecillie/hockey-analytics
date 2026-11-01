@@ -57,7 +57,7 @@ from app.ScriptingFiles.FullDataScript.contracts.options import (
 )
 from app.ScriptingFiles.FullDataScript.contracts.repository import (
     ContractRepositoryFactory,
-    open_contract_repository,
+    open_contract_repository as open_contract_repository,
 )
 from app.ScriptingFiles.FullDataScript.contracts.repository import (
     load_coverage_report as coverage_report,
@@ -82,6 +82,20 @@ from app.ScriptingFiles.FullDataScript.contracts.util import (
     parse_season_start_year,
 )
 from app.ScriptingFiles.FullDataScript.ingestion_tracking import tracked_ingestion
+from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
+from app.ScriptingFiles.FullDataScript.contracts.repository import (
+    ContextualContractRepositoryFactory,
+)
+from app.ScriptingFiles.FullDataScript.tracking.services import build_ingestion_context
+from app.config import load_environment
+from app.shared.observability.domain import CommandOutcome, read_logging_settings
+from app.shared.observability.errors import LoggingSettingsError
+from app.shared.observability.services import (
+    configure_logging,
+    start_command,
+    configure_command_exceptions,
+    finish_command,
+)
 from app.shared.cli import ExitCode
 
 CAPSPACE_BASE_URL = ProfileHttpOptions().capspace_base_url
@@ -117,6 +131,7 @@ def run_contract_sync(
     player_id: int | None = None,
     nhl_id: str | None = None,
     force: bool = False,
+    context: IngestionContext | None = None,
 ) -> dict[str, int]:
     options = HistoricalContractOptions(
         first_season=first_season,
@@ -130,7 +145,9 @@ def run_contract_sync(
     )
     if violation := find_option_violation(options):
         raise violation
-    return run_historical_contracts(session, options=options, dry_run=dry_run)
+    return run_historical_contracts(
+        session, options=options, dry_run=dry_run, context=context
+    )
 
 
 def run_historical_contracts(
@@ -138,7 +155,8 @@ def run_historical_contracts(
     *,
     options: HistoricalContractOptions,
     dry_run: bool,
-    repository_factory: ContractRepositoryFactory = open_contract_repository,
+    repository_factory: ContractRepositoryFactory | None = None,
+    context: IngestionContext | None = None,
 ) -> dict[str, int]:
     if violation := find_option_violation(options):
         raise violation
@@ -148,17 +166,25 @@ def run_historical_contracts(
             session=SynchronizedProfileSession(session=session)
         )
     service = HistoricalContractService(
-        repository_factory=repository_factory,
-        fetcher=ProfileFetcher(session_factory=session_factory),
+        repository_factory=ContextualContractRepositoryFactory(context=context)
+        if repository_factory is None
+        else repository_factory,
+        fetcher=ProfileFetcher(session_factory=session_factory, context=context),
+        context=context,
     )
     return service.run(options, dry_run=dry_run)
 
 
 @tracked_ingestion(CAPSPACE_SOURCE, "populate_historical_contracts")
 def track_historical_contracts(
-    session: ProfileSession | None, options: HistoricalContractOptions
+    session: ProfileSession | None,
+    options: HistoricalContractOptions,
+    *,
+    context: IngestionContext | None = None,
 ) -> dict[str, int]:
-    return run_historical_contracts(session, options=options, dry_run=False)
+    return run_historical_contracts(
+        session, options=options, dry_run=False, context=context
+    )
 
 
 def ingest_historical_contracts(
@@ -172,6 +198,7 @@ def ingest_historical_contracts(
     player_id: int | None = None,
     nhl_id: str | None = None,
     force: bool = False,
+    context: IngestionContext | None = None,
 ) -> dict[str, int]:
     options = HistoricalContractOptions(
         first_season=first_season,
@@ -185,7 +212,7 @@ def ingest_historical_contracts(
     )
     if violation := find_option_violation(options):
         raise violation
-    return track_historical_contracts(session, options)
+    return track_historical_contracts(session, options, context=context)
 
 
 def preview_historical_contracts(
@@ -199,6 +226,7 @@ def preview_historical_contracts(
     player_id: int | None = None,
     nhl_id: str | None = None,
     force: bool = False,
+    context: IngestionContext | None = None,
 ) -> dict[str, int]:
     return run_contract_sync(
         session,
@@ -211,6 +239,7 @@ def preview_historical_contracts(
         player_id=player_id,
         nhl_id=nhl_id,
         force=force,
+        context=context,
     )
 
 
@@ -305,18 +334,36 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if violation := find_option_violation(options.ingestion):
         parser.error(str(violation))
-    logging.basicConfig(level=logging.INFO)
     try:
-        summary = execute_historical_command(options)
+        settings = read_logging_settings(load_environment())
+    except LoggingSettingsError as error:
+        parser.error(str(error))
+    configure_logging(settings)
+    context = start_command("historical_contracts")
+    configure_command_exceptions(context)
+    try:
+        summary = execute_historical_command(
+            options,
+            context=build_ingestion_context(
+                context, source="capspace", stage="populate_historical_contracts"
+            ),
+        )
     except Exception:
-        logger.exception("Historical contract command failed")
+        logger.exception(
+            "Historical contract command failed",
+            extra=context.fields | {"event": "command.failed"},
+        )
+        finish_command(context, CommandOutcome.FAILED)
         return ExitCode.FAILURE
     print(json.dumps(summary, indent=2, sort_keys=True, default=str))
+    finish_command(context, CommandOutcome.COMPLETED)
     return ExitCode.SUCCESS
 
 
 def execute_historical_command(
     options: HistoricalCommandOptions,
+    *,
+    context: IngestionContext | None = None,
 ) -> Mapping[str, object]:
     init_db()
     if options.mode is HistoricalCommandMode.COVERAGE:
@@ -325,8 +372,10 @@ def execute_historical_command(
             last_season=options.ingestion.last_season,
         )
     if options.mode is HistoricalCommandMode.APPLY:
-        return track_historical_contracts(None, options.ingestion)
-    return run_historical_contracts(None, options=options.ingestion, dry_run=True)
+        return track_historical_contracts(None, options.ingestion, context=context)
+    return run_historical_contracts(
+        None, options=options.ingestion, dry_run=True, context=context
+    )
 
 
 existing_historical_contract_summary = load_historical_contract_summary

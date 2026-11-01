@@ -2,10 +2,13 @@
 
 from collections.abc import Generator
 from pathlib import Path
+import logging
 
 import pytest
 from app.database import connect_database
 from app.ScriptingFiles.FullDataScript import capspace
+from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
+from app.shared.observability.domain import InvocationContext
 from app.ScriptingFiles.FullDataScript.contracts.tests.postgres import (
     ContractDatabaseScenario,
     HistoricalFixtureSession,
@@ -24,6 +27,19 @@ from app.ScriptingFiles.FullDataScript.tracking.repository import (
 
 @pytest.mark.integration
 class TestCommittedContractBatches:
+    @pytest.fixture
+    def logging_context(self, caplog):
+        caplog.set_level(logging.INFO)
+        return IngestionContext(
+            invocation=InvocationContext(
+                invocation_id="contract-invocation",
+                source="contract_probe",
+                started_ns=0,
+            ),
+            source="capspace",
+            stage="historical",
+        )
+
     @pytest.fixture
     def scenario(self, disposable_database_url) -> Generator[ContractDatabaseScenario]:
         connection = connect_database()
@@ -48,12 +64,17 @@ class TestCommittedContractBatches:
         scenario.install_batch_failure()
         return scenario
 
-    def test_committed_hundred_survive_later_failure_and_resume(self, failing_batch):
+    def test_committed_hundred_survive_later_failure_and_resume(
+        self, failing_batch, logging_context, caplog
+    ):
         with pytest.raises(
             IngestionBatchError, match="late contract batch failed"
         ) as raised:
             capspace.ingest_historical_contracts(
-                failing_batch.session, first_season=2008, last_season=2009
+                failing_batch.session,
+                first_season=2008,
+                last_season=2009,
+                context=logging_context,
             )
 
         assert raised.value.committed_summary["batches_processed"] == 1
@@ -62,10 +83,31 @@ class TestCommittedContractBatches:
         assert (status, created, read) == ("failed", 300, 300)
         assert metadata["failure_stage"] == "persist"
         assert metadata["committed_summary"]["processed_player_seasons"] == 200
+        batches = [
+            record
+            for record in caplog.records
+            if getattr(record, "event", None) == "ingestion.batch_committed"
+        ]
+        assert len(batches) == 1
+        assert batches[0].committed == created == 300
+        finished = [
+            record
+            for record in caplog.records
+            if getattr(record, "event", None) == "ingestion.finished"
+        ]
+        assert len(finished) == 1
+        assert finished[0].outcome == "failed"
+        assert finished[0].committed == created
+        assert batches[0].run_id == finished[0].run_id
+        assert batches[0].invocation_id == "contract-invocation"
+        caplog.clear()
         failing_batch.remove_batch_failure()
 
         result = capspace.ingest_historical_contracts(
-            failing_batch.session, first_season=2008, last_season=2009
+            failing_batch.session,
+            first_season=2008,
+            last_season=2009,
+            context=logging_context,
         )
 
         assert result["candidate_players"] == 1
@@ -73,10 +115,22 @@ class TestCommittedContractBatches:
         assert failing_batch.count_rows() == (101, 202, 101)
         assert len(failing_batch.session.calls) == 102
         assert failing_batch.latest_run()[0] == "succeeded"
+        resumed = [
+            record
+            for record in caplog.records
+            if getattr(record, "event", None) == "ingestion.finished"
+        ]
+        assert resumed[0].outcome == "completed"
+        assert resumed[0].run_id != finished[0].run_id
 
-    def test_preview_mutates_neither_contracts_snapshots_nor_tracking(self, scenario):
+    def test_preview_mutates_neither_contracts_snapshots_nor_tracking(
+        self, scenario, logging_context, caplog
+    ):
         summary = capspace.preview_historical_contracts(
-            scenario.session, first_season=2008, last_season=2009
+            scenario.session,
+            first_season=2008,
+            last_season=2009,
+            context=logging_context,
         )
 
         assert summary["candidate_player_seasons"] == 202
@@ -86,6 +140,17 @@ class TestCommittedContractBatches:
         with scenario.connection.cursor() as cursor:
             cursor.execute("SELECT count(*) FROM ingestion_runs")
             assert cursor.fetchone() == (0,)
+        batches = [
+            record
+            for record in caplog.records
+            if getattr(record, "event", None) == "ingestion.batch_previewed"
+        ]
+        assert len(batches) == 2
+        assert all(record.committed == 0 for record in batches)
+        assert not any(
+            getattr(record, "event", None) == "ingestion.batch_committed"
+            for record in caplog.records
+        )
 
     def test_unknown_source_releases_lock_and_control_resources(self, scenario):
         with pytest.raises(UnknownIngestionSourceError):

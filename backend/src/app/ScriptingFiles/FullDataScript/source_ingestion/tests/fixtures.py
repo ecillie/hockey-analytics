@@ -96,7 +96,7 @@ def migrated_database(monkeypatch, tmp_path, disposable_database_url):
         )
 
     @contextmanager
-    def test_transaction() -> Generator[PgConnection]:
+    def test_transaction(*, context=None) -> Generator[PgConnection]:
 
         connection = psycopg2.connect(disposable_database_url)
         try:

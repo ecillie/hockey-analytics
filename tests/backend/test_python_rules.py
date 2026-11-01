@@ -1,6 +1,7 @@
 """Repository syntax checks reject forbidden forms without executing source."""
 
 from pathlib import Path
+import json
 import subprocess
 
 import pytest
@@ -152,6 +153,7 @@ class TestForbiddenSyntax:
         assert all(violation.path == path for violation in violations)
 
 
+@pytest.mark.usefixtures("isolate_command_logging")
 class TestSourceScope:
     @pytest.fixture
     def root(self, tmp_path):
@@ -206,9 +208,19 @@ class TestSourceScope:
         assert main(["--root", str(root)]) == 0
         assert "semantic rules require manual review" in capsys.readouterr().out
 
-    def test_violations_report_relative_paths_and_fail(self, violating_root, caplog):
+    def test_violations_report_relative_paths_and_fail(
+        self, violating_root, caplog, capsys
+    ):
         assert main(["--root", str(violating_root)]) == 1
         assert "backend/src/source.py:1: lambda" in caplog.text
+        events = [json.loads(line) for line in capsys.readouterr().err.splitlines()]
+        violation = events[1]
+        assert violation["event"] == "command.verification_failed"
+        assert violation["source_module"] == "backend.src.source"
+        assert violation["line"] == 1
+        assert violation["stage"] == "lambda"
+        assert events[-1]["outcome"] == "failed"
+        assert str(violating_root) not in json.dumps(events)
 
     def test_invalid_syntax_fails_closed(self, malformed_root, caplog):
         assert main(["--root", str(malformed_root)]) == 1

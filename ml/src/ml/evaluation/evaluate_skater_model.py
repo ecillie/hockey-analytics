@@ -8,6 +8,19 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from app.shared.cli import ExitCode
+from app.config import load_environment
+from app.shared.observability.domain import (
+    CommandOutcome,
+    InvocationContext,
+    read_logging_settings,
+)
+from app.shared.observability.errors import LoggingSettingsError
+from app.shared.observability.services import (
+    configure_logging,
+    start_command,
+    configure_command_exceptions,
+    finish_command,
+)
 from numpy.typing import ArrayLike
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.pipeline import Pipeline
@@ -18,6 +31,7 @@ from ml.evaluation.gate import build_prediction_frame, validate_metadata
 from ml.paths import resolve_artifact_directory
 from ml.schemas import validate_frame
 from ml.errors import EvaluationRowsError
+from ml.observability.services import report_ml_progress
 from ml.training.train_skater_value import build_training_data
 
 
@@ -122,13 +136,29 @@ def evaluate_model(
     *,
     data: pd.DataFrame | None = None,
     output: Path | None = None,
+    context: InvocationContext | None = None,
 ) -> pd.DataFrame:
-    model, metadata = load_model(paths)
-    result = evaluate_predictions(
-        model, metadata, build_training_data() if data is None else data
+    model, metadata = load_model(paths, context=context)
+    selected = build_training_data() if data is None else data
+    report_ml_progress(
+        context,
+        event="ml.dataset_ready",
+        stage="evaluation",
+        values={"rows": len(selected)},
     )
+    result = evaluate_predictions(model, metadata, selected)
+    if context is not None:
+        values = calculate_prediction_metrics(
+            result["next_season_hockey_value"], result["ml_prediction"]
+        )
+        report_ml_progress(
+            context,
+            event="ml.evaluation_finished",
+            stage="test",
+            values=values | {"rows": len(result)},
+        )
     if output is not None:
-        save_predictions(result, output)
+        save_predictions(result, output, context=context)
     return result
 
 
@@ -140,17 +170,28 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    build_parser().parse_args(argv)
-    logging.basicConfig(level=logging.INFO)
+    parser = build_parser()
+    parser.parse_args(argv)
     try:
-        execute_command()
+        settings = read_logging_settings(load_environment())
+    except LoggingSettingsError as error:
+        parser.error(str(error))
+    configure_logging(settings)
+    context = start_command("ml.evaluate_skater_model")
+    configure_command_exceptions(context)
+    try:
+        execute_command(context=context)
     except Exception:
-        logger.exception("Command failed")
+        logger.exception(
+            "Command failed", extra=context.fields | {"event": "command.failed"}
+        )
+        finish_command(context, CommandOutcome.FAILED)
         return ExitCode.FAILURE
+    finish_command(context, CommandOutcome.COMPLETED)
     return ExitCode.SUCCESS
 
 
-def execute_command() -> None:
+def execute_command(*, context: InvocationContext | None = None) -> None:
     directory = resolve_artifact_directory("TRADEVALUE_MODEL_DIR", Path("models"))
     output = resolve_artifact_directory(
         "TRADEVALUE_EVALUATION_DIR", Path("evaluation/outputs")
@@ -161,7 +202,9 @@ def execute_command() -> None:
     )
     print_evaluation_diagnostics(
         evaluate_model(
-            paths, output=output.joinpath("skater_model_test_predictions.csv")
+            paths,
+            output=output.joinpath("skater_model_test_predictions.csv"),
+            context=context,
         )
     )
 

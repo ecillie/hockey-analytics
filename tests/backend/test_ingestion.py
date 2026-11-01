@@ -392,6 +392,7 @@ class TestRetainedSnapshots:
             assert "historical-cache" in events
 
 
+@pytest.mark.usefixtures("isolate_command_logging")
 class TestRosterCommandStatuses:
     summary = {
         "statuses_updated": 1,

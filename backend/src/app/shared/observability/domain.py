@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum, auto
 from time import monotonic_ns
-from typing import Literal
+from typing import Literal, Protocol, runtime_checkable
 from app.shared.observability.errors import LoggingSettingsError
 
 
@@ -21,11 +21,58 @@ class LogFormat(StrEnum):
     TEXT = auto()
 
 
+@runtime_checkable
+class DiagnosticContext(Protocol):
+    @property
+    def fields(self) -> dict[str, object]: ...
+
+
+class TransactionOutcome(StrEnum):
+    STARTED = auto()
+    COMMITTED = auto()
+    ROLLED_BACK = auto()
+    ROLLBACK_FAILED = auto()
+
+    @property
+    def level(self) -> LogLevel:
+        if self is TransactionOutcome.STARTED:
+            return LogLevel.DEBUG
+        if self is TransactionOutcome.ROLLBACK_FAILED:
+            return LogLevel.WARNING
+        return LogLevel.INFO
+
+    @property
+    def event(self) -> str:
+        return f"transaction.{self.value}"
+
+
 class RequestOutcome(StrEnum):
     COMPLETED = auto()
     INCOMPLETE = auto()
     FAILED = auto()
     CANCELLED = auto()
+
+
+class CommandOutcome(StrEnum):
+    COMPLETED = auto()
+    FAILED = auto()
+    INCOMPLETE = auto()
+    CANCELLED = auto()
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class InvocationContext:
+    invocation_id: str
+    source: str
+    started_ns: int
+
+    @property
+    def fields(self) -> dict[str, object]:
+        return {"invocation_id": self.invocation_id, "source": self.source}
+
+    @property
+    def duration_ms(self) -> float:
+        return (monotonic_ns() - self.started_ns) / 1_000_000
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

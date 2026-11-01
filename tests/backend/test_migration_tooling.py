@@ -1,5 +1,6 @@
 from app.shared.tests.fakes import build_migration_history, build_migration_revision
 from pathlib import Path
+import json
 from collections.abc import Generator
 from app.shared.tests.fakes import (
     CatalogDatabase,
@@ -199,6 +200,7 @@ def test_schema_snapshot_render_is_deterministic():
     )
 
 
+@pytest.mark.usefixtures("isolate_command_logging")
 class TestSchemaSnapshot:
     @pytest.fixture
     def paths(self, tmp_path):
@@ -438,7 +440,12 @@ def test_alembic_environment_rejects_non_postgresql_database(tmp_path):
         success=False,
     )
 
-    assert "TradeValue migrations require PostgreSQL" in result.stderr
+    events = [json.loads(line) for line in result.stderr.splitlines()]
+    failures = [item for item in events if item["event"] == "command.failed"]
+    assert len(failures) == 1
+    assert failures[0]["stage"] == "postgresql_required"
+    assert failures[0]["exceptions"][0]["type"] == "ConfigurationError"
+    assert "wrong.db" not in result.stderr
 
 
 @pytest.mark.integration
@@ -490,7 +497,10 @@ class TestCompleteMigrationLifecycle:
             "backend/database/migration_preflight.py",
             success=False,
         )
-        assert "has no Alembic revision" in unsafe.stderr
+        unsafe_events = [json.loads(line) for line in unsafe.stderr.splitlines()]
+        assert unsafe_events[1]["event"] == "command.verification_failed"
+        assert unsafe_events[1]["stage"] == "unversioned_schema"
+        assert unsafe_events[-1]["outcome"] == "failed"
         with isolated.begin() as connection:
             connection.execute(text("DROP TABLE players"))
         isolated.dispose()

@@ -39,6 +39,9 @@ from app.shared.tests.fakes import (
 )
 
 
+pytestmark = pytest.mark.usefixtures("isolate_command_logging")
+
+
 class TestCommandBoundaries:
     cases = (
         pytest.param(
@@ -303,7 +306,10 @@ class TestIngestionCommands:
         assert runner.main([]) == expected
         assert roster.main([]) == expected
         assert capsys.readouterr().out == ""
-        assert len(caplog.records) == 2
+        assert (
+            len([record for record in caplog.records if record.levelname == "ERROR"])
+            == 2
+        )
 
     @pytest.fixture
     def failed_source(self, runner, monkeypatch, events):
