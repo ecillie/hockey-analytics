@@ -2,7 +2,7 @@
 
 from pathlib import Path
 import pytest
-from ml.paths import artifact_directory
+from ml.paths import resolve_artifact_directory
 
 
 class TestArtifactDirectories:
@@ -16,7 +16,9 @@ class TestArtifactDirectories:
 
     @pytest.mark.usefixtures("outside_checkout")
     def test_source_destination_is_independent_of_working_directory(self):
-        destination = artifact_directory("TRADEVALUE_MODEL_DIR", self.default_directory)
+        destination = resolve_artifact_directory(
+            "TRADEVALUE_MODEL_DIR", self.default_directory
+        )
         assert destination == self.source_directory
 
     @pytest.fixture
@@ -26,6 +28,6 @@ class TestArtifactDirectories:
 
     def test_explicit_external_destination(self, configured_directory):
         assert (
-            artifact_directory("TRADEVALUE_MODEL_DIR", self.default_directory)
+            resolve_artifact_directory("TRADEVALUE_MODEL_DIR", self.default_directory)
             == configured_directory
         )

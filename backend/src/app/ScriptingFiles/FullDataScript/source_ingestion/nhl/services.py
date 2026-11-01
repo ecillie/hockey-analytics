@@ -23,7 +23,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     OptionsViolation,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.http import SourceClient
-from app.ScriptingFiles.FullDataScript.source_ingestion.domain import stat_layout
+from app.ScriptingFiles.FullDataScript.source_ingestion.domain import select_stat_layout
 from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.domain import (
     NhlRosterOptions,
     NhlRosterSnapshot,
@@ -32,7 +32,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.domain import (
     StatsJob,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.policy import (
-    stat_violation,
+    find_stat_violation,
     CountPolicy,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.schemas import (
@@ -46,9 +46,9 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.schemas import (
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
     normalize_nationality,
     parse_number,
-    ordered_team_abbreviations,
+    order_team_abbreviations,
     normalize_position,
-    source_row_hash,
+    hash_source_row,
 )
 
 
@@ -106,7 +106,7 @@ class NhlStatsService:
                 source=f"NHL {job.kind} stats",
                 reason=f"are incomplete for {job.season}/{job.game_type}",
             )
-        layout = stat_layout(job.kind, advanced=False)
+        layout = select_stat_layout(job.kind, advanced=False)
         return tuple(normalize_stat_row(row, job, layout) for row in raw)
 
 
@@ -134,20 +134,21 @@ def fetch_stats_pages(
         if not isinstance(raw, dict) or not isinstance(raw.get("data"), list):
             raise PayloadViolation(source=source, reason="data must be a list")
         page = validate_payload(raw, StatsPage, source=source)
+        page_rows = page.data
         if page.total is not None:
             if expected_total is not None and page.total != expected_total:
                 raise PaginationViolation(
                     source=source, start=start, reason="total changed between pages"
                 )
             expected_total = page.total
-        if len(page.data) > page_size:
+        if len(page_rows) > page_size:
             raise PaginationViolation(
                 source=source, start=start, reason="page exceeds requested limit"
             )
         invalid = next(
             (
                 index
-                for index, row in enumerate(page.data)
+                for index, row in enumerate(page_rows)
                 if row.get("playerId") in (None, "")
             ),
             None,
@@ -157,23 +158,23 @@ def fetch_stats_pages(
                 source=source, reason=f"row {invalid} is missing playerId"
             )
         if (
-            len(page.data) == 0
+            len(page_rows) == 0
             and expected_total is not None
             and start < expected_total
         ):
             raise PaginationViolation(
                 source=source, start=start, reason="empty page before total was reached"
             )
-        rows.extend(page.data)
-        start += len(page.data)
+        rows.extend(page_rows)
+        start += len(page_rows)
         if expected_total is not None and start > expected_total:
             raise PaginationViolation(
                 source=source, start=start, reason="received more rows than total"
             )
-        more = len(page.data) > 0 and (
+        more = len(page_rows) > 0 and (
             start < expected_total
             if expected_total is not None
-            else len(page.data) == page_size
+            else len(page_rows) == page_size
         )
     if more:
         raise PaginationViolation(
@@ -191,7 +192,7 @@ def normalize_stat_row(
         SkaterStatRow if job.kind == PlayerKind.SKATER else GoalieStatRow,
         source=source,
     )
-    if violation := stat_violation(job.kind, raw, source=source):
+    if violation := find_stat_violation(job.kind, raw, source=source):
         raise violation
     return StatRow(
         kind=job.kind,
@@ -207,14 +208,14 @@ def normalize_stat_row(
         ),
         position=normalize_position(value.positionCode, job.kind == PlayerKind.GOALIE),
         shoots_catches=value.shootsCatches,
-        teams=ordered_team_abbreviations(value.teamAbbrevs),
+        teams=order_team_abbreviations(value.teamAbbrevs),
         game_type=job.game_type,
         situation=None,
         metrics=tuple(
             parse_number(raw.get(spec.source_field), spec.integer)
             for spec in layout.metrics
         ),
-        source_row_hash=source_row_hash(raw),
+        source_row_hash=hash_source_row(raw),
     )
 
 
@@ -263,7 +264,7 @@ class NhlRosterService:
                     birth_country=row.birthCountry,
                     player=Player(
                         external_id=str(row.id),
-                        name=roster_player_name(row.firstName, row.lastName),
+                        name=extract_roster_player_name(row.firstName, row.lastName),
                         birth_date=row.birthDate.isoformat()
                         if row.birthDate is not None
                         else None,
@@ -288,7 +289,7 @@ class NhlRosterService:
         )
 
 
-def roster_player_name(first_name: str | None, last_name: str | None) -> str:
+def extract_roster_player_name(first_name: str | None, last_name: str | None) -> str:
     first = "" if first_name is None else first_name
     last = "" if last_name is None else last_name
     return f"{first} {last}".strip()

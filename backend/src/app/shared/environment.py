@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from app.config import ConfigurationError
 
 
-def database_url(values: Mapping[str, str] | None = None) -> str:
+def resolve_database_url(values: Mapping[str, str] | None = None) -> str:
     values = os.environ if values is None else values
     primary = values.get("DATABASE_URL")
     if primary is not None and primary != "":
@@ -19,10 +19,14 @@ def database_url(values: Mapping[str, str] | None = None) -> str:
     )
 
 
-def migration_database_url() -> str:
-    url = database_url()
+def resolve_migration_database_url() -> str:
+    url = resolve_database_url()
     if not url.startswith(("postgresql://", "postgresql+psycopg2://")):
         raise ConfigurationError(
             field="TradeValue migrations", reason="require PostgreSQL"
         )
     return url
+
+
+database_url = resolve_database_url
+migration_database_url = resolve_migration_database_url

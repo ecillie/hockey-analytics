@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 from app.config import get_database_settings
-from app.database import database_resources
+from app.database import open_database_resources
 from app.shared.cli import CommandOptionError, ExitCode
 
 from ml.pipelines.build_model_dataset import (
@@ -27,7 +27,7 @@ def run_pipeline(
         raise MinimumGamesError(field="min_games", value=min_games)
     if players is None or salary_caps is None:
         with (
-            database_resources(get_database_settings()) as resources,
+            open_database_resources(get_database_settings()) as resources,
             resources.engine.connect() as connection,
         ):
             if players is None:

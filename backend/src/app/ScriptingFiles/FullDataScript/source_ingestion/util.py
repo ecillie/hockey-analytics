@@ -1,7 +1,7 @@
 """Shared source normalization and stable snapshot serialization."""
 
 from datetime import date
-from app.shared.calendar import latest_started_season
+from app.shared.calendar import get_latest_started_season
 from decimal import Decimal, InvalidOperation
 from math import isfinite
 import csv
@@ -17,12 +17,12 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
 )
 
 
-def season_start_year(as_of: date | None = None) -> int:
+def parse_season_start_year(as_of: date | None = None) -> int:
     value = date.today() if as_of is None else as_of
-    return latest_started_season(value)
+    return get_latest_started_season(value)
 
 
-def ordered_team_abbreviations(value: object) -> tuple[str, ...]:
+def order_team_abbreviations(value: object) -> tuple[str, ...]:
     return tuple(
         abbreviation
         for item in str("" if value is None else value).split(",")
@@ -88,7 +88,7 @@ def parse_strict_integer(value: object) -> int | None:
     return None
 
 
-def slug_from_name(name: str) -> str:
+def build_player_slug(name: str) -> str:
     first, last = split_name(name)
     ascii_name = (
         unicodedata.normalize("NFKD", f"{first} {last}")
@@ -98,7 +98,7 @@ def slug_from_name(name: str) -> str:
     return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", ascii_name.lower())).strip("-")
 
 
-def source_row_hash(row: dict[str, object]) -> str:
+def hash_source_row(row: dict[str, object]) -> str:
     encoded = json.dumps(
         row, sort_keys=True, separators=(",", ":"), default=str
     ).encode()

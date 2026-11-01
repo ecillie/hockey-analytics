@@ -12,7 +12,7 @@ from app.api.domain import (
 )
 
 
-def identity_data(row: IdentityRow | SummaryRow) -> PlayerIdentityData:
+def build_identity_data(row: IdentityRow | SummaryRow) -> PlayerIdentityData:
     return {
         "id": row.id,
         "firstName": row.first_name,
@@ -25,13 +25,13 @@ def identity_data(row: IdentityRow | SummaryRow) -> PlayerIdentityData:
         "nationality": row.nationality,
         "active": row.active,
         "rosterStatus": row.roster_status,
-        "team": player_team_data(row),
+        "team": build_player_team_data(row),
     }
 
 
-def summary_data(row: SummaryRow) -> PlayerSummaryData:
+def build_summary_data(row: SummaryRow) -> PlayerSummaryData:
     return {
-        **identity_data(row),
+        **build_identity_data(row),
         "season": row.season,
         "gamesPlayed": row.games_played,
         "goals": row.goals,
@@ -48,10 +48,10 @@ def summary_data(row: SummaryRow) -> PlayerSummaryData:
     }
 
 
-def contract_season_data(row: ContractSeasonRow) -> ContractSeasonData:
+def build_contract_season_data(row: ContractSeasonRow) -> ContractSeasonData:
     return {
         "season": row.season_start_year,
-        "owningTeam": player_team_data(row),
+        "owningTeam": build_player_team_data(row),
         "baseSalaryCents": row.base_salary_cents,
         "signingBonusCents": row.signing_bonus_cents,
         "performanceBonusCents": row.performance_bonus_cents,
@@ -64,7 +64,7 @@ def contract_season_data(row: ContractSeasonRow) -> ContractSeasonData:
     }
 
 
-def player_team_data(
+def build_player_team_data(
     row: IdentityRow | SummaryRow | ContractSeasonRow,
 ) -> TeamSummaryData | None:
     if row.team_id is None:
@@ -79,7 +79,7 @@ def player_team_data(
     }
 
 
-def team_data(row: TeamRow) -> TeamSummaryData:
+def build_team_data(row: TeamRow) -> TeamSummaryData:
     return {
         "id": row.id,
         "nhlTeamId": row.nhl_team_id,
@@ -90,7 +90,7 @@ def team_data(row: TeamRow) -> TeamSummaryData:
     }
 
 
-def top_summaries(
+def select_top_summaries(
     skaters: list[PlayerSummaryData], field: str
 ) -> list[PlayerSummaryData]:
     rows = (
@@ -98,10 +98,10 @@ def top_summaries(
         for row in skaters
         if isinstance(value := row.get(field), (int, float))
     )
-    return [row for _, _, row in sorted(rows, key=ranking_key)[:5]]
+    return [row for _, _, row in sorted(rows, key=build_ranking_key)[:5]]
 
 
-def ranking_key(
+def build_ranking_key(
     item: tuple[int | float, int, PlayerSummaryData],
 ) -> tuple[int | float, int]:
     return -item[0], item[1]

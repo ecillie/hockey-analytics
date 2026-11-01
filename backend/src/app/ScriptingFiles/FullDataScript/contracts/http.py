@@ -19,7 +19,7 @@ from app.ScriptingFiles.FullDataScript.contracts.domain import (
     ProfileFailure,
     ProfileResult,
     ProfileSource,
-    parsed_profile,
+    build_parsed_profile,
 )
 from app.ScriptingFiles.FullDataScript.contracts.errors import CapSpaceError
 from app.ScriptingFiles.FullDataScript.contracts.options import (
@@ -27,7 +27,7 @@ from app.ScriptingFiles.FullDataScript.contracts.options import (
     ProfileHttpOptions,
 )
 from app.ScriptingFiles.FullDataScript.contracts.policy import (
-    capwages_document_matches as _capwages_document_matches,
+    matches_capwages_document as _capwages_document_matches,
 )
 from app.ScriptingFiles.FullDataScript.contracts.schemas import parse_source_document
 from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
@@ -36,9 +36,9 @@ from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
 from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
     parse_contract_document as _parse_contract_document,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import http_session
+from app.ScriptingFiles.FullDataScript.source_ingestion.http import open_http_session
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
-    slug_from_name as _slug_from_name,
+    build_player_slug as _slug_from_name,
 )
 
 
@@ -77,7 +77,7 @@ type ProfileSessionFactory = Callable[[], AbstractContextManager[ProfileSession]
 
 @contextmanager
 def open_profile_session() -> Generator[ProfileSession]:
-    with http_session() as session:
+    with open_http_session() as session:
         yield session
 
 
@@ -100,7 +100,7 @@ class BorrowedProfileSessionFactory:
         yield self.session
 
 
-def retry_delay(
+def calculate_retry_delay(
     response: ProfileResponse, attempt: int, options: ProfileHttpOptions
 ) -> float:
     fallback = min(2**attempt, options.maximum_backoff)
@@ -145,7 +145,7 @@ def parse_capspace_response(
                 reason=FailureReason.PARSE_FAILED, detail=str(failure)
             ),
         )
-    return parsed_profile(
+    return build_parsed_profile(
         candidate=candidate, url=url, html=response.text, contracts=contracts
     )
 
@@ -192,7 +192,7 @@ def request_capspace_attempt(
                 reason=FailureReason.FAILED, detail=f"HTTP {response.status_code}"
             ),
         )
-    time.sleep(retry_delay(response, attempt, options))
+    time.sleep(calculate_retry_delay(response, attempt, options))
     return None
 
 
@@ -223,11 +223,11 @@ def fetch_profile(
     return next(attempts)
 
 
-def target_seasons_covered(result: ProfileResult) -> set[int]:
+def covers_target_seasons(result: ProfileResult) -> set[int]:
     return set(result.target_seasons_covered)
 
 
-def capwages_identity_matches(html: str, candidate: Candidate, url: str) -> bool:
+def matches_capwages_identity(html: str, candidate: Candidate, url: str) -> bool:
     return _capwages_document_matches(parse_source_document(html), candidate, url)
 
 
@@ -307,7 +307,7 @@ def request_capwages_slug(
                 reason=FailureReason.PARSE_FAILED, detail=str(failure)
             ),
         )
-    return parsed_profile(
+    return build_parsed_profile(
         candidate=candidate,
         url=url,
         html=response.text,
@@ -391,7 +391,7 @@ type ActiveSessionFactory = Callable[[], AbstractContextManager[ActiveProfileSes
 
 @contextmanager
 def open_active_session() -> Generator[ActiveProfileSession]:
-    with http_session() as session:
+    with open_http_session() as session:
         yield session
 
 

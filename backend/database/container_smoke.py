@@ -12,26 +12,26 @@ from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 from app.shared.smoke import (
-    valid_health,
-    valid_seasons,
+    is_valid_health_response,
+    is_valid_seasons_response,
     SmokeResponseError,
     ContainerReadinessError,
 )
 from app.shared.cli import CommandOptionError, ExitCode
 
 
-def valid_teams(body: object) -> bool:
+def is_valid_teams_response(body: object) -> bool:
     return isinstance(body, list)
 
 
 type ResponseCheck = tuple[str, Callable[[object], bool]]
 
 
-def response_checks() -> tuple[ResponseCheck, ...]:
+def build_response_checks() -> tuple[ResponseCheck, ...]:
     return (
-        ("/api/health", valid_health),
-        ("/api/seasons", valid_seasons),
-        ("/api/teams", valid_teams),
+        ("/api/health", is_valid_health_response),
+        ("/api/seasons", is_valid_seasons_response),
+        ("/api/teams", is_valid_teams_response),
     )
 
 
@@ -45,20 +45,22 @@ def request_json(url: str, timeout: float) -> tuple[int, object, str]:
         return exc.code, None, text
 
 
-def validate(base_url: str, *, attempts: int, delay: float, timeout: float) -> None:
+def validate_container_api(
+    base_url: str, *, attempts: int, delay: float, timeout: float
+) -> None:
     base_url = base_url.rstrip("/")
-    last_error = readiness_error(base_url, timeout)
+    last_error = find_readiness_error(base_url, timeout)
     attempt = 1
     while last_error is not None and attempt < attempts:
         time.sleep(delay)
-        last_error = readiness_error(base_url, timeout)
+        last_error = find_readiness_error(base_url, timeout)
         attempt += 1
     if last_error is not None:
         raise ContainerReadinessError(
             attempts=attempts, failure=last_error
         ) from last_error
 
-    for path, check in response_checks():
+    for path, check in build_response_checks():
         status, body, text = request_json(f"{base_url}{path}", timeout)
         if status != 200 or not check(body):
             raise SmokeResponseError(
@@ -67,16 +69,19 @@ def validate(base_url: str, *, attempts: int, delay: float, timeout: float) -> N
         print(f"PASS {path}")
 
 
-def readiness_error(base_url: str, timeout: float) -> Exception | None:
+def find_readiness_error(base_url: str, timeout: float) -> Exception | None:
     try:
         status, body, text = request_json(f"{base_url}/api/health", timeout)
     except (URLError, OSError, json.JSONDecodeError) as exc:
         return exc
-    if status != 200 or not valid_health(body):
+    if status != 200 or not is_valid_health_response(body):
         return SmokeResponseError(
             operation="container", path="/api/health", status=status, body=text
         )
     return None
+
+
+validate = validate_container_api
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -141,7 +146,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def execute_command(options: CommandOptions) -> int:
-    validate(
+    validate_container_api(
         options.base_url,
         attempts=options.attempts,
         delay=options.delay,

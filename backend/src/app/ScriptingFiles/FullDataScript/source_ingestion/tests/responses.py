@@ -19,8 +19,16 @@ class CsvResponse:
         return json.loads(self.text)
 
 
-def json_response(payload: object) -> CsvResponse:
+def build_json_response(payload: object) -> CsvResponse:
     return CsvResponse(text=json.dumps(payload))
+
+
+def build_capwages_response(payload: object) -> CsvResponse:
+    return CsvResponse(
+        text='<script id="__NEXT_DATA__" type="application/json">'
+        + json.dumps(payload)
+        + "</script>"
+    )
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -59,33 +67,29 @@ class CapWagesSession:
             row[7] = "USA"
             row[30] = "98-2-3"
             payload = {"props": {"pageProps": {"playersArray": [row]}}}
-        else:
-            if self.fail_profile:
-                raise requests.ConnectionError("fixture profile failed")
-            payload = {
-                "props": {
-                    "pageProps": {
-                        "player": {
-                            "contracts": [
-                                {
-                                    "signingTeam": "AAA",
-                                    "value": "$2,000,000",
-                                    "expiryStatus": "UFA",
-                                    "type": "STANDARD",
-                                    "details": [
-                                        {"season": "2025-26", "capHit": self.cap_hit}
-                                    ],
-                                }
-                            ]
-                        }
+            return build_capwages_response(payload)
+        if self.fail_profile:
+            raise requests.ConnectionError("fixture profile failed")
+        payload = {
+            "props": {
+                "pageProps": {
+                    "player": {
+                        "contracts": [
+                            {
+                                "signingTeam": "AAA",
+                                "value": "$2,000,000",
+                                "expiryStatus": "UFA",
+                                "type": "STANDARD",
+                                "details": [
+                                    {"season": "2025-26", "capHit": self.cap_hit}
+                                ],
+                            }
+                        ]
                     }
                 }
             }
-        return CsvResponse(
-            text='<script id="__NEXT_DATA__" type="application/json">'
-            + json.dumps(payload)
-            + "</script>"
-        )
+        }
+        return build_capwages_response(payload)
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -105,7 +109,7 @@ class ScheduleSession:
             }
             for game_id in self.game_ids
         ]
-        return json_response(
+        return build_json_response(
             {
                 "gameWeek": [{"date": "2025-10-01", "games": games}],
                 "nextStartDate": None,
@@ -119,7 +123,7 @@ class NhlRosterSession:
 
     def get(self, url, timeout, params=None):
         if url.endswith("/standings/now"):
-            return json_response(
+            return build_json_response(
                 {
                     "standings": [
                         {
@@ -130,7 +134,7 @@ class NhlRosterSession:
                     ]
                 }
             )
-        return json_response(
+        return build_json_response(
             {
                 "forwards": [
                     {
@@ -154,7 +158,7 @@ class SavedJsonSession:
     payload: object
 
     def get(self, url, timeout, params=None):
-        return json_response(self.payload)
+        return build_json_response(self.payload)
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -172,11 +176,7 @@ class InvalidContractSession:
             details.append({"season": "2027-28", "capHit": "$1,000,000"})
         if self.mode == "cap":
             details[0]["capHit"] = "$100,000,000"
-        return CsvResponse(
-            text='<script id="__NEXT_DATA__" type="application/json">'
-            + json.dumps(payload)
-            + "</script>"
-        )
+        return build_capwages_response(payload)
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -187,7 +187,7 @@ class SessionLifecycle:
         self.closures.append(True)
 
 
-def nhl_stat_rows(kind, season, game_type, *, goals=5):
+def build_nhl_stat_rows(kind, season, game_type, *, goals=5):
     if kind == "skater":
         row = {
             "playerId": 1001,
@@ -200,19 +200,19 @@ def nhl_stat_rows(kind, season, game_type, *, goals=5):
             "points": goals + 7,
             "shots": 40,
         }
-    else:
-        row = {
-            "playerId": 2001,
-            "goalieFullName": "Fixture Goalie",
-            "teamAbbrevs": "BBB",
-            "gamesPlayed": 8,
-            "wins": 5,
-            "losses": 2,
-            "otLosses": 1,
-            "shotsAgainst": 220,
-            "saves": 207,
-            "goalsAgainst": 13,
-        }
+        return [row, dict(row)]
+    row = {
+        "playerId": 2001,
+        "goalieFullName": "Fixture Goalie",
+        "teamAbbrevs": "BBB",
+        "gamesPlayed": 8,
+        "wins": 5,
+        "losses": 2,
+        "otLosses": 1,
+        "shotsAgainst": 220,
+        "saves": 207,
+        "goalsAgainst": 13,
+    }
     return [row, dict(row)]
 
 
@@ -226,7 +226,7 @@ class FixtureStatsClient:
         assert params is not None
         season = int(params["cayenneExp"].split("=", 1)[1][:4])
         game_type = int(params["cayenneExp"][-1])
-        return {"data": nhl_stat_rows(kind, season, game_type, goals=self.goals)}
+        return {"data": build_nhl_stat_rows(kind, season, game_type, goals=self.goals)}
 
     def get_csv(self, url, *, timeout=60):
         return self.csv_text

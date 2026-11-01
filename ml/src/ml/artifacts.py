@@ -8,7 +8,7 @@ import joblib
 import pandas as pd
 from sklearn.pipeline import Pipeline
 
-from ml.evaluation.gate import stable_metadata_json, validate_metadata
+from ml.evaluation.gate import serialize_metadata_json, validate_metadata
 from ml.schemas import ModelMetadata
 from ml.errors import ModelArtifactError
 
@@ -20,7 +20,7 @@ class ArtifactPaths:
 
 
 def save_model(model: Pipeline, metadata: object, paths: ArtifactPaths) -> None:
-    serialized = stable_metadata_json(metadata)
+    serialized = serialize_metadata_json(metadata)
     paths.model.parent.mkdir(parents=True, exist_ok=True)
     paths.metadata.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, paths.model)

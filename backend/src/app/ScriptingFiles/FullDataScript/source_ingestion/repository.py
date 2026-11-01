@@ -22,12 +22,12 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
 type TransactionFactory = Callable[[], AbstractContextManager[PgConnection]]
 
 
-def source_ids(cursor: PgCursor) -> dict[str, int]:
+def load_source_ids(cursor: PgCursor) -> dict[str, int]:
     cursor.execute("SELECT code, id FROM data_sources")
     return {code: source_id for code, source_id in cursor.fetchall()}
 
 
-def team_ids(cursor: PgCursor) -> dict[str, int]:
+def load_team_ids(cursor: PgCursor) -> dict[str, int]:
     cursor.execute("SELECT abbreviation, id FROM teams")
     return {abbr: team_id for abbr, team_id in cursor.fetchall()}
 
@@ -92,7 +92,7 @@ def ensure_teams(
                 nhl_franchise_id=COALESCE(EXCLUDED.nhl_franchise_id,teams.nhl_franchise_id),updated_at=CURRENT_TIMESTAMP""",
             rows,
         )
-    return team_ids(cursor)
+    return load_team_ids(cursor)
 
 
 def upsert_player(cursor: PgCursor, source_id: int, player: Player) -> int:
@@ -217,7 +217,7 @@ def write_stats(
     return created, len(values) - created
 
 
-def stat_values(
+def build_stat_values(
     row: StatRow,
     player_id: int,
     team_ids: Mapping[str, int],

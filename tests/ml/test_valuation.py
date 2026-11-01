@@ -9,9 +9,9 @@ import pytest
 from ml.evaluation.evaluate_skater_model import metrics
 from ml.evaluation.gate import (
     check_metric_regression,
-    prediction_frame,
-    stable_metadata_json,
-    temporal_splits,
+    build_prediction_frame,
+    serialize_metadata_json,
+    split_temporal_data,
     validate_metadata,
 )
 from ml.training.train_skater_value import (
@@ -55,7 +55,7 @@ class TestTemporalTraining:
 
     @pytest.fixture
     def splits(self, data):
-        return temporal_splits(data)
+        return split_temporal_data(data)
 
     def test_temporal_train_validation_test_splits(self, data, splits):
         assert (
@@ -84,7 +84,7 @@ class TestTemporalTraining:
         assert np.array_equal(
             predictions, trained.repeated.predict(trained.test[list(self.columns)])
         )
-        frame = prediction_frame(trained.test, predictions)
+        frame = build_prediction_frame(trained.test, predictions)
         assert list(frame.columns) == ["player_id", "season", "prediction"]
         assert np.isfinite(frame["prediction"]).all()
         assert (frame["prediction"] >= 0).all()
@@ -105,7 +105,7 @@ class TestTemporalTraining:
 
     def test_temporal_split_requires_three_seasons(self, insufficient_seasons):
         with pytest.raises(ValueError, match="three"):
-            temporal_splits(insufficient_seasons)
+            split_temporal_data(insufficient_seasons)
 
 
 class TestPredictionBoundaries:
@@ -124,14 +124,14 @@ class TestPredictionBoundaries:
 
     def test_prediction_invariants_reject_bad_values(self, rows, invalid_values):
         with pytest.raises(ValueError):
-            prediction_frame(rows.head(1), invalid_values)
+            build_prediction_frame(rows.head(1), invalid_values)
 
     @pytest.fixture
     def negative_values(self):
         return np.array([-3.0, 2.0])
 
     def test_prediction_frame_clips_negative_values(self, rows, negative_values):
-        frame = prediction_frame(rows, negative_values)
+        frame = build_prediction_frame(rows, negative_values)
         assert frame["prediction"].tolist() == [0.0, 2.0]
 
 
@@ -197,8 +197,8 @@ class TestMetadataContract:
 
     def test_metadata_is_stable_and_valid(self, metadata):
         validate_metadata(metadata)
-        assert stable_metadata_json(metadata) == stable_metadata_json(
-            json.loads(stable_metadata_json(metadata))
+        assert serialize_metadata_json(metadata) == serialize_metadata_json(
+            json.loads(serialize_metadata_json(metadata))
         )
 
     @pytest.fixture(

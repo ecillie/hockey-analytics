@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
-from app.database import database_transaction
+from app.database import open_database_transaction
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
     ActiveContractSnapshot,
     ActivePlayer,
@@ -26,7 +26,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.repository import (
     link_external_id as _link_external_id,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.repository import (
-    source_ids as _source_ids,
+    load_source_ids as _source_ids,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.repository import (
     upsert_player,
@@ -277,5 +277,5 @@ type ActiveRepositoryFactory = Callable[
 
 @contextmanager
 def open_active_repository() -> Generator[ActiveContractRepository]:
-    with database_transaction() as connection, connection.cursor() as cursor:
+    with open_database_transaction() as connection, connection.cursor() as cursor:
         yield PostgresActiveContractRepository(cursor=cursor)

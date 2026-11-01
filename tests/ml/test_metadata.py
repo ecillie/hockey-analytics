@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from hypothesis import given
-from ml.tests.strategies import identical_metric_inputs
+from ml.tests.strategies import generate_identical_metric_inputs
 from pydantic import ValidationError
 from ml.artifacts import ArtifactPaths, load_model
 from ml.domain import Metric, Split
@@ -33,8 +33,8 @@ from ml.errors import (
 )
 from ml.evaluation.gate import (
     check_metric_regression,
-    stable_metadata_json,
-    temporal_splits,
+    serialize_metadata_json,
+    split_temporal_data,
     validate_metadata,
 )
 from ml.schemas import ModelMetadata, validate_feature_options
@@ -58,11 +58,11 @@ class TestMetadataValues:
         return validate_metadata(payload)
 
     def test_validation_returns_owned_immutable_nested_values(self, parsed, payload):
-        original = stable_metadata_json(parsed)
+        original = serialize_metadata_json(parsed)
         payload["metrics"]["train"]["mae"] = 999
         payload["metrics"].clear()
         payload["numeric_features"].clear()
-        assert stable_metadata_json(parsed) == original
+        assert serialize_metadata_json(parsed) == original
         assert isinstance(parsed, ModelMetadata)
         with pytest.raises(ValidationError):
             setattr(parsed.metrics, "train", parsed.metrics.test)
@@ -73,10 +73,10 @@ class TestMetadataValues:
 
     def test_serialization_preserves_exact_committed_json(self, committed_text, parsed):
         assert (
-            stable_metadata_json(parsed)
+            serialize_metadata_json(parsed)
             == json.dumps(json.loads(committed_text), indent=2, sort_keys=True) + "\n"
         )
-        assert validate_metadata(json.loads(stable_metadata_json(parsed))) == parsed
+        assert validate_metadata(json.loads(serialize_metadata_json(parsed))) == parsed
         assert tuple(map(str, Split)) == ("train", "validation", "test")
         assert tuple(map(str, Metric)) == ("mae", "rmse", "r2")
         assert (
@@ -198,7 +198,7 @@ class TestTemporalFailures:
     def test_failures_retain_context(self, scenario):
         data, error, field, expected = scenario
         with pytest.raises(error) as raised:
-            temporal_splits(data)
+            split_temporal_data(data)
         assert getattr(raised.value, field) == expected
 
 
@@ -248,7 +248,7 @@ class TestMetricFailures:
             check_metric_regression(current, baseline, tolerance)
         assert raised.value.metric == Metric.MAE
 
-    @given(inputs=identical_metric_inputs())
+    @given(inputs=generate_identical_metric_inputs())
     def test_identical_finite_metrics_never_regress(self, inputs):
         check_metric_regression(*inputs)
 

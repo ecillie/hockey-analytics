@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from app.config import ConfigurationError, get_api_settings, get_database_settings
-from app.shared.environment import database_url
+from app.shared.environment import resolve_database_url
 from app.shared.smoke import ContainerReadinessError, SmokeResponseError
 from app.shared.tests.fakes import StageOutcome
 from app.shared.tests.resources import ResourceProbe
@@ -35,10 +35,10 @@ class TestOperationalEnvironment:
         values, expected = configured
         if expected is None:
             with pytest.raises(ConfigurationError) as raised:
-                database_url(values)
+                resolve_database_url(values)
             assert raised.value.field == "DATABASE_URL or TEST_DATABASE_URL"
             return
-        assert database_url(values) == expected
+        assert resolve_database_url(values) == expected
 
 
 class TestIntentionalEmptySettings:
@@ -174,8 +174,8 @@ class TestCallerSpecificSmokePolicy:
         return {"availableSeasons": [request.param], "currentSeason": request.param}
 
     def test_migration_retains_minimum_current_season(self, seasons):
-        assert container_smoke.valid_seasons(seasons)
-        assert migration_smoke.valid_seasons(seasons) == (
+        assert container_smoke.is_valid_seasons_response(seasons)
+        assert migration_smoke.is_valid_seasons_response(seasons) == (
             seasons["currentSeason"] >= 2005
         )
 
@@ -186,5 +186,5 @@ class TestCallerSpecificSmokePolicy:
     def test_container_accepts_populated_teams_and_migration_requires_empty(
         self, teams
     ):
-        assert container_smoke.valid_teams(teams)
-        assert not migration_smoke.valid_teams(teams)
+        assert container_smoke.is_valid_teams_response(teams)
+        assert not migration_smoke.is_valid_teams_response(teams)

@@ -60,11 +60,11 @@ def decode_page_payload(node: Tag) -> dict[str, object] | None:
     return None
 
 
-def tag_text(node: Tag) -> str:
+def extract_tag_text(node: Tag) -> str:
     return " ".join(node.get_text(" ", strip=True).split())
 
 
-def tag_attribute(node: Tag, name: str) -> str | None:
+def extract_tag_attribute(node: Tag, name: str) -> str | None:
     value = node.get(name)
     if isinstance(value, str):
         return value

@@ -8,16 +8,16 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     StatRow,
     WriteCounts,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.domain import stat_layout
+from app.ScriptingFiles.FullDataScript.source_ingestion.domain import select_stat_layout
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import (
     MoneyPuckSnapshot,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.repository import (
     TransactionFactory,
-    source_ids,
+    load_source_ids,
     ensure_teams,
     upsert_player,
-    stat_values,
+    build_stat_values,
     write_stats,
 )
 
@@ -28,7 +28,7 @@ class PostgresMoneyPuckRepository:
 
     def persist(self, snapshot: MoneyPuckSnapshot) -> MoneyPuckSummary:
         with self.transaction() as connection, connection.cursor() as cursor:
-            source_id = source_ids(cursor)["moneypuck"]
+            source_id = load_source_ids(cursor)["moneypuck"]
             team_ids = ensure_teams(
                 cursor, (team for row in snapshot.rows for team in row.teams)
             )
@@ -53,7 +53,7 @@ class PostgresMoneyPuckRepository:
             created = updated = 0
             for kind in PlayerKind:
                 incoming = (
-                    stat_values(
+                    build_stat_values(
                         row,
                         player_ids[row.external_id],
                         team_ids,
@@ -66,7 +66,7 @@ class PostgresMoneyPuckRepository:
                 by_grain = {tuple(value[:6]): value for value in incoming}
                 values = tuple(by_grain.values())
                 new, changed = write_stats(
-                    cursor, stat_layout(kind, advanced=True), source_id, values
+                    cursor, select_stat_layout(kind, advanced=True), source_id, values
                 )
                 created += new
                 updated += changed

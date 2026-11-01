@@ -20,7 +20,7 @@ from app.ScriptingFiles.FullDataScript.roster_status.util import (
 )
 
 
-def base_params(options: AhlFeedOptions) -> dict[str, str]:
+def build_feed_params(options: AhlFeedOptions) -> dict[str, str]:
     return {
         "feed": "statviewfeed",
         "key": options.feed_key,
@@ -38,7 +38,7 @@ class AhlRosterService:
 
     def fetch_current_rosters(self) -> FetchResult:
         params = {
-            **base_params(self.options),
+            **build_feed_params(self.options),
             "view": "bootstrap",
             "season": "latest"
             if self.options.season_id is None
@@ -76,7 +76,7 @@ class AhlRosterService:
         errors: list[str] = []
         for team in teams:
             roster_params = {
-                **base_params(self.options),
+                **build_feed_params(self.options),
                 "view": "roster",
                 "team_id": team,
                 "season_id": str(season_id),

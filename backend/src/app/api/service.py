@@ -39,15 +39,15 @@ from app.api.errors import (
     SeasonsUnavailable,
     TeamNotFound,
 )
-from app.api.policy import buried_relief_cents, latest_started_season
+from app.api.policy import calculate_buried_relief_cents, latest_started_season
 from app.api.repository import ApiRepository
 from app.api.util import (
-    contract_season_data,
-    identity_data,
-    player_team_data,
-    summary_data,
-    team_data,
-    top_summaries,
+    build_contract_season_data,
+    build_identity_data,
+    build_player_team_data,
+    build_summary_data,
+    build_team_data,
+    select_top_summaries,
 )
 
 
@@ -92,13 +92,13 @@ class TradeValueService:
         row = self.repository.player(player_id)
         if row is None:
             raise PlayerNotFound(player_id=player_id)
-        return identity_data(row)
+        return build_identity_data(row)
 
     def team_summary(self, team_id: int) -> TeamSummaryData:
         row = self.repository.team(team_id)
         if row is None:
             raise TeamNotFound(team_id=team_id)
-        return team_data(row)
+        return build_team_data(row)
 
     def summary_for_player(self, player_id: int, season: int) -> SummaryRow | None:
         return self.repository.summary_for_player(player_id, season)
@@ -130,7 +130,7 @@ class TradeValueService:
             )
         )
         return {
-            "data": list(map(summary_data, result.rows)),
+            "data": list(map(build_summary_data, result.rows)),
             "pagination": {
                 "page": page,
                 "pageSize": page_size,
@@ -140,7 +140,7 @@ class TradeValueService:
         }
 
     def teams(self) -> list[TeamSummaryData]:
-        return list(map(team_data, self.repository.teams()))
+        return list(map(build_team_data, self.repository.teams()))
 
     def team(self, team_id: int) -> TeamData:
         team = self.team_summary(team_id)
@@ -158,7 +158,7 @@ class TradeValueService:
             "team": team,
             "season": season,
             "status": status,
-            "players": list(map(summary_data, rows)),
+            "players": list(map(build_summary_data, rows)),
         }
 
     def player_stats(self, player_id: int, season: int) -> PlayerStatsData:
@@ -208,7 +208,7 @@ class TradeValueService:
         return {
             "playerId": player_id,
             "season": season,
-            "team": player_team_data(row),
+            "team": build_player_team_data(row),
             "traditional": traditional,
             "advanced": advanced,
             "goalie": goalie,
@@ -264,7 +264,7 @@ class TradeValueService:
                 result.append(
                     {
                         "season": season,
-                        "team": player_team_data(row),
+                        "team": build_player_team_data(row),
                         "gamesPlayed": row.games_played,
                         "goals": row.goals,
                         "assists": row.assists,
@@ -286,7 +286,10 @@ class TradeValueService:
     ) -> list[PlayerSummaryData]:
         self.require_season(season)
         return list(
-            map(summary_data, self.repository.leaders(season, position, team, limit))
+            map(
+                build_summary_data,
+                self.repository.leaders(season, position, team, limit),
+            )
         )
 
     def contract(
@@ -310,7 +313,8 @@ class TradeValueService:
                 "active": row.signing_team_active,
             }
         seasons = [
-            contract_season_data(r) for r in self.repository.contract_seasons(row.id)
+            build_contract_season_data(r)
+            for r in self.repository.contract_seasons(row.id)
         ]
         return {
             "id": row.id,
@@ -359,7 +363,9 @@ class TradeValueService:
     def team_cap(self, team_id: int, season: int) -> TeamCapData:
         self.require_season(season)
         self.team_summary(team_id)
-        row = self.repository.cap(team_id, season, buried_relief_cents(season))
+        row = self.repository.cap(
+            team_id, season, calculate_buried_relief_cents(season)
+        )
         if row is None:
             raise CapUnavailable(season=season)
         ceiling = row.salary_cap_cents
@@ -388,7 +394,7 @@ class TradeValueService:
             else []
         )
         teams = (
-            list(map(team_data, self.repository.search_teams(query, limit)))
+            list(map(build_team_data, self.repository.search_teams(query, limit)))
             if "team" in requested
             else []
         )
@@ -397,7 +403,7 @@ class TradeValueService:
     def overview(self, season: int) -> OverviewResponseData:
         self.require_season(season)
         rows = self.repository.overview(season)
-        summaries = [summary_data(r) for r in rows]
+        summaries = [build_summary_data(r) for r in rows]
         skaters = [s for s in summaries if s["primaryPosition"] != "G"]
         values = [s["hockeyValue"] for s in skaters if s["hockeyValue"] is not None]
         return {
@@ -417,10 +423,10 @@ class TradeValueService:
                 else None,
             },
             "leaders": {
-                "hockeyValue": top_summaries(skaters, "hockeyValue"),
-                "points": top_summaries(skaters, "points"),
-                "goals": top_summaries(skaters, "goals"),
-                "gameScorePer60": top_summaries(skaters, "gameScorePer60"),
+                "hockeyValue": select_top_summaries(skaters, "hockeyValue"),
+                "points": select_top_summaries(skaters, "points"),
+                "goals": select_top_summaries(skaters, "goals"),
+                "gameScorePer60": select_top_summaries(skaters, "gameScorePer60"),
             },
         }
 

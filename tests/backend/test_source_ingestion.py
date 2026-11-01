@@ -1,6 +1,9 @@
 """Typed ingestion stages validate before persistence and own their clients."""
 
 from dataclasses import replace
+from copy import deepcopy
+from pydantic import ValidationError
+from app.ScriptingFiles.FullDataScript.source_ingestion.schemas import StatsPage
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.scenarios import (
     RepositoryStage,
     ClientStage,
@@ -12,7 +15,7 @@ import json
 from math import isfinite
 from hypothesis import given
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.strategies import (
-    optional_numbers,
+    generate_optional_numbers,
 )
 import pytest
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
@@ -381,7 +384,7 @@ class TestOwnedHttpTransport:
         )
         session = ManagedSession(response=response)
         monkeypatch.setattr(
-            source_http, "http_session", ManagedSessionFactory(session=session)
+            source_http, "open_http_session", ManagedSessionFactory(session=session)
         )
         return session, request.param
 
@@ -442,7 +445,7 @@ class TestOptionalNumericParsing:
         assert source_utils.parse_number(value) is None
 
 
-@given(optional_numbers())
+@given(generate_optional_numbers())
 def test_optional_decimal_values_are_finite_or_missing(value):
     result = source_utils.parse_number(value)
     assert result is None or isfinite(result)
@@ -515,7 +518,7 @@ class TestBorrowedTransport:
 
 class TestProductionRetryConfiguration:
     def test_existing_get_retry_and_backoff_policy_is_preserved(self):
-        with source_http.http_session() as session:
+        with source_http.open_http_session() as session:
             retry = session.get_adapter("https://").max_retries
             assert retry.total == 4
             assert retry.backoff_factor == 0.6
@@ -543,3 +546,36 @@ class TestInvalidMinimumRows:
             stage.service.ingest()
         assert stage.client.calls == []
         assert stage.repository.snapshots == []
+
+
+class TestStatsPageSnapshots:
+    @pytest.fixture
+    def payload(self):
+        return {"data": [{"playerId": 7, "details": {"teams": ["AAA"]}}], "total": 1}
+
+    @pytest.fixture
+    def expected(self, payload):
+        return deepcopy(payload)
+
+    @pytest.fixture
+    def page(self, payload):
+        return StatsPage.model_validate(payload)
+
+    def test_input_aliases_cannot_change_validated_rows(self, page, payload, expected):
+        payload["data"][0]["details"]["teams"].append("BBB")
+        assert page.model_dump(mode="json") == expected
+
+    def test_returned_rows_are_detached(self, page, expected):
+        rows = page.data
+        rows[0]["details"]["teams"].append("BBB")
+        rows[0]["playerId"] = 8
+        assert page.model_dump(mode="json") == expected
+        assert page.data == tuple(expected["data"])
+
+    def test_snapshot_storage_is_frozen(self, page):
+        with pytest.raises(ValidationError, match="frozen"):
+            page.data_snapshot = ()
+
+    def test_serialization_retains_source_shape(self, page, expected):
+        assert json.loads(page.model_dump_json()) == expected
+        assert page.model_dump()["data"] == tuple(expected["data"])

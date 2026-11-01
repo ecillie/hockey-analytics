@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 import pandas as pd
 from app.config import get_database_settings
-from app.database import database_resources
+from app.database import open_database_resources
 from app.shared.cli import ExitCode
 from sqlalchemy import Connection, text
 
@@ -28,7 +28,7 @@ def load_salary_cap(*, connection: Connection | None = None) -> pd.DataFrame:
 
     if connection is None:
         with (
-            database_resources(get_database_settings()) as resources,
+            open_database_resources(get_database_settings()) as resources,
             resources.engine.connect() as owned,
         ):
             return load_salary_cap(connection=owned)

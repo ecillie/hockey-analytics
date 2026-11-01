@@ -19,8 +19,8 @@ from app.ScriptingFiles.FullDataScript.contracts.options import (
     find_profile_http_violation,
 )
 from app.ScriptingFiles.FullDataScript.contracts.reporting import (
-    profile_metrics,
-    unprocessed_count,
+    calculate_profile_metrics,
+    count_unprocessed_records,
 )
 from app.ScriptingFiles.FullDataScript.contracts.repository import (
     ContractRepositoryFactory,
@@ -66,7 +66,7 @@ def summarize_progress(summary: dict[str, int], *, dry_run: bool) -> dict[str, i
     result["records_updated"] = 0
     if dry_run:
         result["proposed_contracts"] = summary.get("contracts_parsed", 0)
-        result["records_skipped"] = unprocessed_count(summary)
+        result["records_skipped"] = count_unprocessed_records(summary)
         return result
     result["records_read"] += summary.get("contracts_parsed", 0)
     result["records_created"] = summary.get("contracts_created", 0) + summary.get(
@@ -75,7 +75,7 @@ def summarize_progress(summary: dict[str, int], *, dry_run: bool) -> dict[str, i
     result["records_updated"] = summary.get("contracts_matched", 0) + summary.get(
         "contract_seasons_updated", 0
     )
-    result["records_skipped"] = unprocessed_count(summary)
+    result["records_skipped"] = count_unprocessed_records(summary)
     return result
 
 
@@ -136,7 +136,7 @@ class HistoricalContractService:
                         batch, results, options, dry_run=dry_run
                     )
             committed.update(batch_summary)
-            committed.update(profile_metrics(results))
+            committed.update(calculate_profile_metrics(results))
             committed["processed_player_seasons"] += sum(
                 len(item.missing_seasons) for item in batch
             )

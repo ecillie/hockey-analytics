@@ -7,11 +7,11 @@ import pytest
 
 from app.api.domain import GoalieRow
 from app.api.errors import ApiProblem
-from app.api.policy import buried_relief_cents, latest_started_season
+from app.api.policy import calculate_buried_relief_cents, latest_started_season
 from app.api.repository import ApiRepository
 from app.api.service import TradeValueService
 from app.api.tests.fakes import MemoryApiRepository
-from app.api.util import identity_data, summary_data
+from app.api.util import build_identity_data, build_summary_data
 
 
 class TestSeasonPolicy:
@@ -29,7 +29,7 @@ class TestSeasonPolicy:
         ],
     )
     def test_buried_relief(self, season, expected):
-        assert buried_relief_cents(season) == expected
+        assert calculate_buried_relief_cents(season) == expected
 
     @pytest.mark.parametrize(
         ("as_of", "expected"),
@@ -79,8 +79,8 @@ class TestIdentityAndListing:
         return replace(summary, team_id=None, ice_time_seconds=10.6, goals=None)
 
     def test_nulls_and_rounding(self, nullable):
-        assert identity_data(nullable)["team"] is None
-        result = summary_data(nullable)
+        assert build_identity_data(nullable)["team"] is None
+        result = build_summary_data(nullable)
         assert result["toiSeconds"] == 11
         assert result["goals"] is None
 

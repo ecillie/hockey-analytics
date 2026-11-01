@@ -307,3 +307,82 @@ remaining in executable test modules, no unused test arguments, and no new
 prohibited constructs. Intentional fake failures and owned call histories
 remain observable test behavior. This phase closes F07/F14; the remaining
 typing/style and final enforcement work remains in phases 6 and 7.
+
+## Typing and style follow-up, phase 6
+
+Started from `origin/Dev` at `459d446` after PR #159 merged. Roster feed
+collections, stored-player collections, normalized identities, and grouped
+contract source records now have domain-named PEP 695 aliases. `SchemaCatalog`
+already supplied the catalog alias from phase 4. Incidental primitive
+containers retain their existing annotations.
+
+Module helpers now describe their operations: parsing, extracting, loading,
+building, calculating, selecting, and resolving. Callers and injected CLI
+actions use those names. Existing command module paths, HTTP fields, enum and
+exit values, SQL, model calculations, frozen revisions, and serialized metadata
+remain stable. Compatibility exports retain the established training,
+evaluation, metadata, artifact-path, database-context, calendar, and ingestion
+entrypoints as direct aliases. Existing CapSpace compatibility reexports remain
+available. Pytest fixture names describe injected values; framework hooks keep
+their required names.
+
+The remaining ordinary `else` branches were replaced with guards in saved
+source transports and the preflight decision test. A shared CapWages response
+builder removes repeated saved-HTML serialization. The initial migration's
+branch remains frozen with its revision SQL and identifiers.
+
+The disposition review also found that F11's statistics-page dictionaries were
+still mutable. `StatsPage` now owns immutable JSON row snapshots, returns
+detached dictionaries through `data`, and serializes the original `data` shape.
+The NHL adapter captures one detached page value per parsing operation.
+Regressions cover nested input aliasing, nested output mutation, frozen storage,
+and Python/JSON serialization. Non-JSON objects fail boundary validation before
+persistence.
+
+The ML layout review retains `load_player_stats` and `load_salary_cap` as
+supported SQL adapter/command modules. Both already accept borrowed connections,
+keep owned-resource acquisition explicit, and separate diagnostics from reads.
+Adding another forwarding repository layer would not establish a new ownership
+or validation guarantee. No module moves or new repository interfaces are part
+of this phase. This is the extraction assessment requested by the plan, not an
+owner waiver of the global role-layout rule; final rule coverage and exact
+framework dispositions remain phase 7 work.
+
+The second-pass finding ledger now has these implementation dispositions:
+
+| Finding | Disposition and behavior evidence |
+| --- | --- |
+| F09 | Phase 2 canonical identities; generated aliases and real PostgreSQL cross-source/idempotence cases remain selected. |
+| F10 | Phases 3–4 shared cleanup; primary failure identity, secondary notes, cleanup order, cancellation, and cleanup-only regressions remain selected. |
+| F11 | Phase 1 freezes ML metadata; phase 6 closes the remaining statistics-page snapshot gap with nested mutation and serialization regressions. |
+| F12 | Phase 3 shares decoded contract snapshots; phase 6 captures each statistics page's detached rows once. |
+| F13 | Phase 4 shares operational URL resolution and common smoke checks; caller-specific restrictions remain covered. |
+| F14 | Phase 5 removes unused collaborators and relocates scenario parameters; phase 6 updates fixture targets for renamed operations. |
+| F15 | Phase 4 names the schema catalog; phase 6 names remaining repeated roster and contract record shapes. |
+| F16 | Phase 6 renames helpers and simplifies remaining branches; supported exports and frozen revision behavior are preserved. |
+
+F01–F08 retain their phase 1–5 implementation records above. This ledger closes
+the implementation findings; it does not replace phase 7's complete source
+review, rule-evidence mapping, or owner decisions for framework exceptions.
+No new blanket exemptions or enforcement configuration were introduced.
+
+Local acceptance on Python 3.12.14 and disposable PostgreSQL 15 database
+`tradevalue_test_followup06`: **742 passed, zero skips**, **91.76%** aggregate
+coverage in **71.18 seconds**, with **100%** API/shared-calendar coverage.
+Isolated units with database URLs absent, ENV empty, and dotenv disabled passed
+**692 tests**, with **50** integrations deselected, in **49.29 seconds**.
+
+Ruff lint/format, ty, locked workspace sync, committed ML metrics, OpenAPI
+equality, generated dependency exports, isolated API/ML wheel imports and
+wheel/sdist exclusions passed. The production image passed health, seasons,
+and teams HTTP smoke as uid 10001. No frontend or serialized HTTP boundary
+changed. Existing upstream FastAPI/Starlette deprecation warnings remain;
+the sandboxed unit run also reported joblib's physical-core detection fallback.
+Verification used no hosted data, live upstream feeds, or model replacement.
+
+Whole-tree structural searches and diff review found no new prohibited
+constructs or ordinary code comments. A normalized AST comparison isolated
+renames from the intended alias, annotation, guard, and snapshot changes;
+manual review covered those changes, local-variable shadowing, fixture targets,
+serialization, resource ownership, and compatibility exports. Frozen revisions,
+OpenAPI, lockfiles, tool configuration, and frontend source are unchanged.
