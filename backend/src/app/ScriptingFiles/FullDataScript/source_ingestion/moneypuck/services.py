@@ -15,7 +15,9 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     StatRow,
     StatLayout,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import SourceClient
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
+    SourceClient,
+)
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import select_stat_layout
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import (
     MoneyPuckOptions,
@@ -31,12 +33,12 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.schemas import (
     MoneyPuckRow,
     validate_payload,
 )
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository import read_csv
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
     parse_number,
     parse_team_abbreviation,
     parse_csv,
     normalize_position,
-    read_csv,
     hash_source_row,
 )
 

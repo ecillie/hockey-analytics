@@ -1,6 +1,7 @@
 """Atomic NHL identity, traditional-stat, and roster persistence."""
 
 from dataclasses import dataclass
+from app.database import open_database_cursor
 from psycopg2.extras import execute_values
 
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
@@ -33,7 +34,10 @@ class PostgresNhlStatsRepository:
     transaction: TransactionFactory
 
     def persist(self, snapshot: NhlStatsSnapshot) -> NhlStatsSummary:
-        with self.transaction() as connection, connection.cursor() as cursor:
+        with (
+            self.transaction() as connection,
+            open_database_cursor(connection) as cursor,
+        ):
             sources = load_source_ids(cursor)
             nhl_id, moneypuck_id = sources["nhl"], sources["moneypuck"]
             team_ids = ensure_teams(
@@ -102,7 +106,10 @@ class PostgresNhlRosterRepository:
     transaction: TransactionFactory
 
     def persist(self, snapshot: NhlRosterSnapshot) -> RosterSummary:
-        with self.transaction() as connection, connection.cursor() as cursor:
+        with (
+            self.transaction() as connection,
+            open_database_cursor(connection) as cursor,
+        ):
             sources = load_source_ids(cursor)
             moneypuck_id, nhl_id = sources["moneypuck"], sources["nhl"]
             ensure_seasons(cursor, (snapshot.season,))

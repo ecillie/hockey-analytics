@@ -6,7 +6,10 @@ from typing import Protocol, runtime_checkable
 
 from app.shared.observability.domain import LogFormat, LogLevel, LoggingSettings
 from app.shared.observability.formatting import SafeFormatter, render_failure_diagnostic
-from app.shared.observability.policy import find_record_limits_violation
+from app.shared.observability.policy import (
+    EnvironmentLoggingFilter,
+    find_record_limits_violation,
+)
 
 
 @runtime_checkable
@@ -55,5 +58,6 @@ def build_diagnostic_handler(
         SafeStream(stream=stream, format=settings.format, minimum_level=settings.level)
     )
     handler.setLevel(settings.level)
+    handler.addFilter(EnvironmentLoggingFilter(settings=settings))
     handler.setFormatter(SafeFormatter(settings=settings))
     return handler

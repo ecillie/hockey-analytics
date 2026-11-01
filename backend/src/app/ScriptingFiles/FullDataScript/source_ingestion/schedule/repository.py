@@ -1,6 +1,7 @@
 """Atomic, retain-missing schedule upserts."""
 
 from dataclasses import dataclass
+from app.database import open_database_cursor
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     ScheduleSummary,
     WriteCounts,
@@ -19,7 +20,10 @@ class PostgresScheduleRepository:
     transaction: TransactionFactory
 
     def persist(self, snapshot: ScheduleSnapshot) -> ScheduleSummary:
-        with self.transaction() as connection, connection.cursor() as cursor:
+        with (
+            self.transaction() as connection,
+            open_database_cursor(connection) as cursor,
+        ):
             cursor.execute(
                 "SELECT count(*) FROM games WHERE nhl_game_id = ANY(%s)",
                 ([game.external_id for game in snapshot.games],),

@@ -8,7 +8,7 @@ import { createGlobalDiagnostics, diagnosticRootOptions } from './logging/lifecy
 import { activateDiagnostics, browserDiagnostics } from './logging/runtime'
 import './styles.css'
 
-const deactivate = activateDiagnostics(createBrowserLogger({ level: parseLogLevel(import.meta.env.VITE_LOG_LEVEL) }))
+const deactivate = activateDiagnostics(createBrowserLogger({ level: parseLogLevel(import.meta.env.VITE_LOG_LEVEL), environment: import.meta.env.APP_ENV }))
 const globalDiagnostics = createGlobalDiagnostics(window, browserDiagnostics)
 globalDiagnostics.start()
 browserDiagnostics.emit({ event: 'app.started', component: 'app', severity: 'INFO' })

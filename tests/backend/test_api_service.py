@@ -5,12 +5,12 @@ from datetime import date
 
 import pytest
 
-from app.api.domain import GoalieRow
+from app.api.domain import GoalieRow, PlayerQuery
 from app.api.errors import ApiProblem
 from app.api.policy import calculate_buried_relief_cents, latest_started_season
 from app.api.repository import ApiRepository
 from app.api.service import TradeValueService
-from app.api.tests.fakes import MemoryApiRepository
+from app.api.tests.fakes import MemoryApiRepository, ServiceScenario
 from app.api.util import build_identity_data, build_summary_data
 
 
@@ -94,10 +94,22 @@ class TestIdentityAndListing:
         assert isinstance(service.repository, ApiRepository)
         service.check_health()
 
-    def test_players_filter_and_paginate(self, service):
-        result = service.players(
-            2025, "tst", "C", "ACTIVE", " Test ", "points", "asc", 1, 2
+    @pytest.fixture
+    def player_query(self):
+        return PlayerQuery(
+            season=2025,
+            team="tst",
+            position="C",
+            roster_status="ACTIVE",
+            search=" Test ",
+            sort="points",
+            order="asc",
+            page=1,
+            page_size=2,
         )
+
+    def test_players_filter_and_paginate(self, service, player_query):
+        result = service.players(player_query)
         assert result["pagination"] == {
             "page": 1,
             "pageSize": 2,
@@ -172,9 +184,12 @@ class TestStats:
                 ),
             )
         )
-        return TradeValueService(
-            repository=replace(repository, summaries=(row,), goalie_rows=stats)
-        ), request.param
+        return ServiceScenario(
+            service=TradeValueService(
+                repository=replace(repository, summaries=(row,), goalie_rows=stats)
+            ),
+            mode=request.param,
+        )
 
     def test_skater(self, service):
         result = service.player_stats(7, 2025)
@@ -185,13 +200,12 @@ class TestStats:
         assert result["goalie"] is None
 
     def test_goalie_and_missing_goalie_stats(self, goalie_service):
-        service, scenario = goalie_service
-        result = service.player_stats(7, 2025)
+        result = goalie_service.service.player_stats(7, 2025)
         assert result["traditional"] is None
         assert result["advanced"] is None
-        if scenario == "present":
+        if goalie_service.mode == "present":
             assert result["goalie"]["goalsSavedAboveExpected"] == 5.0
-        if scenario != "present":
+        if goalie_service.mode != "present":
             assert result["goalie"] is None
 
     def test_missing_skater_stats(self, no_stats):
@@ -259,9 +273,10 @@ class TestContractsAndCap:
             if request.param == "absent"
             else ((10, 2025, replace(cap, salary_cap_cents=None)),)
         )
-        return TradeValueService(
-            repository=replace(repository, cap_rows=rows)
-        ), request.param
+        return ServiceScenario(
+            service=TradeValueService(repository=replace(repository, cap_rows=rows)),
+            mode=request.param,
+        )
 
     @pytest.fixture
     def unmatched_contract(self, repository, contract_row, contract_season):
@@ -312,19 +327,34 @@ class TestContractsAndCap:
         assert result["calculationStatus"] == "ESTIMATE"
 
     def test_missing_and_null_cap(self, cap_service):
-        service, scenario = cap_service
-        if scenario == "absent":
+        if cap_service.mode == "absent":
             with pytest.raises(ApiProblem) as failure:
-                service.team_cap(10, 2025)
+                cap_service.service.team_cap(10, 2025)
             assert (failure.value.status, failure.value.code) == (
                 503,
                 "SEASONS_UNAVAILABLE",
             )
             return
-        assert service.team_cap(10, 2025)["capSpaceCents"] is None
+        assert cap_service.service.team_cap(10, 2025)["capSpaceCents"] is None
 
 
 class TestOverviewSearchAndCompare:
+    @pytest.fixture
+    def player_types(self):
+        return ["player"]
+
+    @pytest.fixture
+    def team_types(self):
+        return ["team"]
+
+    @pytest.fixture
+    def combined_types(self):
+        return ["player", "team"]
+
+    @pytest.fixture
+    def comparison_ids(self):
+        return [7]
+
     @pytest.fixture
     def overview(self, repository, summary):
         goalie = replace(
@@ -356,14 +386,14 @@ class TestOverviewSearchAndCompare:
     def test_empty_overview(self, empty_overview):
         assert empty_overview.overview(2025)["league"]["averageHockeyValue"] is None
 
-    def test_search(self, service):
-        assert service.search("Test", ["player"], 8)["players"][0]["id"] == 7
-        assert service.search("Test", ["team"], 8)["teams"][0]["id"] == 10
-        result = service.search("Test", ["player", "team"], 8)
+    def test_search(self, service, player_types, team_types, combined_types):
+        assert service.search("Test", player_types, 8)["players"][0]["id"] == 7
+        assert service.search("Test", team_types, 8)["teams"][0]["id"] == 10
+        result = service.search("Test", combined_types, 8)
         assert len(result["players"]) == len(result["teams"]) == 1
 
-    def test_compare(self, service):
-        result = service.compare([7], 2025)
+    def test_compare(self, service, comparison_ids):
+        result = service.compare(comparison_ids, 2025)
         assert result["players"][0]["player"]["id"] == 7
         assert result["players"][0]["stats"]["season"] == 2025
         assert result["players"][0]["contract"] is not None

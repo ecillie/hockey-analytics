@@ -15,26 +15,36 @@ from pathlib import Path
 from typing import Iterable
 
 import requests
+from app.ScriptingFiles.FullDataScript.source_ingestion.util import serialize_summary
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
-    MissingSourceSnapshotError,
+    MissingSourceSnapshotError as MissingSourceSnapshotError,
 )
-from app.database import DatabaseTransactionFactory, open_database_transaction, init_db
+from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
+    PlayerKindViolation,
+)
+from app.database import (
+    DatabaseTransactionFactory,
+    open_database_transaction,
+    init_db,
+)
+from app.database import open_database_cursor as open_database_cursor
 from app.ScriptingFiles.FullDataScript import capspace
-from app.ScriptingFiles.FullDataScript.contracts.active_repository import (
+from app.ScriptingFiles.FullDataScript.contracts.repository.active import (
     ContextualActiveRepositoryFactory,
+    load_capwages_summary as load_capwages_summary,
 )
-from app.ScriptingFiles.FullDataScript.contracts.active_services import (
+from app.ScriptingFiles.FullDataScript.contracts.services.active import (
     ActiveContractService,
 )
-from app.ScriptingFiles.FullDataScript.contracts.http import (
+from app.ScriptingFiles.FullDataScript.contracts.repository.http import (
     ActiveProfileSession,
     ActiveSessionFactory,
     BorrowedActiveSessionFactory,
     SynchronizedActiveSession,
     open_active_session,
 )
-from app.ScriptingFiles.FullDataScript.contracts.options import (
-    ActiveContractOptions,
+from app.ScriptingFiles.FullDataScript.contracts.domain import ActiveContractOptions
+from app.ScriptingFiles.FullDataScript.contracts.policy import (
     find_active_option_violation,
 )
 from app.ScriptingFiles.FullDataScript.contracts.util import parse_money_cents
@@ -48,12 +58,11 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     PlayerKind,
-    serialize_summary,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     IngestionValidationError as IngestionValidationError,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
     SessionSourceClient,
     SourceClient,
     SourceSession,
@@ -61,7 +70,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
     open_source_client as open_source_client,
     ContextualSourceClientFactory,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
     open_http_session as http_session,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import (
@@ -154,31 +163,6 @@ def track_active_contracts(
     ).run(options)
 
 
-def load_capwages_summary() -> dict[str, int]:
-    with open_database_transaction() as connection:
-        cursor = connection.cursor()
-        cursor.execute(
-            """SELECT
-                   (SELECT count(DISTINCT external.player_id)
-                      FROM player_external_ids external WHERE external.source_id = source.id),
-                   (SELECT count(*) FROM contracts WHERE contracts.source_id = source.id),
-                   (SELECT count(*) FROM contract_seasons
-                      JOIN contracts ON contracts.id = contract_seasons.contract_id
-                     WHERE contracts.source_id = source.id)
-               FROM data_sources source WHERE source.code = 'capwages'"""
-        )
-        players, contracts, contract_seasons = cursor.fetchone()
-        cursor.close()
-    if contracts == 0:
-        raise MissingSourceSnapshotError(source="CapWages")
-    return {
-        "players": players,
-        "contracts": contracts,
-        "contract_seasons": contract_seasons,
-        "cached": 1,
-    }
-
-
 def validate_and_deduplicate_rows(
     rows: Iterable[Mapping[str, object]],
     *,
@@ -221,7 +205,11 @@ def enforce_quality_thresholds(
 def validate_stat_invariants(
     kind: str, row: Mapping[str, object], *, source: str
 ) -> None:
-    if violation := find_stat_violation(kind, row, source=source):
+    try:
+        selected = PlayerKind(kind)
+    except ValueError as error:
+        raise PlayerKindViolation(kind=kind) from error
+    if violation := find_stat_violation(selected, row, source=source):
         raise violation
 
 

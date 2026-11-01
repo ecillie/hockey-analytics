@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
+from app.ScriptingFiles.FullDataScript.tracking.repository import IngestionRun
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -34,7 +35,7 @@ class TrackingScenario:
     events: list[str] = field(default_factory=list)
 
     @contextmanager
-    def open_run(self, **kwargs: object) -> Generator[RecordingRun]:
+    def open_run(self, **kwargs: object) -> Generator[IngestionRun]:
         try:
             yield RecordingRun(
                 events=self.events,

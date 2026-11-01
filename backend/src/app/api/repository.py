@@ -19,6 +19,7 @@ from app.api.domain import (
     PlayerQuery,
     SeasonRow,
     SummaryRow,
+    SummarySelection,
     TeamRow,
 )
 
@@ -68,24 +69,19 @@ def read_all[T](
 
 
 def select_summary_rows(
-    session: Session,
-    season: int,
-    where: str = "TRUE",
-    params: Mapping[str, object] | None = None,
-    order: str = "id ASC",
-    limit: int | None = None,
-    offset: int | None = None,
+    session: Session, selection: SummarySelection
 ) -> tuple[SummaryRow, ...]:
     query = (
-        queries.SUMMARY_CTES + f" SELECT * FROM summary WHERE {where} ORDER BY {order}"
+        queries.SUMMARY_CTES
+        + f" SELECT * FROM summary WHERE {selection.where} ORDER BY {selection.order}"
     )
-    bind = {"season": season, **({} if params is None else params)}
-    if limit is not None:
+    bind = {"season": selection.season, **dict(selection.bindings)}
+    if selection.limit is not None:
         query += " LIMIT :_limit"
-        bind["_limit"] = limit
-    if offset is not None:
+        bind["_limit"] = selection.limit
+    if selection.offset is not None:
         query += " OFFSET :_offset"
-        bind["_offset"] = offset
+        bind["_offset"] = selection.offset
     return read_all(session, query, bind, SummaryRow)
 
 
@@ -130,7 +126,7 @@ class SqlApiRepository:
         clauses = [
             "(games_played IS NOT NULL OR team_id IS NOT NULL OR cap_hit_cents IS NOT NULL)"
         ]
-        params: dict[str, object] = {}
+        params: dict[str, str | int] = {}
         if query.team is not None:
             clauses.append("UPPER(abbreviation) = UPPER(:team)")
             params["team"] = query.team
@@ -166,12 +162,14 @@ class SqlApiRepository:
         direction = "ASC" if query.order == "asc" else "DESC"
         rows = select_summary_rows(
             self.session,
-            query.season,
-            where,
-            params,
-            f"{column} {direction} NULLS LAST, id ASC",
-            query.page_size,
-            (query.page - 1) * query.page_size,
+            SummarySelection(
+                season=query.season,
+                where=where,
+                bindings=tuple(params.items()),
+                order=f"{column} {direction} NULLS LAST, id ASC",
+                limit=query.page_size,
+                offset=(query.page - 1) * query.page_size,
+            ),
         )
         return PlayerPage(rows=rows, total=total)
 
@@ -188,17 +186,29 @@ class SqlApiRepository:
         self, team_id: int, season: int, status: str | None
     ) -> tuple[SummaryRow, ...]:
         where = "team_id = :team_id"
-        params: dict[str, object] = {"team_id": team_id}
+        params: dict[str, str | int] = {"team_id": team_id}
         if status is not None:
             where += " AND roster_status = :status"
             params["status"] = status
         return select_summary_rows(
-            self.session, season, where, params, "full_name ASC, id ASC", 100
+            self.session,
+            SummarySelection(
+                season=season,
+                where=where,
+                bindings=tuple(params.items()),
+                order="full_name ASC, id ASC",
+                limit=100,
+            ),
         )
 
     def summary_for_player(self, player_id: int, season: int) -> SummaryRow | None:
         rows = select_summary_rows(
-            self.session, season, "id = :player_id", {"player_id": player_id}
+            self.session,
+            SummarySelection(
+                season=season,
+                where="id = :player_id",
+                bindings=(("player_id", player_id),),
+            ),
         )
         return next(iter(rows), None)
 
@@ -220,7 +230,7 @@ class SqlApiRepository:
         self, season: int, position: str | None, team: str | None, limit: int
     ) -> tuple[SummaryRow, ...]:
         clauses = ["hockey_value IS NOT NULL"]
-        params: dict[str, object] = {}
+        params: dict[str, str | int] = {}
         if position is not None:
             clauses.append("primary_position=:position")
             params["position"] = position
@@ -229,11 +239,13 @@ class SqlApiRepository:
             params["team"] = team
         return select_summary_rows(
             self.session,
-            season,
-            " AND ".join(clauses),
-            params,
-            "hockey_value DESC NULLS LAST, id ASC",
-            limit,
+            SummarySelection(
+                season=season,
+                where=" AND ".join(clauses),
+                bindings=tuple(params.items()),
+                order="hockey_value DESC NULLS LAST, id ASC",
+                limit=limit,
+            ),
         )
 
     def contract(self, player_id: int, current_season: int) -> ContractRow | None:
@@ -285,4 +297,7 @@ class SqlApiRepository:
         )
 
     def overview(self, season: int) -> tuple[SummaryRow, ...]:
-        return select_summary_rows(self.session, season, "games_played IS NOT NULL")
+        return select_summary_rows(
+            self.session,
+            SummarySelection(season=season, where="games_played IS NOT NULL"),
+        )

@@ -24,7 +24,9 @@ from app.ScriptingFiles.FullDataScript import capspace, ingestion, ingestion_tra
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.responses import (
     SessionLifecycle,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import SessionSourceClient
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
+    SessionSourceClient,
+)
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.fakes import (
     ManagedSession,
 )
@@ -44,9 +46,9 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.tests.fakes import (
 from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
 from app.ScriptingFiles.FullDataScript.tracking.errors import IngestionBatchError
 from app.ScriptingFiles.FullDataScript.tracking.tests.fakes import TrackingScenario
-from app.ScriptingFiles.FullDataScript.contracts import http as profile_http
+from app.ScriptingFiles.FullDataScript.contracts.repository import http as profile_http
 from app.ScriptingFiles.FullDataScript.contracts.domain import Candidate
-from app.ScriptingFiles.FullDataScript.contracts.http import (
+from app.ScriptingFiles.FullDataScript.contracts.repository.http import (
     BorrowedProfileSessionFactory,
 )
 from app.ScriptingFiles.FullDataScript.contracts.services import ProfileFetcher
@@ -143,14 +145,17 @@ class TestDurableContext:
         monkeypatch.setattr(ingestion_tracking, "open_ingestion_run", scenario.open_run)
         return scenario
 
-    def test_status_failure_preserves_completed_work_counts(
-        self, status_failure, context, capture
-    ):
-        operation = ingestion_tracking.tracked_ingestion("nhl", "stats")(
+    @pytest.fixture
+    def failing_operation(self, status_failure):
+        return ingestion_tracking.tracked_ingestion("nhl", "stats")(
             status_failure.ingest
         )
+
+    def test_status_failure_preserves_completed_work_counts(
+        self, status_failure, failing_operation, context, capture
+    ):
         with pytest.raises(RuntimeError) as raised:
-            operation(context=context)
+            failing_operation(context=context)
         assert raised.value is status_failure.completion_failure
         assert status_failure.events == ["work", "succeeded", "failed", "closed"]
         events = [
@@ -229,7 +234,7 @@ class TestTrackedFailures:
             and scenario.reporting_failure is None
         )
         assert len(finished) == (0 if cancelled and level is LogLevel.INFO else 1)
-        if finished:
+        if len(finished) > 0:
             assert finished[0]["outcome"] == ("cancelled" if cancelled else "failed")
             assert finished[0].get("committed") == (
                 3 if isinstance(failure, IngestionBatchError) else None
@@ -413,7 +418,7 @@ class TestProfileRetryContext:
             for line in capture.getvalue().splitlines()
         ]
         assert len(events) == (1 if level is LogLevel.DEBUG else 0)
-        if events:
+        if len(events) > 0:
             assert events[0]["event"] == "ingestion.retry_scheduled"
             assert events[0]["attempt"] == 2
             assert events[0]["run_id"] == 17
@@ -449,17 +454,20 @@ class TestAdapterRecovery:
             )
             for _ in range(2 if retried else 0)
         )
-        response = requests.Response()
-        response.status_code = 200
-        response.raw = HTTPResponse(
-            body=BytesIO(b'{"value":"payload_secret"}'),
-            preload_content=False,
-            retries=Retry(total=4, history=history),
-        )
-        return SessionSourceClient(
-            session=ManagedSession(response=response),
-            context=replace(context, source="nhl", run_id=17),
-        )
+        with (
+            BytesIO(b'{"value":"payload_secret"}') as body,
+            requests.Response() as response,
+        ):
+            response.status_code = 200
+            response.raw = HTTPResponse(
+                body=body,
+                preload_content=False,
+                retries=Retry(total=4, history=history),
+            )
+            yield SessionSourceClient(
+                session=ManagedSession(response=response),
+                context=replace(context, source="nhl", run_id=17),
+            )
 
     def test_native_retry_history_produces_only_safe_recovery_count(
         self, client, retried, kind, capture, level
@@ -485,7 +493,7 @@ class TestAdapterRecovery:
             item for item in events if item["event"] == "ingestion.request_recovered"
         ]
         assert len(recovered) == retried
-        if recovered:
+        if len(recovered) > 0:
             assert recovered[0]["attempt"] == 3
             assert recovered[0]["severity"] == "WARNING"
             assert recovered[0]["run_id"] == 17

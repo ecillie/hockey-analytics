@@ -2,11 +2,27 @@
 
 from dataclasses import dataclass, field
 from collections.abc import Iterator, Mapping
-from typing import Self
+from typing import Literal, Self
 import httpx
 from io import StringIO
 from pathlib import Path
 from types import ModuleType
+from subprocess import CompletedProcess
+
+
+type LoggingField = Literal["LOG_LEVEL", "LOG_FORMAT"]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ProcessFieldObservation:
+    process: CompletedProcess[str]
+    field: LoggingField
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ProcessOutputObservation:
+    diagnostics: ProcessFieldObservation
+    output: Path
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -162,6 +178,20 @@ class StageOutcome[R]:
         return self.result
 
 
+@dataclass(slots=True, kw_only=True, frozen=True)
+class MigrationCleanupScenario:
+    create: StageOutcome[None]
+    drop: StageOutcome[None]
+    primary: BaseException | None
+    events: list[str]
+
+    @property
+    def expected_failure(self) -> BaseException | None:
+        if self.create.failure is not None:
+            return self.create.failure
+        return self.primary if self.primary is not None else self.drop.failure
+
+
 class CommandFailure(RuntimeError):
     def __init__(self, *, source: str) -> None:
         super().__init__(f"{source} unavailable")
@@ -208,6 +238,22 @@ class RepairConnection:
 class CommandCase:
     module: ModuleType
     action: str
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class CommandInvocation:
+    module: ModuleType
+    argv: tuple[str, ...]
+
+
+type HistoricalMode = Literal["preview", "apply", "coverage"]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class CommandModeScenario:
+    argv: tuple[str, ...]
+    events: StringIO
+    expected_mode: HistoricalMode
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

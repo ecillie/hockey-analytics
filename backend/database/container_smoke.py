@@ -19,6 +19,7 @@ from app.shared.smoke import (
     ContainerReadinessError,
 )
 from app.shared.cli import CommandOptionError, ExitCode
+from app.shared.cleanup import complete_cleanup
 from app.shared.observability.domain import CommandOutcome, read_logging_settings
 from app.shared.observability.errors import LoggingSettingsError
 from app.shared.observability.services import (
@@ -34,6 +35,7 @@ def is_valid_teams_response(body: object) -> bool:
 
 
 type ResponseCheck = tuple[str, Callable[[object], bool]]
+type JsonResponse = tuple[int, object, str]
 
 
 def build_response_checks() -> tuple[ResponseCheck, ...]:
@@ -44,14 +46,25 @@ def build_response_checks() -> tuple[ResponseCheck, ...]:
     )
 
 
-def request_json(url: str, timeout: float) -> tuple[int, object, str]:
+def request_json(url: str, timeout: float) -> JsonResponse:
     try:
         with urlopen(url, timeout=timeout) as response:  # noqa: S310 - caller supplies CI URL
             text = response.read().decode("utf-8")
             return response.status, json.loads(text), text
     except HTTPError as exc:
-        text = exc.read().decode("utf-8", errors="replace")
-        return exc.code, None, text
+        return read_http_error(exc)
+
+
+def read_http_error(error: HTTPError) -> JsonResponse:
+    primary: BaseException | None = None
+    try:
+        text = error.read().decode("utf-8", errors="replace")
+        return error.code, None, text
+    except BaseException as failure:
+        primary = failure
+        raise
+    finally:
+        complete_cleanup((error.close,), primary)
 
 
 def validate_container_api(

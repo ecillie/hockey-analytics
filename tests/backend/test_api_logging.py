@@ -21,8 +21,15 @@ from app.shared.observability.tests.requests import (
     RecordingTransport,
     RequestApplication,
     parse_probe_number,
+    HttpObservation,
+    StreamingObservation,
 )
 from app.shared.observability.tests.fakes import capture_source_failure
+
+
+@pytest.fixture
+def formatter():
+    return SafeFormatter()
 
 
 class TestObservedApi:
@@ -86,22 +93,29 @@ class TestObservedApi:
                     "X-Request-ID": "caller_secret",
                 },
             )
-            yield response, application, tuple(caplog.records)
+            yield HttpObservation(
+                response=response,
+                application=application,
+                records=tuple(caplog.records),
+            )
 
-    def test_all_response_paths_have_correlated_safe_summaries(self, observed, case):
-        response, application, records = observed
-        assert (
-            response.status_code
-            == {
-                "success": 200,
-                "invalid": 400,
-                "missing": 404,
-                "database": 503,
-                "unexpected": 500,
-                "unconfigured": 503,
-            }[case]
-        )
-        assert application.debug is False
+    @pytest.fixture
+    def expected_status(self, case):
+        return {
+            "success": 200,
+            "invalid": 400,
+            "missing": 404,
+            "database": 503,
+            "unexpected": 500,
+            "unconfigured": 503,
+        }[case]
+
+    def test_all_response_paths_have_correlated_safe_summaries(
+        self, observed, case, expected_status, formatter
+    ):
+        response = observed.response
+        assert response.status_code == expected_status
+        assert observed.application.debug is False
         request_id = response.headers["x-request-id"]
         assert len(request_id) == 32
         assert request_id != "caller_secret"
@@ -111,12 +125,12 @@ class TestObservedApi:
         assert response.headers["access-control-expose-headers"] == "X-Request-ID"
         summaries = [
             record
-            for record in records
+            for record in observed.records
             if getattr(record, "event", None) == "request.finished"
         ]
         errors = [
             record
-            for record in records
+            for record in observed.records
             if getattr(record, "event", None) == "request.failed"
         ]
         assert len(summaries) == 1
@@ -127,7 +141,7 @@ class TestObservedApi:
         )
         assert all(record.request_id == request_id for record in errors)
         assert "secret" not in "\n".join(
-            SafeFormatter().format(record) for record in summaries + errors
+            formatter.format(record) for record in summaries + errors
         )
         if case == "unexpected":
             assert response.json() == {
@@ -168,22 +182,26 @@ class TestObservedStreamingFailure:
         )
         return application
 
-    def test_failure_after_headers_keeps_original_exception_and_reports_once(
-        self, application, failure, caplog
-    ):
+    @pytest.fixture
+    def observed(self, application, caplog):
         caplog.set_level(logging.INFO)
         with TestClient(application) as client:
             with pytest.raises(ValueError) as raised:
                 client.get("/stream")
-        assert raised.value is failure
+        return StreamingObservation(failure=raised.value, records=tuple(caplog.records))
+
+    def test_failure_after_headers_keeps_original_exception_and_reports_once(
+        self, observed, failure
+    ):
+        assert observed.failure is failure
         errors = [
             record
-            for record in caplog.records
+            for record in observed.records
             if getattr(record, "event", None) == "request.failed"
         ]
         summaries = [
             record
-            for record in caplog.records
+            for record in observed.records
             if getattr(record, "event", None) == "request.finished"
         ]
         assert len(errors) == len(summaries) == 1
@@ -195,6 +213,8 @@ class TestObservedStreamingFailure:
 
 class TestHostDiagnostics:
     script = """
+from contextlib import ExitStack, closing
+from app.shared.cli import ExitCode
 import asyncio
 import json
 import logging
@@ -209,40 +229,45 @@ from app.shared.observability.tests.requests import parse_probe_number
 
 async def exercise(application):
     async with asyncio.timeout(10):
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=application), base_url="http://probe") as client:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=application), base_url='http://probe') as client:
             try:
-                await client.get("/numbers/primary_secret?token=query_secret", headers={"X-Request-ID": "caller_secret"})
+                await client.get('/numbers/primary_secret?token=query_secret', headers={'X-Request-ID': 'caller_secret'})
             except ValueError as error:
                 return error
-    raise AssertionError("request must preserve its failure")
+    raise AssertionError('request must preserve its failure')
 
-def main():
-    root_capture = StringIO()
-    logging.getLogger().addHandler(logging.StreamHandler(root_capture))
-    host_capture = StringIO()
-    host_handler = logging.StreamHandler(host_capture)
-    logging.getLogger("uvicorn").addHandler(host_handler)
-    application_capture = StringIO()
-    settings = read_logging_settings(os.environ)
-    handler = configure_logging(settings, stream=application_capture)
-    configure_api_host_logging(settings, handler)
-    configure_api_host_logging(settings, handler)
-    assert logging.getLogger("uvicorn").handlers == [host_handler]
-    assert len(logging.getLogger("uvicorn.error").filters) == 3
-    application = create_app()
-    application.add_api_route("/numbers/{key}", parse_probe_number)
-    error = asyncio.run(exercise(application))
-    assert error.__dict__["tradevalue_request"].reported is True
-    logging.getLogger("uvicorn.error").error("Exception in ASGI application\\n", exc_info=error)
-    logging.getLogger("uvicorn.error").error("unrelated_host_secret", exc_info=error)
-    logging.getLogger("uvicorn.error").error(serialize_lifecycle_failure(error, "startup", settings))
-    logging.getLogger("other.host").warning("host preserved")
-    def parse_lines(stream):
-        return [json.loads(line.removeprefix("event ")) for line in stream.getvalue().splitlines()]
-    print(json.dumps({"app": parse_lines(application_capture), "host": parse_lines(host_capture), "root": root_capture.getvalue(), "access": logging.getLogger("uvicorn.access").disabled}))
-    return 0
+def parse_lines(stream):
+    return [json.loads(line.removeprefix('event ')) for line in stream.getvalue().splitlines()]
 
-raise SystemExit(main())
+def main() -> int:
+    with ExitStack() as resources:
+        root_capture = resources.enter_context(StringIO())
+        root_handler = resources.enter_context(closing(logging.StreamHandler(root_capture)))
+        logging.getLogger().addHandler(root_handler)
+        resources.callback(logging.getLogger().removeHandler, root_handler)
+        host_capture = resources.enter_context(StringIO())
+        host_handler = resources.enter_context(closing(logging.StreamHandler(host_capture)))
+        logging.getLogger('uvicorn').addHandler(host_handler)
+        resources.callback(logging.getLogger('uvicorn').removeHandler, host_handler)
+        application_capture = resources.enter_context(StringIO())
+        settings = read_logging_settings(os.environ)
+        handler = resources.enter_context(closing(configure_logging(settings, stream=application_capture)))
+        configure_api_host_logging(settings, handler)
+        configure_api_host_logging(settings, handler)
+        assert logging.getLogger('uvicorn').handlers == [host_handler]
+        assert len(logging.getLogger('uvicorn.error').filters) == 3
+        application = create_app()
+        application.add_api_route('/numbers/{key}', parse_probe_number)
+        error = asyncio.run(exercise(application))
+        assert error.__dict__['tradevalue_request'].reported is True
+        logging.getLogger('uvicorn.error').error('Exception in ASGI application\\n', exc_info=error)
+        logging.getLogger('uvicorn.error').error('unrelated_host_secret', exc_info=error)
+        logging.getLogger('uvicorn.error').error(serialize_lifecycle_failure(error, 'startup', settings))
+        logging.getLogger('other.host').warning('host preserved')
+        print(json.dumps({'app': parse_lines(application_capture), 'host': parse_lines(host_capture), 'root': root_capture.getvalue(), 'access': logging.getLogger('uvicorn.access').disabled}))
+    return ExitCode.SUCCESS
+if __name__ == '__main__':
+    raise SystemExit(main())
 """
 
     @pytest.fixture(
@@ -308,7 +333,8 @@ class TestPreflightAndMethodResponses:
     @pytest.fixture
     def observed(self, method, caplog):
         caplog.set_level(logging.INFO)
-        with TestClient(create_app()) as client:
+        application = create_app()
+        with TestClient(application) as client:
             response = client.request(
                 method,
                 "/api/health",
@@ -317,12 +343,16 @@ class TestPreflightAndMethodResponses:
                     "Access-Control-Request-Method": "GET",
                 },
             )
-            return response, tuple(caplog.records)
+            return HttpObservation(
+                response=response,
+                application=application,
+                records=tuple(caplog.records),
+            )
 
     def test_preflight_and_rejected_methods_keep_headers_and_summaries(
         self, observed, method
     ):
-        response, records = observed
+        response = observed.response
         assert response.status_code == (200 if method == "OPTIONS" else 405)
         assert len(response.headers["x-request-id"]) == 32
         assert (
@@ -330,7 +360,7 @@ class TestPreflightAndMethodResponses:
         )
         summaries = [
             record
-            for record in records
+            for record in observed.records
             if getattr(record, "event", None) == "request.finished"
         ]
         assert len(summaries) == 1

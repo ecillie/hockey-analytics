@@ -8,11 +8,12 @@ from contextlib import contextmanager
 from collections.abc import Generator
 from psycopg2.extensions import connection as PgConnection
 from pathlib import Path
-import psycopg2
 from app.ScriptingFiles.FullDataScript import (
     ingestion,
 )
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
+from app.config import AppEnvironment, DatabaseSettings
+from app.database import open_database_resources, open_database_transaction
 
 
 @pytest.fixture
@@ -82,46 +83,42 @@ def source_schedule_page():
 
 @pytest.fixture()
 def migrated_database(monkeypatch, tmp_path, disposable_database_url):
-    engine = create_engine(disposable_database_url)
-    with engine.begin() as connection:
-        if (
+    settings = DatabaseSettings(
+        environment=AppEnvironment.DEV, database_url=disposable_database_url
+    )
+    with open_database_resources(settings) as resources:
+        engine = resources.engine
+        with engine.begin() as connection:
+            if (
+                connection.execute(
+                    text("SELECT to_regclass('public.players')")
+                ).scalar_one()
+                is None
+            ):
+                raise pytest.skip.Exception("the test database has not been migrated")
             connection.execute(
-                text("SELECT to_regclass('public.players')")
-            ).scalar_one()
-            is None
+                text("TRUNCATE teams, players, ingestion_runs RESTART IDENTITY CASCADE")
+            )
+
+        @contextmanager
+        def test_transaction(*, context=None) -> Generator[PgConnection]:
+
+            with open_database_transaction(settings, context=context) as connection:
+                yield connection
+
+        monkeypatch.setattr(ingestion, "open_database_transaction", test_transaction)
+        for folder, name, fixture_name in (
+            ("skater advanced", "skaters_2008_to_2024.csv", "moneypuck_skaters.csv"),
+            ("goalie_advanced", "goalies_2008_to_2024.csv", "moneypuck_goalies.csv"),
         ):
-            raise pytest.skip.Exception("the test database has not been migrated")
-        connection.execute(
-            text("TRUNCATE teams, players, ingestion_runs RESTART IDENTITY CASCADE")
-        )
-
-    @contextmanager
-    def test_transaction(*, context=None) -> Generator[PgConnection]:
-
-        connection = psycopg2.connect(disposable_database_url)
-        try:
-            yield connection
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            connection.close()
-
-    monkeypatch.setattr(ingestion, "open_database_transaction", test_transaction)
-    for folder, name, fixture_name in (
-        ("skater advanced", "skaters_2008_to_2024.csv", "moneypuck_skaters.csv"),
-        ("goalie_advanced", "goalies_2008_to_2024.csv", "moneypuck_goalies.csv"),
-    ):
-        destination = tmp_path.joinpath(folder, name)
-        destination.parent.mkdir()
-        destination.write_text(
-            Path(__file__)
-            .resolve()
-            .parents[7]
-            .joinpath("tests", "backend", "fixtures", "ingestion", fixture_name)
-            .read_text()
-        )
-    monkeypatch.setenv("TRADEVALUE_DATA_DIR", str(tmp_path))
-    yield engine
-    engine.dispose()
+            destination = tmp_path.joinpath(folder, name)
+            destination.parent.mkdir()
+            destination.write_text(
+                Path(__file__)
+                .resolve()
+                .parents[7]
+                .joinpath("tests", "backend", "fixtures", "ingestion", fixture_name)
+                .read_text()
+            )
+        monkeypatch.setenv("TRADEVALUE_DATA_DIR", str(tmp_path))
+        yield engine

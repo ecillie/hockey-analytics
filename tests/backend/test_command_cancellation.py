@@ -23,15 +23,19 @@ class TestCommandCancellation:
         from app.shared.cleanup import retain_cleanup_failure
         from app.shared.tests.fakes import StageOutcome
 
-        mode = sys.argv[1]
-        failure = KeyboardInterrupt("primary_secret") if mode == "keyboard" else asyncio.CancelledError("primary_secret")
-        if mode == "cleanup":
-            retain_cleanup_failure(failure, RuntimeError("cleanup_secret"))
-        if mode == "cancelled_cleanup":
-            retain_cleanup_failure(failure, asyncio.CancelledError("cleanup_secret"))
-            retain_cleanup_failure(failure, asyncio.CancelledError("second_secret"))
-        export_openapi._schema_text = StageOutcome(result="", failure=failure)
-        raise SystemExit(export_openapi.main([]))
+        def main() -> int:
+            mode = sys.argv[1]
+            failure = KeyboardInterrupt("primary_secret") if mode == "keyboard" else asyncio.CancelledError("primary_secret")
+            if mode == "cleanup":
+                retain_cleanup_failure(failure, RuntimeError("cleanup_secret"))
+            if mode == "cancelled_cleanup":
+                retain_cleanup_failure(failure, asyncio.CancelledError("cleanup_secret"))
+                retain_cleanup_failure(failure, asyncio.CancelledError("second_secret"))
+            export_openapi.render_schema_text = StageOutcome(result="", failure=failure)
+            return export_openapi.main([])
+
+        if __name__ == "__main__":
+            raise SystemExit(main())
     """)
 
     @pytest.fixture(

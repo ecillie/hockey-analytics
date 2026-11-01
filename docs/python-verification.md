@@ -1,5 +1,281 @@
 # Python verification
 
+The active-write/team-stint checkpoint resolves those remaining context/role
+findings. Immutable write values carry resolved scalar team IDs; compatibility
+writer calls retain exact SQL/bindings/outcomes in **216** contract and **24**
+season comparisons. Team-stint SQL/policy/error roles retain exact compatibility
+exports; **10** valid-range comparisons preserve counts/close. Two reversed-range
+cases fail before the fix and pass before cursor acquisition. Two falsy injected
+queries prove the minimal query Protocol and transaction ownership. Final focus
+passes **387**. Fresh migrated `tradevalue_test_logging05_write_context` passes
+**1,565 tests, zero skips**, **91.44%** coverage in **134.25 seconds**, with the
+**100%** API/calendar gate. Isolated units pass **1,515**, with 50 integrations
+deselected, in **114.91 seconds**. Static, package/export, migration/schema/API and
+ML gates pass. Twelve dispositions were reviewed; all **245** current source
+digests match. Source helper/entrypoint and exact framework/historical/fault-double
+decisions, hosted verification and final combined acceptance/release remain open.
+
+The native Session lifetime checkpoint fixes the confirmed source/profile teardown
+defect with one shared owner guard. ExitStack registers native exit before entry;
+complete_cleanup preserves an existing primary/cause or propagates a sole cleanup
+failure. The three owned factories use it and borrowed factories are unchanged.
+All **96** native entry/body/primary/cleanup cases pass; the exact preceding owners
+fail **63**, with 33 controls passing. The original nine probes now preserve each
+primary, all 68 prior source-test IDs remain, and setup/lifetime focus passes
+**114**. Broader focus passes **345**. Fresh migrated
+`tradevalue_test_logging05_session_lifetime` passes **1,559 tests, zero skips**,
+**91.34%** coverage in **132.89 seconds**, with the **100%** API/calendar gate.
+Isolated units pass **1,509**, with 50 integrations deselected, in **113.23 seconds**.
+Static, package/export, migration/schema/API and ML gates pass. Four dispositions
+were reviewed and all **242** source digests match. The session-lifetime finding
+is resolved; remaining active write-context, source helper/entrypoint and exact
+framework/historical/fault-double decisions, hosted verification and final
+combined acceptance/release work remain open.
+
+The shared-source checkpoint moves transport adapters into the repository role,
+keeps their exact compatibility bindings, and gives unchanged HTTP options their
+domain owner. Session setup now closes its native resource on failure while
+preserving original error/cancellation/interruption identity and cause. All **18**
+new setup faults fail before the fix and pass afterward. A canonical NHL options
+policy retains the original condition/error and four named invalid boundaries
+prove no clients or writes. Final focused checks pass **249**. Fresh migrated
+`tradevalue_test_logging05_source_roles` passes **1,463 tests, zero skips**,
+**91.28%** coverage in **132.27 seconds**, with **100%** API/calendar coverage.
+Isolated units pass **1,413**, with 50 integrations deselected, in **114.10 seconds**.
+Static, clean package/export, migration/schema/API and ML gates pass. Fifteen
+dispositions were reviewed; all **242** source digests match. A separate native
+probe confirms nine source/profile body-teardown paths still replace the primary
+with close failure; that lifetime finding remains open with the other semantic,
+hosted and final combined acceptance/release work. Setup evidence does not accept
+that separate property.
+
+The contract-adapter layout checkpoint grows repository/services into canonical
+role directories. Active persistence/profile transport and active orchestration
+have canonical child modules; historical qualified module names and 33 exact
+compatibility bindings remain. Five moved modules and six callers retain identical
+executable AST, SQL, signatures/defaults and cleanup. All **225** compared focused
+test IDs are unchanged and pass. The initial full run caught the two unstaged
+removed paths in the unchanged Git source-scope check; staging the completed moves
+resolved it without changing the test. Fresh migrated
+`tradevalue_test_logging05_adapter_layout_final` then passed **1,440 tests, zero
+skips**, **91.24%** coverage in **132.31 seconds**, with the **100%** API/calendar
+gate. Isolated units passed **1,390**, with 50 integrations deselected, in
+**114.39 seconds**. The existing native import-discovery check gains one net case.
+Static, clean package/export, migration/schema/API and ML gates pass. All **240**
+current Python sources have matching ledger entries/digests. Active write-context,
+remaining source/helper/entrypoint roles, exact framework/historical/fault-double
+decisions and hosted/final combined release acceptance remain open.
+
+The contract-role/interface checkpoint gives four unchanged option/limit values
+their domain owner, three unchanged checks their policy owner, and four unchanged
+reporting helpers their utility owner. Runtime callers use those canonical modules;
+compatibility bindings retain exact identity. Exact SQL batch/pair types and a
+minimal runtime-checkable durable-run Protocol replace broad/concrete seams.
+The schema helper is public and the generated cancellation driver owns its setup
+inside guarded main. Complete AST/string comparisons preserve moved definitions,
+runtime bodies, SQL and tuple construction. All **318** compared test IDs are
+unchanged. Focused checks pass **191** contract/tracking cases and **312** command/
+resource cases, the latter after the generated main change. Fresh migrated
+`tradevalue_test_logging05_contract_roles` passes **1,439 tests, zero skips**,
+**91.24%** coverage in **132.34 seconds**, with the **100%** API/calendar gate.
+Isolated units pass **1,389**, with 50 integrations deselected, in **120.23 seconds**.
+Static, package/export, migration/schema/API and ML gates pass. Twenty dispositions
+were re-reviewed and all 237 current source digests match. Remaining transport/
+active-service/entrypoint role and exact framework/historical/fault-double
+decisions, hosted NonProd and final combined acceptance/release remain open.
+
+The startup/ingestion checkpoint resolves the final two explicit inspected-test
+findings. Generated host mains own capture handlers and fallback SQLite engines;
+native failure/cancellation probes prove disposal once and original identity.
+Ingestion scenarios use immutable expected pairs, fresh native exceptions,
+fixture-owned invalid rows/identity SQL setup and named retained observations.
+All **60** compared test IDs are unchanged; focused nonintegration checks pass
+**44**, with 16 integrations deselected. Fresh migrated
+`tradevalue_test_logging05_startup_scenarios` passes **1,439 tests, zero skips**,
+**91.26%** aggregate coverage in **131.43 seconds**, with the **100%** API/calendar
+gate. Isolated units pass **1,389**, with 50 integrations deselected, in
+**113.45 seconds**. Static, package/export, migration/schema/API and ML gates pass.
+All 237 source digests match the re-reviewed ledger. Runtime role/interface,
+precise framework/historical/fault-double dispositions, hosted NonProd and final
+combined acceptance/release work remain; this checkpoint does not accept phase 7.
+
+The ongoing final semantic review is recorded source by source in
+[Python semantic audit checkpoint](python-semantic-audit.md). Its ML checkpoint
+separates command adapters from domain, repository, service and utility roles,
+retains compatibility imports and the published model/CLI contracts, and shares
+metric types and position grouping. A borrowed reader Protocol makes dataset
+resource ownership explicit. Tests retain fixture-owned mutable observation
+probes; immutable domain values do not wrap shared test state.
+
+The ML checkpoint passed **1,208 tests, zero skips**, **90.74%** aggregate
+coverage and the **100%** API/calendar selection on fresh database
+`tradevalue_test_logging05_roles_final` under Python 3.12.14. Isolated units passed
+**1,158**, with 50 integration tests deselected. Lint, format, types, structural
+scope, package/export, schema/API smoke and committed-model gates passed. This
+does not accept pending source reviews or the newly identified cleanup/HTTP
+resource findings; exact framework dispositions and hosted NonProd acceptance
+also remain open. Full evidence is in [logging verification](logging-verification.md).
+
+The following cleanup checkpoint fixes note-rendering/attachment failures that
+could mask a primary error, and explicitly closes caught HTTP error responses.
+Regression scenarios fail before the fixes and preserve original identity,
+cancellation, cleanup order and safe diagnostics afterward. Final verification
+on fresh `tradevalue_test_logging05_cleanup_final` passed **1,236 tests, zero
+skips**, **90.84%** aggregate coverage and the **100%** API/calendar gate.
+Isolated units passed **1,186**, with 50 integrations deselected. Static, package,
+schema/API, ML and rebuilt INFO/JSON + DEBUG/text image gates passed. The semantic
+audit still has 130 nonempty files pending and records the remaining API boundary
+and framework decisions explicitly; these results are not final phase-7 acceptance.
+
+The API query checkpoint now constructs PlayerQuery at the validated route and
+passes it through service/repository without rebuilding positional arguments.
+SummarySelection carries immutable bindings and query options. Existing filter,
+pagination, tie/null ordering and injection regressions retain their behavior;
+OpenAPI parity passes. Fresh `tradevalue_test_logging05_query_final` passed
+**1,236 tests, zero skips**, **90.85%** aggregate coverage and the **100%**
+API/calendar gate. Isolated units passed **1,186**, with 50 integrations
+deselected. Static, migration/schema/API, package/export, ML and rebuilt
+INFO/JSON + DEBUG/text image checks pass. The ledger now records **105**
+nonempty files pending and explicit findings from the inspected sources;
+hosted NonProd and final acceptance remain open.
+
+The diagnostic snapshot/worker checkpoint retains frozen frame and exception
+models with immutable nesting and copies them only for serialization. Native
+attribute-fault regressions preserve primary failures and bounded safe output;
+broader catches are limited to best-effort metadata access. One worker policy
+now applies the same injected limits at validation and execution. Fresh
+`tradevalue_test_logging05_snapshots_final` passed **1,253 tests, zero skips**,
+**91.00%** aggregate coverage and the **100%** API/calendar selection. Isolated
+units passed **1,203**, with 50 integrations deselected. Static, schema/API,
+package/export, ML and rebuilt two-mode image gates pass. The audit now records
+**90** nonempty files pending, plus explicit findings in inspected sources;
+these results do not complete phase 5 or phase 7.
+
+The source-boundary checkpoint makes raw schedule games detached snapshots while
+preserving serialization and filtering nonregular games before strict validation.
+Durable counts accept only nonnegative plain integers; unsupported stat-kind
+strings raise a typed boundary error. CSV file opening moved unchanged to the
+repository adapter and its actual caller was updated. Fresh
+`tradevalue_test_logging05_source_final` passed **1,269 tests, zero skips**,
+**91.01%** coverage and the **100%** API/calendar selection. Isolated units passed
+**1,219**, with 50 integrations deselected. Static, schema/API, clean package,
+exports and ML gates pass. All supported runtime sources now have content review;
+**67** test/support sources and the recorded runtime findings remain unresolved.
+The previously verified API image remains applicable because distributed API
+code, build/dependency inputs and shared logging are unchanged; this checkpoint
+does not claim a new image build or hosted NonProd acceptance.
+
+The resource-edge checkpoint shares primary-preserving cursor ownership across
+team-stint queries and cached contract-summary reads, and closes caught roster
+HTTPError responses without replacing the original failure. Roster transport
+validation moved unchanged into the HTTP adapter; classification uses immutable
+per-sync evidence, and native Pydantic validators raise typed compatible errors.
+Three disposable-engine fixtures now guard setup before yield and use production
+transaction/resource ownership. The final fresh
+`tradevalue_test_logging05_resource_edges_final2` run passed **1,317 tests, zero
+skips**, **91.20%** coverage and the **100%** API/calendar gate. Isolated units
+passed **1,267**, with 50 integrations deselected. Static, package/export,
+schema/API, ML and rebuilt INFO/JSON + DEBUG/text image checks pass. The ledger
+now has **38** pending test files and explicit helper/verification/role findings;
+this is still a checkpoint, not final phase-5/phase-7 acceptance.
+
+The verifier checkpoint removes redundant filesystem resolution from ordinary
+inspection-helper imports and moves source discovery into explicit pytest
+collection. HTTP probes now validate native response contracts, fresh lowercase
+32-hex request IDs and replacement of valid caller IDs. Log probes enforce
+per-event severity, mode thresholds, correlation and absence of orphan errors.
+Real container captures exercise the verifier itself, including corrupt inputs
+previously accepted. Fresh `tradevalue_test_logging05_verifiers_final2` passed
+**1,349 tests, zero skips**, **91.20%** coverage and the **100%** API/calendar
+gate. Isolated units passed **1,299**, with 50 integrations deselected. Static,
+schema/API, clean package/export and ML gates passed. Two-mode container probes
+passed against the unchanged verified API image. The ledger has **25** pending
+test files and explicit findings in inspected sources; hosted NonProd and final
+phase-5/phase-7 acceptance remain outstanding.
+
+The migration-test checkpoint guards the admin engine before database creation,
+preserves primary setup/body/cancellation failures through database removal and
+always disposes engines. Disposable transaction-table fixtures use separate
+guarded setup/drop transactions. Migration payload examples are immutable
+descriptions; native HTTP responses are created in fixtures. OpenAPI/ML path
+tests now import without filesystem resolution, with four guarded fresh-module
+imports. Fresh `tradevalue_test_logging05_migration_ownership` passed **1,357
+tests, zero skips**, **91.20%** coverage and the **100%** API/calendar gate.
+Isolated units passed **1,307**, with 50 integrations deselected. Static,
+schema/API, clean package/export and ML gates passed; no temporary migration
+databases remained. Three files still await inspection, and findings in
+inspected tests remain open. Hosted NonProd and final acceptance are outstanding.
+
+The adapter-cursor checkpoint completes content inspection of all **237** Python
+files; unresolved findings still prevent semantic acceptance. Eleven runtime
+cursor scopes now share primary-preserving cleanup. Complete AST comparison of
+six adapters permits only the guard/import changes, retaining SQL and other
+behavior. Contract scenario setup is guarded before seed/read/write work, and
+cleanup independently attempts rollback, trigger removal and close. Explicit
+disposable settings now also bind backfill, advisory-lock and source-identity
+fixtures. The previous cursor contexts failed 33 of 66 fault checks; all 208
+focused cleanup/contract checks pass with the shared guard. Fresh
+`tradevalue_test_logging05_adapter_cursors` passed **1,429 tests, zero skips**,
+**91.26%** coverage and the **100%** API/calendar gate. Package/export, schema/API,
+static and ML checks passed; isolated units passed **1,379**, with 50 integrations
+deselected. These remain separate evidence from final acceptance. Existing
+test-scenario/resource, runtime role/interface and framework/historical findings,
+hosted NonProd evidence and final release acceptance remain outstanding.
+
+The fixture-input checkpoint replaces shared dictionary/list/exception/NumPy
+decorator values in contract, roster, API and ML tests with immutable descriptions
+and fresh fixture-owned native values. Generated formatted contract inputs and
+ML feature/artifact/baseline inputs are arranged outside bodies. Named frozen
+scenarios carry retry, reconciliation, service and expected-failure collaborators;
+their native observation/boundary buffers remain fixture-owned. The 286 compared
+collection IDs are unchanged, and focused units passed **319**, with 18 database
+integrations deselected. Fresh `tradevalue_test_logging05_fixture_inputs` passed
+**1,429 tests, zero skips**, **91.26%** coverage and the **100%** API/calendar
+gate. Isolated units passed **1,379**, with 50 integrations deselected; static,
+package/export, schema/API and ML checks passed. Other recorded fixture/resource,
+role/interface and framework/historical
+findings, hosted NonProd evidence and final release acceptance remain open.
+
+The native-resource fixture checkpoint puts SQLite engine and request dependency
+ownership around setup/yield, retaining primary errors through cleanup. Lifespan
+fixtures use the engine guard around setup and listener removal, with named
+observations and fixture-owned host-record/logging setup. Generated logging
+inputs retain the original Unicode/format spaces, and native retry-response
+streams have fixture ownership. Ten added fault cases cover SQLite disposal and
+native Session health/close failures. Focused checks passed **366**; fresh
+`tradevalue_test_logging05_resource_fixtures` passed **1,439 tests, zero skips**,
+**91.26%** coverage and the **100%** API/calendar gate. Isolated units passed
+**1,389**, with 50 integrations deselected. Static, package/export, schema/API and
+ML checks passed. Other recorded test/host-program, role/interface and exact
+framework/historical findings, hosted NonProd and final acceptance remain open.
+
+The command/source scenario checkpoint makes CLI argument, summary and error
+templates immutable or fresh fixture values, with context-owned event streams.
+Named repair, pagination, session, validator and quality scenarios replace
+positional dependencies; retry sessions and external-output options are
+fixture-owned. The contract-conflict fixture records preview counts before SQL
+setup while retaining the original preview/apply assertions. All **180** compared
+test IDs are unchanged, and focused units passed **175**. Fresh
+`tradevalue_test_logging05_command_scenarios` passed **1,439 tests, zero skips**,
+**91.26%** coverage and the **100%** API/calendar gate. Other recorded test/host
+program findings remain open. Isolated units passed **1,389**, with 50 integrations
+deselected; static, package/export, schema/API and ML checks passed. Other
+role/interface and exact framework/historical findings, hosted NonProd
+and final combined acceptance remain open.
+
+The HTTP/host observation checkpoint names response/app/record and concurrent
+request collaborators and retains actual fixture-phase logs with observations.
+This corrects a vacuous earlier lifespan check: eight injected false stopped
+events passed the preceding capture and are all rejected now. A ready-count
+control covers successful startup. Generated command/Alembic hosts use explicit
+main/module guards and native stream/handler ownership. The 38 compared HTTP
+test IDs are unchanged; direct HTTP/request/lifespan checks passed **56**. Fresh
+`tradevalue_test_logging05_http_observations` passed **1,439 tests, zero skips**,
+**91.26%** coverage and the **100%** API/calendar gate. Isolated units passed
+**1,389**, with 50 integrations deselected. Static, package/export, schema/API and
+ML checks passed. Other recorded test/host-program, role/interface and exact
+framework/historical findings, hosted NonProd and final acceptance remain open.
+
 The supported runtime is Python 3.12. Install the root uv workspace with
 `uv sync --locked --all-groups`. Runtime, ingestion, ML, and development
 requirements are generated from the same lock. Run these checks at the root:

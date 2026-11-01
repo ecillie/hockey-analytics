@@ -1,13 +1,9 @@
 """Roster feed parsing, name normalization, and conservative identity matching."""
 
 from collections import Counter, defaultdict
-from collections.abc import Mapping
 from datetime import date
 from itertools import chain
 import unicodedata
-from urllib.error import URLError
-
-from pydantic import BaseModel, ValidationError
 
 from app.ScriptingFiles.FullDataScript.roster_status.domain import (
     ExternalRoster,
@@ -17,36 +13,7 @@ from app.ScriptingFiles.FullDataScript.roster_status.domain import (
     ExternalRosterPlayer,
     StoredPlayer,
 )
-from app.ScriptingFiles.FullDataScript.roster_status.errors import (
-    FeedFetchError,
-    InvalidJsonResponseError,
-)
-from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import JsonClient
 from app.ScriptingFiles.FullDataScript.roster_status.schemas import AhlRoster, NhlRoster
-
-
-def fetch_validated[T: BaseModel](
-    client: JsonClient,
-    url: str,
-    model: type[T],
-    source: str,
-    params: Mapping[str, str] | None = None,
-) -> T:
-    try:
-        return model.model_validate(client.get_json(url, params))
-    except (
-        URLError,
-        OSError,
-        UnicodeError,
-        InvalidJsonResponseError,
-        ValidationError,
-    ) as exc:
-        reason = (
-            "response shape is invalid"
-            if isinstance(exc, ValidationError)
-            else str(exc)
-        )
-        raise FeedFetchError(source=source, reason=reason) from exc
 
 
 def parse_nhl_roster(payload: NhlRoster, team: str) -> ExternalRoster:

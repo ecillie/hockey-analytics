@@ -1,18 +1,71 @@
 """Hostile values used to verify diagnostics never inspect payloads."""
 
 import logging
+from dataclasses import dataclass
 from email.message import Message
 from urllib.error import HTTPError
 
 from sqlalchemy.exc import OperationalError
+from hypothesis import strategies as st
+from hypothesis.strategies import SearchStrategy
+from app.shared.observability.domain import LogFormat, LoggingSettings
+from app.shared.observability.formatting import SafeFormatter
+from app.shared.observability.tests.verify_http import ProbeReport
+from app.shared.observability.tests.verify_logs import ProbeMode, ProbeOptions
 
 
+@dataclass(slots=True, kw_only=True, frozen=True)
+class LogCaptureScenario:
+    mode: ProbeMode
+    options: ProbeOptions
+    report: ProbeReport
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class EnvironmentLogObservation:
+    enabled: bool
+    application: tuple[str, ...]
+    host: tuple[str, ...]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class FormattingScenario:
+    formatter: SafeFormatter
+    record: logging.LogRecord
+
+
+def generate_formatting_scenarios() -> SearchStrategy[FormattingScenario]:
+    return st.builds(
+        FormattingScenario,
+        formatter=st.builds(
+            SafeFormatter,
+            settings=st.builds(
+                LoggingSettings, format=st.sampled_from(tuple(LogFormat))
+            ),
+        ),
+        record=st.text(min_size=1).map(build_exception_record),
+    )
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
 class HostileValue:
+    message: str = "diagnostics evaluated a payload"
+
     def __str__(self) -> str:
-        raise AssertionError("diagnostics evaluated a payload")
+        raise AssertionError(self.message)
 
     def __repr__(self) -> str:
-        raise AssertionError("diagnostics evaluated a payload")
+        raise AssertionError(self.message)
+
+
+class MetadataAccessError(RuntimeError):
+    def __init__(self, *, failure: BaseException) -> None:
+        super().__init__("primary_secret")
+        self.failure = failure
+
+    @property
+    def __dict__(self) -> dict[str, object]:
+        raise self.failure
 
 
 def build_exception_record(secret: str) -> logging.LogRecord:
@@ -26,12 +79,16 @@ def build_exception_record(secret: str) -> logging.LogRecord:
     return record
 
 
+@dataclass(slots=True, kw_only=True, frozen=True)
 class BrokenStream:
+    write_message: str = "secret sink failure"
+    flush_message: str = "secret flush failure"
+
     def write(self, value: str) -> int:
-        raise OSError("secret sink failure")
+        raise OSError(self.write_message)
 
     def flush(self) -> None:
-        raise OSError("secret flush failure")
+        raise OSError(self.flush_message)
 
 
 def parse_source_number() -> int:

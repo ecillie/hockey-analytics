@@ -22,7 +22,11 @@ from ml.training.train_skater_value import (
 )
 from ml.tests.fakes import (
     TrainedScenario,
+    MetadataFailureScenario,
+    MetricScenario,
+    MetricFailureScenario,
 )
+from ml.domain import Metric
 
 
 class TestTemporalTraining:
@@ -79,24 +83,31 @@ class TestTemporalTraining:
             test=splits["test"],
         )
 
-    def test_training_is_deterministic_and_predictions_are_safe(self, trained):
-        predictions = trained.model.predict(trained.test[list(self.columns)])
-        assert np.array_equal(
-            predictions, trained.repeated.predict(trained.test[list(self.columns)])
-        )
+    @pytest.fixture
+    def test_features(self, trained):
+        return trained.test[list(self.columns)]
+
+    @pytest.fixture
+    def model_path(self, tmp_path):
+        return tmp_path.joinpath("model.joblib")
+
+    def test_training_is_deterministic_and_predictions_are_safe(
+        self, trained, test_features
+    ):
+        predictions = trained.model.predict(test_features)
+        assert np.array_equal(predictions, trained.repeated.predict(test_features))
         frame = build_prediction_frame(trained.test, predictions)
         assert list(frame.columns) == ["player_id", "season", "prediction"]
         assert np.isfinite(frame["prediction"]).all()
         assert (frame["prediction"] >= 0).all()
 
     def test_model_seed_is_explicit_and_serialization_round_trips(
-        self, trained, tmp_path
+        self, trained, test_features, model_path
     ):
         assert trained.model.named_steps["model"].random_state == 42
-        before = trained.model.predict(trained.test[list(self.columns)])
-        path = tmp_path.joinpath("model.joblib")
-        joblib.dump(trained.model, path)
-        after = joblib.load(path).predict(trained.test[list(self.columns)])
+        before = trained.model.predict(test_features)
+        joblib.dump(trained.model, model_path)
+        after = joblib.load(model_path).predict(test_features)
         assert np.array_equal(before, after)
 
     @pytest.fixture
@@ -115,16 +126,22 @@ class TestPredictionBoundaries:
 
     @pytest.fixture(
         params=[
-            pytest.param(np.array([np.nan]), id="nonfinite"),
-            pytest.param(np.array([1.0, 2.0]), id="wrong-length"),
+            pytest.param((np.nan,), id="nonfinite"),
+            pytest.param((1.0, 2.0), id="wrong-length"),
         ]
     )
     def invalid_values(self, request):
-        return request.param
+        return np.array(request.param)
 
-    def test_prediction_invariants_reject_bad_values(self, rows, invalid_values):
+    @pytest.fixture
+    def invalid_rows(self, rows):
+        return rows.head(1)
+
+    def test_prediction_invariants_reject_bad_values(
+        self, invalid_rows, invalid_values
+    ):
         with pytest.raises(ValueError):
-            build_prediction_frame(rows.head(1), invalid_values)
+            build_prediction_frame(invalid_rows, invalid_values)
 
     @pytest.fixture
     def negative_values(self):
@@ -137,31 +154,39 @@ class TestPredictionBoundaries:
 
 class TestMetricRegression:
     @pytest.fixture
+    def baseline(self):
+        return {"mae": 1.0, "rmse": 1.0, "r2": -1.0}
+
+    @pytest.fixture
+    def zero_tolerances(self):
+        return {"mae": 0.0, "rmse": 0.0, "r2": 0.0}
+
+    @pytest.fixture
     def known_metrics(self):
         return metrics(np.array([1.0, 2.0, 3.0]), np.array([1.0, 2.0, 2.0]))
 
-    def test_metrics_and_regression_thresholds(self, known_metrics):
+    def test_metrics_and_regression_thresholds(self, known_metrics, baseline):
         assert known_metrics["mae"] == pytest.approx(1 / 3)
         assert known_metrics["rmse"] == pytest.approx((1 / 3) ** 0.5)
         assert known_metrics["r2"] == pytest.approx(0.5)
-        check_metric_regression(known_metrics, {"mae": 1.0, "rmse": 1.0, "r2": -1.0})
+        check_metric_regression(known_metrics, baseline)
 
     @pytest.fixture(
         params=[
             pytest.param(
                 (
-                    {"mae": 2.0, "rmse": 1.0, "r2": 0.0},
-                    {"mae": 1.0, "rmse": 1.0, "r2": 0.0},
-                    {"mae": 0.1, "rmse": 0.1, "r2": 0.1},
+                    (("mae", 2.0), ("rmse", 1.0), ("r2", 0.0)),
+                    (("mae", 1.0), ("rmse", 1.0), ("r2", 0.0)),
+                    (("mae", 0.1), ("rmse", 0.1), ("r2", 0.1)),
                     "mae",
                 ),
                 id="mae-worsens",
             ),
             pytest.param(
                 (
-                    {"mae": 1.0, "rmse": 1.0, "r2": 0.49},
-                    {"mae": 1.0, "rmse": 1.0, "r2": 0.5},
-                    {"mae": 0.0, "rmse": 0.0, "r2": 0.01},
+                    (("mae", 1.0), ("rmse", 1.0), ("r2", 0.49)),
+                    (("mae", 1.0), ("rmse", 1.0), ("r2", 0.5)),
+                    (("mae", 0.0), ("rmse", 0.0), ("r2", 0.01)),
                     "r2",
                 ),
                 id="r2-worsens-downwards",
@@ -169,21 +194,33 @@ class TestMetricRegression:
         ]
     )
     def regression(self, request):
-        return request.param
+        current, baseline, tolerances, metric = request.param
+        return MetricFailureScenario(
+            inputs=MetricScenario(
+                current=dict(current),
+                baseline=dict(baseline),
+                tolerances=dict(tolerances),
+            ),
+            error=AssertionError,
+            metric=Metric(metric),
+        )
 
     def test_metric_regression_uses_worse_direction(self, regression):
-        current, baseline, tolerances, metric = regression
-        with pytest.raises(AssertionError, match=metric):
-            check_metric_regression(current, baseline, tolerances)
+        with pytest.raises(regression.error, match=regression.metric):
+            check_metric_regression(
+                regression.inputs.current,
+                regression.inputs.baseline,
+                regression.inputs.tolerances,
+            )
 
     @pytest.fixture
     def unchanged_metrics(self):
         return {"mae": 1.0, "rmse": 1.0, "r2": 0.5}
 
-    def test_equal_metrics_pass_with_zero_tolerance(self, unchanged_metrics):
-        check_metric_regression(
-            unchanged_metrics, unchanged_metrics, {"mae": 0.0, "rmse": 0.0, "r2": 0.0}
-        )
+    def test_equal_metrics_pass_with_zero_tolerance(
+        self, unchanged_metrics, zero_tolerances
+    ):
+        check_metric_regression(unchanged_metrics, unchanged_metrics, zero_tolerances)
 
 
 class TestMetadataContract:
@@ -212,17 +249,16 @@ class TestMetadataContract:
     def invalid_metadata(self, metadata, request):
         if request.param == "contract":
             metadata["contract_features_used"] = True
-            return metadata, "Contract"
+            return MetadataFailureScenario(payload=metadata, message="Contract")
         if request.param == "split":
             metadata.update(validation_target_season=2025, test_target_season=2024)
-            return metadata, "Validation"
+            return MetadataFailureScenario(payload=metadata, message="Validation")
         if request.param == "incomplete":
             metadata["metrics"]["test"].pop("rmse")
-            return metadata, "rmse"
+            return MetadataFailureScenario(payload=metadata, message="rmse")
         metadata["metrics"]["validation"]["r2"] = float("nan")
-        return metadata, "finite"
+        return MetadataFailureScenario(payload=metadata, message="finite")
 
     def test_metadata_validation_rejects_invalid_boundaries(self, invalid_metadata):
-        metadata, message = invalid_metadata
-        with pytest.raises(ValueError, match=message):
-            validate_metadata(metadata)
+        with pytest.raises(invalid_metadata.error, match=invalid_metadata.message):
+            validate_metadata(invalid_metadata.payload)

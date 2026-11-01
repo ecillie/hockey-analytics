@@ -11,6 +11,7 @@ from app.ScriptingFiles.FullDataScript.team_stints import (
     apply_team_stint_backfill,
     plan_team_stint_backfill,
 )
+from app.ScriptingFiles.FullDataScript.team_stints.repository import TeamStintQuery
 from app.shared.cleanup import complete_cleanup
 from app.shared.cli import CommandOptionError, ExitCode
 from app.config import load_environment
@@ -80,13 +81,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     return ExitCode.SUCCESS
 
 
-def repair_team_stints(options: CommandOptions) -> dict:
+def repair_team_stints(
+    options: CommandOptions, *, query: TeamStintQuery | None = None
+) -> dict:
+    query = (
+        (apply_team_stint_backfill if options.apply else plan_team_stint_backfill)
+        if query is None
+        else query
+    )
     init_db()
     connection = connect_database()
     primary: BaseException | None = None
     try:
         if options.apply:
-            result = apply_team_stint_backfill(
+            result = query(
                 connection,
                 first_season=options.first_season,
                 last_season=options.last_season,
@@ -94,7 +102,7 @@ def repair_team_stints(options: CommandOptions) -> dict:
             connection.commit()
             result["applied"] = True
             return result
-        result = plan_team_stint_backfill(
+        result = query(
             connection,
             first_season=options.first_season,
             last_season=options.last_season,

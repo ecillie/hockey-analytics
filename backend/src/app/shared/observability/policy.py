@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import logging
 
-from app.shared.observability.domain import RecordLimits
+from app.shared.observability.domain import LoggingSettings, RecordLimits
 from app.shared.observability.errors import RecordLimitsError
 from app.shared.observability.schemas import read_lifecycle_report
 from app.shared.observability.util import read_request_failure
@@ -27,6 +27,14 @@ def find_record_limits_violation(limits: RecordLimits) -> RecordLimitsError | No
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
+class EnvironmentLoggingFilter:
+    settings: LoggingSettings
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return self.settings.enabled
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
 class ReportedRequestFilter:
     logger_name: str = "uvicorn.error"
 
@@ -38,7 +46,7 @@ class ReportedRequestFilter:
             return True
         try:
             record.exc_info[1].__dict__.pop("tradevalue_request", None)
-        except Exception:
+        except BaseException:
             return True
         return False
 

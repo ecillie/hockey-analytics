@@ -24,6 +24,9 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.tests.identities import 
     IdentityRows,
     build_equivalent_identity_rows,
 )
+from app.ScriptingFiles.FullDataScript.source_ingestion.tests.scenarios import (
+    QualityScenario,
+)
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import hash_source_row
 
 
@@ -83,33 +86,34 @@ class TestQualityPolicyPrecedence:
     )
     def scenario(self, request):
         valid, duplicates, minimum, maximum, error = request.param
-        return (
-            DataQualityReport(
+        return QualityScenario(
+            report=DataQualityReport(
                 source="fixture",
                 records_read=valid + duplicates,
                 records_valid=valid,
                 duplicate_records=duplicates,
                 seasons=(),
             ),
-            minimum,
-            maximum,
-            error,
+            minimum_rows=minimum,
+            maximum_duplicate_ratio=maximum,
+            error=error,
         )
 
     def test_count_and_ratio_keep_failure_precedence_and_context(self, scenario):
-        report, minimum, maximum, error = scenario
         violation = find_quality_violation(
-            report, minimum_rows=minimum, maximum_duplicate_ratio=maximum
+            scenario.report,
+            minimum_rows=scenario.minimum_rows,
+            maximum_duplicate_ratio=scenario.maximum_duplicate_ratio,
         )
-        if error is None:
+        if scenario.error is None:
             assert violation is None
             return
         assert violation is not None
-        assert isinstance(violation, error)
-        assert violation.source == report.source
+        assert isinstance(violation, scenario.error)
+        assert violation.source == scenario.report.source
         if isinstance(violation, RowCountViolation):
-            assert violation.actual == report.records_valid
-            assert violation.minimum == minimum
+            assert violation.actual == scenario.report.records_valid
+            assert violation.minimum == scenario.minimum_rows
         if isinstance(violation, DuplicateRatioViolation):
-            assert violation.actual == report.duplicate_ratio
-            assert violation.maximum == maximum
+            assert violation.actual == scenario.report.duplicate_ratio
+            assert violation.maximum == scenario.maximum_duplicate_ratio

@@ -18,6 +18,16 @@ from app.api.domain import (
     TeamRow,
 )
 from fastapi.testclient import TestClient
+from typing import Literal
+
+
+type ServiceMode = Literal["present", "empty", "absent", "null-ceiling"]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ServiceScenario:
+    service: TradeValueService
+    mode: ServiceMode
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

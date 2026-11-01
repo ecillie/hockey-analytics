@@ -1,6 +1,7 @@
 """Atomic MoneyPuck identity and advanced-stat persistence."""
 
 from dataclasses import dataclass
+from app.database import open_database_cursor
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     MoneyPuckSummary,
     Player,
@@ -27,7 +28,10 @@ class PostgresMoneyPuckRepository:
     transaction: TransactionFactory
 
     def persist(self, snapshot: MoneyPuckSnapshot) -> MoneyPuckSummary:
-        with self.transaction() as connection, connection.cursor() as cursor:
+        with (
+            self.transaction() as connection,
+            open_database_cursor(connection) as cursor,
+        ):
             source_id = load_source_ids(cursor)["moneypuck"]
             team_ids = ensure_teams(
                 cursor, (team for row in snapshot.rows for team in row.teams)

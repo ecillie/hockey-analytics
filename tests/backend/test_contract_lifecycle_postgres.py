@@ -5,14 +5,15 @@ from pathlib import Path
 import logging
 
 import pytest
-from app.database import connect_database
+from app.config import AppEnvironment, DatabaseSettings
+from app.database import open_database_cursor
 from app.ScriptingFiles.FullDataScript import capspace
 from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
 from app.shared.observability.domain import InvocationContext
 from app.ScriptingFiles.FullDataScript.contracts.tests.postgres import (
     ContractDatabaseScenario,
     HistoricalFixtureSession,
-    seed_contract_batch,
+    open_contract_scenario,
 )
 from app.ScriptingFiles.FullDataScript.tracking.errors import (
     ConcurrentIngestionError,
@@ -22,6 +23,7 @@ from app.ScriptingFiles.FullDataScript.tracking.errors import (
 from app.ScriptingFiles.FullDataScript.tracking.repository import (
     build_advisory_lock_key,
     open_ingestion_run,
+    PostgresIngestionRun,
 )
 
 
@@ -42,22 +44,18 @@ class TestCommittedContractBatches:
 
     @pytest.fixture
     def scenario(self, disposable_database_url) -> Generator[ContractDatabaseScenario]:
-        connection = connect_database()
-        seed_contract_batch(connection)
         body = (
             Path(__file__)
             .parent.joinpath("fixtures", "ingestion", "capspace_datsyuk.html")
             .read_text()
         )
-        scenario = ContractDatabaseScenario(
-            connection=connection, session=HistoricalFixtureSession(body=body)
+        settings = DatabaseSettings(
+            environment=AppEnvironment.DEV, database_url=disposable_database_url
         )
-        try:
+        with open_contract_scenario(
+            settings, HistoricalFixtureSession(body=body), cleanup_batch_failure=True
+        ) as scenario:
             yield scenario
-        finally:
-            connection.rollback()
-            scenario.remove_batch_failure()
-            connection.close()
 
     @pytest.fixture
     def failing_batch(self, scenario):
@@ -137,7 +135,7 @@ class TestCommittedContractBatches:
         assert summary["records_created"] == 0
         assert scenario.count_rows() == (0, 0, 0)
         assert len(scenario.session.calls) == 101
-        with scenario.connection.cursor() as cursor:
+        with open_database_cursor(scenario.connection) as cursor:
             cursor.execute("SELECT count(*) FROM ingestion_runs")
             assert cursor.fetchone() == (0,)
         batches = [
@@ -158,7 +156,7 @@ class TestCommittedContractBatches:
                 source_code="missing-phase9-source", job_name="phase9-unknown"
             ):
                 raise AssertionError("unknown source entered ingestion")
-        with scenario.connection.cursor() as cursor:
+        with open_database_cursor(scenario.connection) as cursor:
             cursor.execute(
                 "SELECT pg_try_advisory_lock(%s)",
                 (build_advisory_lock_key("phase9-unknown"),),
@@ -179,13 +177,14 @@ class TestCommittedContractBatches:
                 ):
                     raise AssertionError("overlap entered ingestion")
             run.succeed({"records_created": 3})
+        assert isinstance(run, PostgresIngestionRun)
         assert run.connection.closed != 0
         assert run.cursor.closed
         with open_ingestion_run(
             source_code="capspace", job_name="phase9-overlap"
         ) as resumed:
             resumed.succeed({"records_created": 0})
-        with scenario.connection.cursor() as cursor:
+        with open_database_cursor(scenario.connection) as cursor:
             cursor.execute(
                 "SELECT status FROM ingestion_runs WHERE job_name='phase9-overlap' ORDER BY id"
             )
@@ -196,23 +195,22 @@ class TestCommittedContractBatches:
 class TestContractSourceOwnership:
     @pytest.fixture
     def scenario(self, disposable_database_url) -> Generator[ContractDatabaseScenario]:
-        connection = connect_database()
-        seed_contract_batch(connection)
-        with connection.cursor() as cursor:
-            cursor.execute("""INSERT INTO contracts(player_id,source_id,external_id,start_season,end_season,term_years,total_value_cents)
-                SELECT 10101,id,'contract-8100001',2008,2009,7,4690000000 FROM data_sources WHERE code='capspace'""")
-        connection.commit()
         body = (
             Path(__file__)
             .parent.joinpath("fixtures", "ingestion", "capspace_datsyuk.html")
             .read_text()
         )
-        try:
-            yield ContractDatabaseScenario(
-                connection=connection, session=HistoricalFixtureSession(body=body)
-            )
-        finally:
-            connection.close()
+        settings = DatabaseSettings(
+            environment=AppEnvironment.DEV, database_url=disposable_database_url
+        )
+        with open_contract_scenario(
+            settings, HistoricalFixtureSession(body=body)
+        ) as scenario:
+            with open_database_cursor(scenario.connection) as cursor:
+                cursor.execute("""INSERT INTO contracts(player_id,source_id,external_id,start_season,end_season,term_years,total_value_cents)
+                    SELECT 10101,id,'contract-8100001',2008,2009,7,4690000000 FROM data_sources WHERE code='capspace'""")
+            scenario.connection.commit()
+            yield scenario
 
     def test_same_source_id_for_another_player_is_a_conflict(self, scenario):
         result = capspace.ingest_historical_contracts(
@@ -222,25 +220,30 @@ class TestContractSourceOwnership:
         assert result["reconciliation_conflicts"] == 1
         assert result["records_created"] == 0
         assert scenario.count_rows() == (1, 0, 1)
-        with scenario.connection.cursor() as cursor:
+        with open_database_cursor(scenario.connection) as cursor:
             cursor.execute("SELECT player_id FROM contracts")
             assert cursor.fetchone() == (10101,)
 
-    def test_empty_legacy_nhl_id_stays_an_unfetched_missing_identity(self, scenario):
-        with scenario.connection.cursor() as cursor:
+    @pytest.fixture
+    def missing_nhl_id(self, scenario):
+        with open_database_cursor(scenario.connection) as cursor:
             cursor.execute(
                 "UPDATE player_external_ids SET external_id='' WHERE player_id=10001"
             )
         scenario.connection.commit()
+        return scenario
 
+    def test_empty_legacy_nhl_id_stays_an_unfetched_missing_identity(
+        self, missing_nhl_id
+    ):
         result = capspace.ingest_historical_contracts(
-            scenario.session, first_season=2008, last_season=2009, player_id=10001
+            missing_nhl_id.session, first_season=2008, last_season=2009, player_id=10001
         )
 
         assert result["players_without_nhl_ids"] == 1
         assert result["profiles_requested"] == 0
         assert result["records_created"] == 0
-        assert scenario.session.calls == []
-        with scenario.connection.cursor() as cursor:
+        assert missing_nhl_id.session.calls == []
+        with open_database_cursor(missing_nhl_id.connection) as cursor:
             cursor.execute("SELECT external_key,payload->>'status' FROM source_records")
             assert cursor.fetchone() == ("10001", "no_nhl_id")

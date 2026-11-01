@@ -108,7 +108,7 @@ class RequestLoggingMiddleware:
                     reported=scope["state"].get("request_error_reported")
                     == context.request_id,
                 )
-            except Exception:
+            except BaseException:
                 pass
             raise
         finally:

@@ -6,6 +6,7 @@ from sqlalchemy import text
 from app.ScriptingFiles.FullDataScript.contracts.tests.postgres import (
     FixtureSession,
     ContractPreviewScenario,
+    ContractConflictScenario,
     seed_player,
     count_contract_rows,
 )
@@ -140,18 +141,16 @@ class TestDryRunAndConflictAreMutationFree:
     def conflicting_session(self):
         return FixtureSession(body=FIXTURE.read_text(encoding="utf-8"))
 
-    @pytest.mark.integration
-    def test_dry_run_and_conflict_are_mutation_free(
-        self, scenario, database, conflicting_session
-    ):
-        session = scenario.session
-        before = scenario.before
+    @pytest.fixture
+    def conflict(self, scenario, database):
         preview = capspace.run_contract_sync(
-            session, dry_run=True, first_season=2008, last_season=2008, workers=1
+            scenario.session,
+            dry_run=True,
+            first_season=2008,
+            last_season=2008,
+            workers=1,
         )
-        assert preview["records_created"] == 0
-        assert count_contract_rows(database) == before
-
+        after_preview = count_contract_rows(database)
         with database.begin() as connection:
             source_id = connection.execute(
                 text("SELECT id FROM data_sources WHERE code='capwages'")
@@ -162,6 +161,16 @@ class TestDryRunAndConflictAreMutationFree:
                 ),
                 {"s": source_id},
             )
+        return ContractConflictScenario(
+            before=scenario.before, after_preview=after_preview, preview=preview
+        )
+
+    @pytest.mark.integration
+    def test_dry_run_and_conflict_are_mutation_free(
+        self, conflict, database, conflicting_session
+    ):
+        assert conflict.preview["records_created"] == 0
+        assert conflict.after_preview == conflict.before
         result = capspace.run_contract_sync(
             conflicting_session,
             dry_run=False,
