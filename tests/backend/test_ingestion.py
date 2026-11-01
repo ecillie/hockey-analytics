@@ -1,10 +1,5 @@
-from contextlib import contextmanager, nullcontext
-from collections.abc import Generator
-from psycopg2.extensions import connection as PgConnection
-from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import TypedDict
 from app.shared.tests.fakes import StageOutcome
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.responses import (
     SavedJsonSession,
@@ -15,7 +10,6 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.tests.responses import (
     ScheduleSession,
     NhlRosterSession,
 )
-
 import pytest
 import psycopg2
 from psycopg2.errors import lookup
@@ -47,21 +41,16 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.services impor
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.fakes import (
     MemorySourceClient,
 )
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
+from app.ScriptingFiles.FullDataScript.source_ingestion.tests.responses import (
+    FixtureStatsFactory,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.tests.scenarios import (
+    RosterFeedScenario,
+    MoneyPuckFixtureOptions,
+)
 
 FIXTURES = Path(__file__).parent.joinpath("fixtures", "ingestion")
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class RosterFeedScenario:
-    nhl: FixedRosterFeed
-    ahl: FixedRosterFeed
-
-
-class MoneyPuckFixtureOptions(TypedDict):
-    expected_seasons: tuple[int, ...]
-    minimum_rows_per_kind: int
-    maximum_duplicate_ratio: float
 
 
 def test_season_and_ordered_team_helpers():
@@ -75,35 +64,6 @@ def test_season_and_ordered_team_helpers():
     assert source_utils.ordered_team_abbreviations(" TOT, bad value,NYR ") == ("NYR",)
 
 
-def nhl_stat_rows(kind, season, game_type, *, goals=5):
-    if kind == "skater":
-        row = {
-            "playerId": 1001,
-            "skaterFullName": "Fixture Skater",
-            "teamAbbrevs": "AAA,BBB",
-            "positionCode": "C",
-            "gamesPlayed": 10,
-            "goals": goals,
-            "assists": 7,
-            "points": goals + 7,
-            "shots": 40,
-        }
-    else:
-        row = {
-            "playerId": 2001,
-            "goalieFullName": "Fixture Goalie",
-            "teamAbbrevs": "BBB",
-            "gamesPlayed": 8,
-            "wins": 5,
-            "losses": 2,
-            "otLosses": 1,
-            "shotsAgainst": 220,
-            "saves": 207,
-            "goalsAgainst": 13,
-        }
-    return [row, dict(row)]
-
-
 def test_csv_parser_rejects_duplicate_columns_and_extra_values():
     with pytest.raises(
         ingestion.IngestionValidationError, match="duplicate CSV columns"
@@ -115,24 +75,23 @@ def test_csv_parser_rejects_duplicate_columns_and_extra_values():
 
 
 class TestRequiredFieldsAndSeasonTypeValidation:
-    @pytest.fixture
-    def scenario(self, season):
+    cases = [
+        pytest.param(None, id="missing"),
+        pytest.param("", id="empty"),
+        pytest.param("  ", id="whitespace"),
+        pytest.param("twenty", id="non-numeric"),
+        pytest.param("2025.5", id="fractional"),
+        pytest.param("0", id="zero"),
+        pytest.param("Infinity", id="nonfinite"),
+    ]
+
+    @pytest.fixture(params=cases)
+    def scenario(self, request):
+        season = request.param
         row = {"playerId": "1", "season": season, "name": "A Player"}
         return row
 
-    @pytest.mark.parametrize(
-        "season",
-        [
-            pytest.param(None, id="missing"),
-            pytest.param("", id="empty"),
-            pytest.param("  ", id="whitespace"),
-            pytest.param("twenty", id="non-numeric"),
-            pytest.param("2025.5", id="fractional"),
-            pytest.param("0", id="zero"),
-            pytest.param("Infinity", id="nonfinite"),
-        ],
-    )
-    def test_required_fields_and_season_type_validation(self, scenario, season):
+    def test_required_fields_and_season_type_validation(self, scenario):
         row = scenario
         with pytest.raises(ingestion.IngestionValidationError):
             ingestion.validate_and_deduplicate_rows(
@@ -246,32 +205,39 @@ class TestValidationDeduplicatesAtPlayerSeasonStatGrainAndChecksCoverage:
             )
 
 
-def test_value_coercion_contract_money_and_capwages_player_parsing():
-    assert source_utils.parse_number("12.75") == 12.75
-    assert source_utils.parse_number("12", integer=True) == 12
-    assert source_utils.parse_number("NaN") is None
-    assert source_utils.parse_number("bad") is None
-    assert ingestion._money_cents("$1,234.56") == 123456
-    with pytest.raises(MoneyParseError):
-        ingestion._money_cents("bad")
-    assert capwages_birth_date("97-1-13") == "1997-01-13"
-    assert capwages_birth_date("97-99-13") is None
+class TestValueCoercionContractMoneyAndCapwagesPlayerParsing:
+    @pytest.fixture
+    def capwages_row(self):
+        row = ["Fixture Player", None, "AAA", "L"] + [None] * 27
+        row[7] = "CAN"
+        row[30] = "97-1-13"
+        return row
 
-    capwages_row = ["Fixture Player", None, "AAA", "L"] + [None] * 27
-    capwages_row[7] = "CAN"
-    capwages_row[30] = "97-1-13"
-    assert parse_active_players([capwages_row], minimum_rows=1) == (
-        ActivePlayer(
-            name="Fixture Player",
-            slug="fixture-player",
-            team="AAA",
-            position="L",
-            nationality="CAN",
-            birth_date="1997-01-13",
-        ),
-    )
-    with pytest.raises(ingestion.IngestionValidationError, match="minimum is 2"):
-        parse_active_players([capwages_row], minimum_rows=2)
+    def test_value_coercion_contract_money_and_capwages_player_parsing(
+        self, capwages_row
+    ):
+        assert source_utils.parse_number("12.75") == 12.75
+        assert source_utils.parse_number("12", integer=True) == 12
+        assert source_utils.parse_number("NaN") is None
+        assert source_utils.parse_number("bad") is None
+        assert ingestion._money_cents("$1,234.56") == 123456
+        with pytest.raises(MoneyParseError):
+            ingestion._money_cents("bad")
+        assert capwages_birth_date("97-1-13") == "1997-01-13"
+        assert capwages_birth_date("97-99-13") is None
+
+        assert parse_active_players([capwages_row], minimum_rows=1) == (
+            ActivePlayer(
+                name="Fixture Player",
+                slug="fixture-player",
+                team="AAA",
+                position="L",
+                nationality="CAN",
+                birth_date="1997-01-13",
+            ),
+        )
+        with pytest.raises(ingestion.IngestionValidationError, match="minimum is 2"):
+            parse_active_players([capwages_row], minimum_rows=2)
 
 
 def test_cross_field_stat_invariants_reject_inconsistent_rows():
@@ -289,14 +255,27 @@ def test_cross_field_stat_invariants_reject_inconsistent_rows():
         )
 
 
-def test_nhl_api_parser_rejects_schema_drift():
-    session = SavedJsonSession(payload={"data": {"not": "a list"}})
-    with pytest.raises(ingestion.IngestionValidationError, match="data must be a list"):
-        ingestion._nhl_stats_pages(session, "skater", 2025, 2)
+class TestNhlApiParserRejectsSchemaDrift:
+    @pytest.fixture
+    def malformed_page(self):
+        return SavedJsonSession(payload={"data": {"not": "a list"}})
 
-    session = SavedJsonSession(payload={"data": [{"goals": 1}]})
-    with pytest.raises(ingestion.IngestionValidationError, match="missing playerId"):
-        ingestion._nhl_stats_pages(session, "skater", 2025, 2)
+    @pytest.fixture
+    def missing_id_page(self):
+        return SavedJsonSession(payload={"data": [{"goals": 1}]})
+
+    def test_nhl_api_parser_rejects_schema_drift(self, malformed_page, missing_id_page):
+        session = malformed_page
+        with pytest.raises(
+            ingestion.IngestionValidationError, match="data must be a list"
+        ):
+            ingestion._nhl_stats_pages(session, "skater", 2025, 2)
+
+        session = missing_id_page
+        with pytest.raises(
+            ingestion.IngestionValidationError, match="missing playerId"
+        ):
+            ingestion._nhl_stats_pages(session, "skater", 2025, 2)
 
 
 class TestRetainedSnapshots:
@@ -454,48 +433,16 @@ class TestRosterCommandStatuses:
         assert populate_roster_status.main([]) == status
 
 
-@pytest.fixture()
-def migrated_database(monkeypatch, tmp_path, disposable_database_url):
-    engine = create_engine(disposable_database_url)
-    with engine.begin() as connection:
-        if (
-            connection.execute(
-                text("SELECT to_regclass('public.players')")
-            ).scalar_one()
-            is None
-        ):
-            raise pytest.skip.Exception("the test database has not been migrated")
-        connection.execute(
-            text("TRUNCATE teams, players, ingestion_runs RESTART IDENTITY CASCADE")
-        )
-
-    @contextmanager
-    def test_transaction() -> Generator[PgConnection]:
-
-        connection = psycopg2.connect(disposable_database_url)
-        try:
-            yield connection
-            connection.commit()
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            connection.close()
-
-    monkeypatch.setattr(ingestion, "database_transaction", test_transaction)
-    for folder, name, fixture_name in (
-        ("skater advanced", "skaters_2008_to_2024.csv", "moneypuck_skaters.csv"),
-        ("goalie_advanced", "goalies_2008_to_2024.csv", "moneypuck_goalies.csv"),
-    ):
-        destination = tmp_path.joinpath(folder, name)
-        destination.parent.mkdir()
-        destination.write_text(FIXTURES.joinpath(fixture_name).read_text())
-    monkeypatch.setenv("TRADEVALUE_DATA_DIR", str(tmp_path))
-    yield engine
-    engine.dispose()
-
-
 class TestMoneypuckIngestionIsIdempotentDeduplicatedAndUpdatesTypedValues:
+    expected_common = {
+        "players": 2,
+        "skater": 2,
+        "goalie": 2,
+        "records_read": 5,
+        "records_skipped": 1,
+        "reconciliation_policy": "retain_missing",
+    }
+
     @pytest.fixture
     def scenario(self):
         options: MoneyPuckFixtureOptions = {
@@ -505,25 +452,25 @@ class TestMoneypuckIngestionIsIdempotentDeduplicatedAndUpdatesTypedValues:
         }
         return options
 
+    @pytest.fixture
+    def initial_session(self):
+        return MoneyPuckSession(skater_games=12)
+
+    @pytest.fixture
+    def updated_session(self):
+        return MoneyPuckSession(skater_games=15)
+
     @pytest.mark.integration
     def test_moneypuck_ingestion_is_idempotent_deduplicated_and_updates_typed_values(
-        self, scenario, migrated_database
+        self, scenario, migrated_database, initial_session, updated_session
     ):
         options = scenario
-        first = ingestion.ingest_moneypuck(MoneyPuckSession(skater_games=12), **options)
-        second = ingestion.ingest_moneypuck(
-            MoneyPuckSession(skater_games=15), **options
-        )
-        expected_common = {
-            "players": 2,
-            "skater": 2,
-            "goalie": 2,
-            "records_read": 5,
-            "records_skipped": 1,
-            "reconciliation_policy": "retain_missing",
-        }
-        assert {key: first[key] for key in expected_common} == expected_common
-        assert {key: second[key] for key in expected_common} == expected_common
+        first = ingestion.ingest_moneypuck(initial_session, **options)
+        second = ingestion.ingest_moneypuck(updated_session, **options)
+        assert {key: first[key] for key in self.expected_common} == self.expected_common
+        assert {
+            key: second[key] for key in self.expected_common
+        } == self.expected_common
         assert (first["records_created"], first["records_updated"]) == (4, 0)
         assert (second["records_created"], second["records_updated"]) == (0, 4)
 
@@ -556,81 +503,90 @@ class TestMoneypuckIngestionIsIdempotentDeduplicatedAndUpdatesTypedValues:
             assert cap == 9_550_000_000
 
 
-@pytest.mark.integration
-def test_set_based_team_stint_backfill_is_idempotent(
-    migrated_database, disposable_database_url
-):
+class TestSetBasedTeamStintBackfillIsIdempotent:
+    @pytest.fixture
+    def source_session(self):
+        return MoneyPuckSession()
 
-    ingestion.ingest_moneypuck(
-        MoneyPuckSession(),
-        expected_seasons=(2024, 2025),
-        minimum_rows_per_kind=2,
-        maximum_duplicate_ratio=0.5,
-    )
+    @pytest.mark.integration
+    def test_set_based_team_stint_backfill_is_idempotent(
+        self, migrated_database, disposable_database_url, source_session
+    ):
 
-    connection = psycopg2.connect(disposable_database_url)
-    try:
-        assert team_stints.plan_team_stint_backfill(connection) == {
-            "canonical_assignments": 4,
-            "missing_assignments": 4,
-        }
-        assert team_stints.apply_team_stint_backfill(connection) == {
-            "canonical_assignments": 4,
-            "missing_assignments": 4,
-            "inserted_assignments": 4,
-        }
-        connection.commit()
-        assert team_stints.apply_team_stint_backfill(connection) == {
-            "canonical_assignments": 4,
-            "missing_assignments": 0,
-            "inserted_assignments": 0,
-        }
-        connection.commit()
-    finally:
-        connection.close()
-
-    with migrated_database.connect() as connection:
-        rows = connection.execute(
-            text(
-                """SELECT pts.season_start_year, t.abbreviation
-               FROM player_team_stints pts
-               JOIN teams t ON t.id = pts.team_id
-               ORDER BY pts.season_start_year, t.abbreviation"""
-            )
-        ).all()
-        assert rows == [(2024, "AAA"), (2024, "BBB"), (2025, "AAA"), (2025, "BBB")]
-
-
-@pytest.mark.integration
-def test_failed_ingestion_rolls_back_players_teams_and_stats(migrated_database):
-
-    with pytest.raises(lookup("23503")):
         ingestion.ingest_moneypuck(
-            MoneyPuckSession(season=2199),
-            expected_seasons=(2024, 2199),
+            source_session,
+            expected_seasons=(2024, 2025),
             minimum_rows_per_kind=2,
             maximum_duplicate_ratio=0.5,
         )
-    with migrated_database.connect() as connection:
-        assert (
-            connection.execute(text("SELECT count(*) FROM players")).scalar_one() == 0
-        )
-        assert connection.execute(text("SELECT count(*) FROM teams")).scalar_one() == 0
-        assert (
-            connection.execute(
-                text("SELECT count(*) FROM skater_advanced_season_stats")
-            ).scalar_one()
-            == 0
-        )
+
+        connection = psycopg2.connect(disposable_database_url)
+        try:
+            assert team_stints.plan_team_stint_backfill(connection) == {
+                "canonical_assignments": 4,
+                "missing_assignments": 4,
+            }
+            assert team_stints.apply_team_stint_backfill(connection) == {
+                "canonical_assignments": 4,
+                "missing_assignments": 4,
+                "inserted_assignments": 4,
+            }
+            connection.commit()
+            assert team_stints.apply_team_stint_backfill(connection) == {
+                "canonical_assignments": 4,
+                "missing_assignments": 0,
+                "inserted_assignments": 0,
+            }
+            connection.commit()
+        finally:
+            connection.close()
+
+        with migrated_database.connect() as connection:
+            rows = connection.execute(
+                text(
+                    """SELECT pts.season_start_year, t.abbreviation
+                   FROM player_team_stints pts
+                   JOIN teams t ON t.id = pts.team_id
+                   ORDER BY pts.season_start_year, t.abbreviation"""
+                )
+            ).all()
+            assert rows == [(2024, "AAA"), (2024, "BBB"), (2025, "AAA"), (2025, "BBB")]
 
 
-@pytest.mark.integration
-def test_contract_and_salary_cap_ingestion_is_idempotent_and_upserts(migrated_database):
+class TestFailedIngestionRollsBackPlayersTeamsAndStats:
+    @pytest.fixture
+    def source_session(self):
+        return MoneyPuckSession(season=2199)
 
-    first = ingestion.ingest_capwages(CapWagesSession(), minimum_players=1)
-    second = ingestion.ingest_capwages(
-        CapWagesSession(cap_hit="$1,250,000"), minimum_players=1
-    )
+    @pytest.mark.integration
+    def test_failed_ingestion_rolls_back_players_teams_and_stats(
+        self, migrated_database, source_session
+    ):
+
+        with pytest.raises(lookup("23503")):
+            ingestion.ingest_moneypuck(
+                source_session,
+                expected_seasons=(2024, 2199),
+                minimum_rows_per_kind=2,
+                maximum_duplicate_ratio=0.5,
+            )
+        with migrated_database.connect() as connection:
+            assert (
+                connection.execute(text("SELECT count(*) FROM players")).scalar_one()
+                == 0
+            )
+            assert (
+                connection.execute(text("SELECT count(*) FROM teams")).scalar_one() == 0
+            )
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM skater_advanced_season_stats")
+                ).scalar_one()
+                == 0
+            )
+
+
+class TestContractAndSalaryCapIngestionIsIdempotentAndUpserts:
     expected_common = {
         "players": 1,
         "contracts": 1,
@@ -640,79 +596,105 @@ def test_contract_and_salary_cap_ingestion_is_idempotent_and_upserts(migrated_da
         "records_skipped": 0,
         "reconciliation_policy": "retain_missing",
     }
-    assert {key: first[key] for key in expected_common} == expected_common
-    assert {key: second[key] for key in expected_common} == expected_common
-    assert (first["records_created"], first["records_updated"]) == (2, 0)
-    assert (second["records_created"], second["records_updated"]) == (0, 2)
 
-    with migrated_database.connect() as connection:
-        result = connection.execute(
-            text("""
-            SELECT count(*) OVER (), cs.cap_hit_cents, cs.cap_percentage,
-                   c.total_value_cents, c.average_value_cents
-            FROM contracts c JOIN contract_seasons cs ON cs.contract_id = c.id
-        """)
-        ).one()
-        assert result[0] == 1
-        assert result[1] == 125_000_000
-        assert float(result[2]) == pytest.approx(125_000_000 / 9_550_000_000)
-        assert result[3] == 200_000_000
-        assert result[4] == 125_000_000
+    @pytest.fixture
+    def initial_session(self):
+        return CapWagesSession()
 
+    @pytest.fixture
+    def updated_session(self):
+        return CapWagesSession(cap_hit="$1,250,000")
 
-@pytest.mark.integration
-def test_partial_contract_profile_refresh_is_rejected_before_database_writes(
-    migrated_database,
-):
-
-    with pytest.raises(
-        ingestion.IngestionValidationError, match="refusing partial refresh"
+    @pytest.mark.integration
+    def test_contract_and_salary_cap_ingestion_is_idempotent_and_upserts(
+        self, migrated_database, initial_session, updated_session
     ):
-        ingestion.ingest_capwages(
-            CapWagesSession(fail_profile=True),
-            minimum_players=1,
-            minimum_profile_success_ratio=1.0,
-        )
-    with migrated_database.connect() as connection:
-        assert (
-            connection.execute(text("SELECT count(*) FROM contracts")).scalar_one() == 0
-        )
-        run = connection.execute(
-            text("""
-            SELECT status, error_message FROM ingestion_runs
-            WHERE job_name='ingest_capwages' ORDER BY id DESC LIMIT 1
-        """)
-        ).one()
-        assert run[0] == "failed"
-        assert "refusing partial refresh" in run[1]
+
+        first = ingestion.ingest_capwages(initial_session, minimum_players=1)
+        second = ingestion.ingest_capwages(updated_session, minimum_players=1)
+        assert {key: first[key] for key in self.expected_common} == self.expected_common
+        assert {
+            key: second[key] for key in self.expected_common
+        } == self.expected_common
+        assert (first["records_created"], first["records_updated"]) == (2, 0)
+        assert (second["records_created"], second["records_updated"]) == (0, 2)
+
+        with migrated_database.connect() as connection:
+            result = connection.execute(
+                text("""
+                SELECT count(*) OVER (), cs.cap_hit_cents, cs.cap_percentage,
+                       c.total_value_cents, c.average_value_cents
+                FROM contracts c JOIN contract_seasons cs ON cs.contract_id = c.id
+            """)
+            ).one()
+            assert result[0] == 1
+            assert result[1] == 125_000_000
+            assert float(result[2]) == pytest.approx(125_000_000 / 9_550_000_000)
+            assert result[3] == 200_000_000
+            assert result[4] == 125_000_000
 
 
-@pytest.mark.integration
-def test_contract_rejects_noncontiguous_years_and_impossible_cap_hit(migrated_database):
+class TestPartialContractProfileRefreshIsRejectedBeforeDatabaseWrites:
+    @pytest.fixture
+    def failed_session(self):
+        return CapWagesSession(fail_profile=True)
 
-    with pytest.raises(ingestion.IngestionValidationError, match="non-contiguous"):
-        ingestion.ingest_capwages(InvalidContractSession(mode="gap"), minimum_players=1)
-    with pytest.raises(
-        ingestion.IngestionValidationError, match="exceeds the season salary cap"
+    @pytest.mark.integration
+    def test_partial_contract_profile_refresh_is_rejected_before_database_writes(
+        self, migrated_database, failed_session
     ):
-        ingestion.ingest_capwages(InvalidContractSession(mode="cap"), minimum_players=1)
-    with migrated_database.connect() as connection:
-        assert (
-            connection.execute(text("SELECT count(*) FROM contracts")).scalar_one() == 0
-        )
+
+        with pytest.raises(
+            ingestion.IngestionValidationError, match="refusing partial refresh"
+        ):
+            ingestion.ingest_capwages(
+                failed_session,
+                minimum_players=1,
+                minimum_profile_success_ratio=1.0,
+            )
+        with migrated_database.connect() as connection:
+            assert (
+                connection.execute(text("SELECT count(*) FROM contracts")).scalar_one()
+                == 0
+            )
+            run = connection.execute(
+                text("""
+                SELECT status, error_message FROM ingestion_runs
+                WHERE job_name='ingest_capwages' ORDER BY id DESC LIMIT 1
+            """)
+            ).one()
+            assert run[0] == "failed"
+            assert "refusing partial refresh" in run[1]
 
 
-@pytest.mark.integration
-def test_nhl_stats_are_deduplicated_idempotent_and_retain_missing_rows(
-    migrated_database, monkeypatch
-):
+class TestContractRejectsNoncontiguousYearsAndImpossibleCapHit:
+    @pytest.fixture
+    def gap_session(self):
+        return InvalidContractSession(mode="gap")
 
-    first = ingestion.ingest_nhl_stats(
-        first_season=2025, last_season=2025, client_factory=FixtureStatsFactory(goals=5)
-    )
-    second = ingestion.ingest_nhl_stats(
-        first_season=2025, last_season=2025, client_factory=FixtureStatsFactory(goals=8)
-    )
+    @pytest.fixture
+    def cap_session(self):
+        return InvalidContractSession(mode="cap")
+
+    @pytest.mark.integration
+    def test_contract_rejects_noncontiguous_years_and_impossible_cap_hit(
+        self, migrated_database, gap_session, cap_session
+    ):
+
+        with pytest.raises(ingestion.IngestionValidationError, match="non-contiguous"):
+            ingestion.ingest_capwages(gap_session, minimum_players=1)
+        with pytest.raises(
+            ingestion.IngestionValidationError, match="exceeds the season salary cap"
+        ):
+            ingestion.ingest_capwages(cap_session, minimum_players=1)
+        with migrated_database.connect() as connection:
+            assert (
+                connection.execute(text("SELECT count(*) FROM contracts")).scalar_one()
+                == 0
+            )
+
+
+class TestNhlStatsAreDeduplicatedIdempotentAndRetainMissingRows:
     expected_common = {
         "skater": 2,
         "goalie": 2,
@@ -720,107 +702,156 @@ def test_nhl_stats_are_deduplicated_idempotent_and_retain_missing_rows(
         "records_skipped": 4,
         "reconciliation_policy": "retain_missing",
     }
-    assert {key: first[key] for key in expected_common} == expected_common
-    assert {key: second[key] for key in expected_common} == expected_common
-    assert (first["records_created"], first["records_updated"]) == (4, 0)
-    assert (second["records_created"], second["records_updated"]) == (0, 4)
-    with migrated_database.connect() as connection:
-        assert (
-            connection.execute(
-                text("SELECT count(*) FROM skater_season_stats")
-            ).scalar_one()
-            == 2
+
+    @pytest.fixture
+    def initial_factory(self):
+        return FixtureStatsFactory(goals=5)
+
+    @pytest.fixture
+    def updated_factory(self):
+        return FixtureStatsFactory(goals=8)
+
+    @pytest.mark.integration
+    def test_nhl_stats_are_deduplicated_idempotent_and_retain_missing_rows(
+        self, migrated_database, initial_factory, updated_factory
+    ):
+
+        first = ingestion.ingest_nhl_stats(
+            first_season=2025, last_season=2025, client_factory=initial_factory
         )
-        assert (
-            connection.execute(
-                text("SELECT count(*) FROM goalie_season_stats")
-            ).scalar_one()
-            == 2
+        second = ingestion.ingest_nhl_stats(
+            first_season=2025, last_season=2025, client_factory=updated_factory
         )
-        assert (
-            connection.execute(
-                text("""
-            SELECT goals FROM skater_season_stats WHERE game_type=2
-        """)
-            ).scalar_one()
-            == 8
-        )
-        assert (
-            connection.execute(
-                text("""
-            SELECT count(*) FROM skater_season_stats WHERE stat_scope='TOTAL' AND team_id IS NULL
-        """)
-            ).scalar_one()
-            == 2
-        )
-        stint_teams = (
-            connection.execute(
-                text("""
-            SELECT DISTINCT t.abbreviation
-            FROM player_team_stints pts JOIN teams t ON t.id=pts.team_id
-            WHERE pts.season_start_year=2025
-        """)
+        assert {key: first[key] for key in self.expected_common} == self.expected_common
+        assert {
+            key: second[key] for key in self.expected_common
+        } == self.expected_common
+        assert (first["records_created"], first["records_updated"]) == (4, 0)
+        assert (second["records_created"], second["records_updated"]) == (0, 4)
+        with migrated_database.connect() as connection:
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM skater_season_stats")
+                ).scalar_one()
+                == 2
             )
-            .scalars()
-            .all()
-        )
-        assert stint_teams == ["BBB"]
-
-
-@pytest.mark.integration
-def test_nhl_roster_loader_enforces_completeness_and_upserts(migrated_database):
-
-    with pytest.raises(ingestion.IngestionValidationError, match="minimum is 2"):
-        ingestion.ingest_nhl_rosters(
-            NhlRosterSession(), minimum_teams=2, minimum_active_players=1
-        )
-    first = ingestion.ingest_nhl_rosters(
-        NhlRosterSession(), minimum_teams=1, minimum_active_players=1
-    )
-    second = ingestion.ingest_nhl_rosters(
-        NhlRosterSession(), minimum_teams=1, minimum_active_players=1
-    )
-    assert first == second == {"teams": 1, "active_players": 1}
-    with migrated_database.connect() as connection:
-        assert (
-            connection.execute(text("SELECT count(*) FROM players")).scalar_one() == 1
-        )
-        assert (
-            connection.execute(
-                text("SELECT count(*) FROM player_team_stints")
-            ).scalar_one()
-            == 1
-        )
-        statuses = (
-            connection.execute(
-                text("""
-            SELECT status FROM ingestion_runs WHERE job_name='ingest_nhl_rosters' ORDER BY id
-        """)
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM goalie_season_stats")
+                ).scalar_one()
+                == 2
             )
-            .scalars()
-            .all()
+            assert (
+                connection.execute(
+                    text("""
+                SELECT goals FROM skater_season_stats WHERE game_type=2
+            """)
+                ).scalar_one()
+                == 8
+            )
+            assert (
+                connection.execute(
+                    text("""
+                SELECT count(*) FROM skater_season_stats WHERE stat_scope='TOTAL' AND team_id IS NULL
+            """)
+                ).scalar_one()
+                == 2
+            )
+            stint_teams = (
+                connection.execute(
+                    text("""
+                SELECT DISTINCT t.abbreviation
+                FROM player_team_stints pts JOIN teams t ON t.id=pts.team_id
+                WHERE pts.season_start_year=2025
+            """)
+                )
+                .scalars()
+                .all()
+            )
+            assert stint_teams == ["BBB"]
+
+
+class TestNhlRosterLoaderEnforcesCompletenessAndUpserts:
+    @pytest.fixture
+    def incomplete_session(self):
+        return NhlRosterSession()
+
+    @pytest.fixture
+    def initial_session(self):
+        return NhlRosterSession()
+
+    @pytest.fixture
+    def repeated_session(self):
+        return NhlRosterSession()
+
+    @pytest.mark.integration
+    def test_nhl_roster_loader_enforces_completeness_and_upserts(
+        self, migrated_database, incomplete_session, initial_session, repeated_session
+    ):
+
+        with pytest.raises(ingestion.IngestionValidationError, match="minimum is 2"):
+            ingestion.ingest_nhl_rosters(
+                incomplete_session, minimum_teams=2, minimum_active_players=1
+            )
+        first = ingestion.ingest_nhl_rosters(
+            initial_session, minimum_teams=1, minimum_active_players=1
         )
-        assert statuses == ["failed", "succeeded", "succeeded"]
+        second = ingestion.ingest_nhl_rosters(
+            repeated_session, minimum_teams=1, minimum_active_players=1
+        )
+        assert first == second == {"teams": 1, "active_players": 1}
+        with migrated_database.connect() as connection:
+            assert (
+                connection.execute(text("SELECT count(*) FROM players")).scalar_one()
+                == 1
+            )
+            assert (
+                connection.execute(
+                    text("SELECT count(*) FROM player_team_stints")
+                ).scalar_one()
+                == 1
+            )
+            statuses = (
+                connection.execute(
+                    text("""
+                SELECT status FROM ingestion_runs WHERE job_name='ingest_nhl_rosters' ORDER BY id
+            """)
+                )
+                .scalars()
+                .all()
+            )
+            assert statuses == ["failed", "succeeded", "succeeded"]
 
 
-@pytest.mark.integration
-def test_schedule_upsert_retains_games_missing_from_a_later_snapshot(migrated_database):
+class TestScheduleUpsertRetainsGamesMissingFromALaterSnapshot:
+    @pytest.fixture
+    def initial_session(self):
+        return ScheduleSession()
 
-    first = ingestion.ingest_schedule(ScheduleSession(), season=2025, minimum_games=1)
-    second = ingestion.ingest_schedule(
-        ScheduleSession(game_ids=(2025020001,)), season=2025, minimum_games=1
-    )
-    assert first["games"] == 2
-    assert second == {
-        "games": 1,
-        "records_read": 1,
-        "records_created": 0,
-        "records_updated": 1,
-        "records_skipped": 0,
-        "reconciliation_policy": "retain_missing",
-    }
-    with migrated_database.connect() as connection:
-        assert connection.execute(text("SELECT count(*) FROM games")).scalar_one() == 2
+    @pytest.fixture
+    def later_session(self):
+        return ScheduleSession(game_ids=(2025020001,))
+
+    @pytest.mark.integration
+    def test_schedule_upsert_retains_games_missing_from_a_later_snapshot(
+        self, migrated_database, initial_session, later_session
+    ):
+
+        first = ingestion.ingest_schedule(initial_session, season=2025, minimum_games=1)
+        second = ingestion.ingest_schedule(later_session, season=2025, minimum_games=1)
+        assert first["games"] == 2
+        assert second == {
+            "games": 1,
+            "records_read": 1,
+            "records_created": 0,
+            "records_updated": 1,
+            "records_skipped": 0,
+            "reconciliation_policy": "retain_missing",
+        }
+        with migrated_database.connect() as connection:
+            assert (
+                connection.execute(text("SELECT count(*) FROM games")).scalar_one() == 2
+            )
 
 
 class TestCrossSourceIdentityUsesExternalIdAndAvoidsAmbiguousNames:
@@ -833,16 +864,28 @@ class TestCrossSourceIdentityUsesExternalIdAndAvoidsAmbiguousNames:
         }
         return options
 
+    @pytest.fixture
+    def puck_session(self):
+        return MoneyPuckSession()
+
+    @pytest.fixture
+    def nhl_factory(self):
+        return FixtureStatsFactory(goals=5)
+
+    @pytest.fixture
+    def contract_session(self):
+        return CapWagesSession(player_name="Fixture Skater")
+
     @pytest.mark.integration
     def test_cross_source_identity_uses_external_id_and_avoids_ambiguous_names(
-        self, scenario, migrated_database, monkeypatch
+        self, scenario, migrated_database, puck_session, nhl_factory, contract_session
     ):
         options = scenario
-        ingestion.ingest_moneypuck(MoneyPuckSession(), **options)
+        ingestion.ingest_moneypuck(puck_session, **options)
         ingestion.ingest_nhl_stats(
             first_season=2025,
             last_season=2025,
-            client_factory=FixtureStatsFactory(goals=5),
+            client_factory=nhl_factory,
         )
         with migrated_database.begin() as connection:
             assert (
@@ -864,9 +907,7 @@ class TestCrossSourceIdentityUsesExternalIdAndAvoidsAmbiguousNames:
             """)
             )
 
-        ingestion.ingest_capwages(
-            CapWagesSession(player_name="Fixture Skater"), minimum_players=1
-        )
+        ingestion.ingest_capwages(contract_session, minimum_players=1)
         with migrated_database.connect() as connection:
             assert (
                 connection.execute(text("SELECT count(*) FROM players")).scalar_one()
@@ -915,47 +956,55 @@ def test_ingestion_foreign_keys_and_grain_indexes_match_loader_contract(
         assert len(indexes) == 5
 
 
-@pytest.mark.integration
-def test_ingestion_run_tracking_and_concurrent_run_lock(
-    migrated_database, disposable_database_url
-):
+class TestIngestionRunTrackingAndConcurrentRunLock:
+    @pytest.fixture
+    def fixture_stage(self):
+        @ingestion_tracking.tracked_ingestion("nhl", "overlap_fixture")
+        def stage():
+            return {"rows": 1}
 
-    @ingestion_tracking.tracked_ingestion("nhl", "overlap_fixture")
-    def fixture_stage():
-        return {"rows": 1}
+        return stage
 
-    lock_connection = psycopg2.connect(disposable_database_url)
-    try:
-        with lock_connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT pg_advisory_lock(%s)",
-                (ingestion_tracking.advisory_lock_key("overlap_fixture"),),
-            )
-        lock_connection.commit()
+    @pytest.fixture
+    def lock_connection(self, migrated_database, disposable_database_url):
+        connection = psycopg2.connect(disposable_database_url)
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_advisory_lock(%s)",
+                    (ingestion_tracking.advisory_lock_key("overlap_fixture"),),
+                )
+            connection.commit()
+            yield connection
+        finally:
+            connection.close()
+
+    @pytest.mark.integration
+    def test_ingestion_run_tracking_and_concurrent_run_lock(
+        self, migrated_database, fixture_stage, lock_connection
+    ):
         with pytest.raises(
             ingestion_tracking.ConcurrentIngestionError, match="already running"
         ):
             fixture_stage()
-    finally:
         with lock_connection.cursor() as cursor:
             cursor.execute(
                 "SELECT pg_advisory_unlock(%s)",
                 (ingestion_tracking.advisory_lock_key("overlap_fixture"),),
             )
         lock_connection.commit()
-        lock_connection.close()
 
-    assert fixture_stage() == {"rows": 1}
-    with migrated_database.connect() as connection:
-        runs = connection.execute(
-            text("""
-            SELECT status,records_read,records_updated,error_message
-            FROM ingestion_runs WHERE job_name='overlap_fixture' ORDER BY id
-        """)
-        ).all()
-        assert [row[0] for row in runs] == ["cancelled", "succeeded"]
-        assert runs[1][1:3] == (1, 1)
-        assert "already holds" in runs[0][3]
+        assert fixture_stage() == {"rows": 1}
+        with migrated_database.connect() as connection:
+            runs = connection.execute(
+                text("""
+                SELECT status,records_read,records_updated,error_message
+                FROM ingestion_runs WHERE job_name='overlap_fixture' ORDER BY id
+            """)
+            ).all()
+            assert [row[0] for row in runs] == ["cancelled", "succeeded"]
+            assert runs[1][1:3] == (1, 1)
+            assert "already holds" in runs[0][3]
 
 
 @pytest.mark.integration
@@ -1086,30 +1135,6 @@ class TestRosterTransactions:
                 ).scalar_one()
                 == "failed"
             )
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class FixtureStatsClient:
-    goals: int
-    csv_text: str = ""
-
-    def get_json(self, url, *, timeout=30, params=None):
-        kind = "skater" if "/skater/" in url else "goalie"
-        assert params is not None
-        season = int(params["cayenneExp"].split("=", 1)[1][:4])
-        game_type = int(params["cayenneExp"][-1])
-        return {"data": nhl_stat_rows(kind, season, game_type, goals=self.goals)}
-
-    def get_csv(self, url, *, timeout=60):
-        return self.csv_text
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class FixtureStatsFactory:
-    goals: int
-
-    def __call__(self):
-        return nullcontext(FixtureStatsClient(goals=self.goals))
 
 
 @pytest.mark.integration

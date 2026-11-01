@@ -1,8 +1,10 @@
+from app.ScriptingFiles.FullDataScript.contracts.tests.fixtures import (
+    read_contract_fixture,
+)
 import json
 from pathlib import Path
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from unittest.mock import patch
-
 from app.ScriptingFiles.FullDataScript.contracts.tests.fixtures import SavedResponse
 from app.ScriptingFiles.FullDataScript.contracts.tests.transport import (
     CandidateCursor,
@@ -10,7 +12,6 @@ from app.ScriptingFiles.FullDataScript.contracts.tests.transport import (
     ScriptedProfileSession,
     SleepRecorder,
 )
-
 import pytest
 import requests
 from app.ScriptingFiles.FullDataScript import capspace
@@ -27,106 +28,57 @@ from app.ScriptingFiles.FullDataScript.contracts.schemas import documents
 from app.ScriptingFiles.FullDataScript.contracts.tests.fakes import (
     EmptyContractRepository,
 )
+from app.ScriptingFiles.FullDataScript.contracts.tests.transport import (
+    capwages_html,
+    IdentityScenario,
+    RequestScenario,
+    TeamResolutionScenario,
+    MetricsScenario,
+)
 
 FIXTURES = Path(__file__).parent.joinpath("fixtures", "ingestion")
 
 
-def read_contract_fixture(name: str) -> str:
-    return (FIXTURES.joinpath(name)).read_text(encoding="utf-8")
+class TestDatsyukContractFixture:
+    @pytest.fixture
+    def datsyuk_html(self):
+        return read_contract_fixture("capspace_datsyuk.html")
+
+    def test_datsyuk_fixture_parses_identity_money_team_and_clause(self, datsyuk_html):
+        contract = capspace.parse_capspace_page(
+            datsyuk_html, expected_nhl_id="8467514"
+        )[0]
+
+        assert contract.external_id == "datsyuk-2007"
+        assert contract.signed_on is not None
+        assert contract.signed_on.isoformat() == "2007-04-06"
+        assert contract.term_years == 7
+        assert contract.total_value_cents == 4_690_000_000
+        assert contract.signing_team == "Detroit Red Wings"
+        assert contract.seasons[0].season_start_year == 2008
+        assert contract.seasons[0].cap_hit_cents == 670_000_000
+        assert contract.seasons[0].base_salary_cents == 670_000_000
+        assert contract.seasons[0].signing_bonus_cents == 0
+        assert contract.seasons[0].performance_bonus_cents == 0
+        assert contract.seasons[0].clause == "NMC"
 
 
-def capwages_html(nhl_id: int | None, season: int = 2010) -> str:
-    player = {
-        "contracts": [
-            {
-                "id": "capwages-contract",
-                "type": "Standard Contract",
-                "value": "$1,000,000",
-                "term": 1,
-                "signingDate": "2010-07-01",
-                "details": [
-                    {
-                        "season": f"{season}-{str(season + 1)[-2:]}",
-                        "capHit": "$1,000,000",
-                    }
-                ],
-            }
-        ],
-    }
-    if nhl_id is not None:
-        player["nhlId"] = nhl_id
-    payload = {"props": {"pageProps": {"player": player}}}
-    return (
-        '<script id="__NEXT_DATA__" type="application/json">'
-        + json.dumps(payload)
-        + "</script>"
-    )
+class TestEntryLevelContractFixture:
+    @pytest.fixture
+    def elc_html(self):
+        return read_contract_fixture("capspace_elc.html")
 
+    def test_elc_slide_is_explicit_and_does_not_fake_base_salary(self, elc_html):
+        contract = capspace.parse_capspace_page(elc_html)[0]
 
-@pytest.fixture
-def datsyuk_html():
-    return read_contract_fixture("capspace_datsyuk.html")
-
-
-@pytest.fixture
-def elc_html():
-    return read_contract_fixture("capspace_elc.html")
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class IdentityScenario:
-    candidate: capspace.Candidate
-    html: str
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class RequestScenario:
-    candidate: capspace.Candidate
-    session: ScriptedProfileSession
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class TeamResolutionScenario:
-    teams: dict[str, int]
-    stints: dict[int, tuple[int, ...]]
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class MetricsScenario:
-    covered: capspace.Candidate
-    missing_id: capspace.Candidate
-    success: capspace.ProfileResult
-    failure: capspace.ProfileResult
-
-
-def test_datsyuk_fixture_parses_identity_money_team_and_clause(datsyuk_html):
-    contract = capspace.parse_capspace_page(datsyuk_html, expected_nhl_id="8467514")[0]
-
-    assert contract.external_id == "datsyuk-2007"
-    assert contract.signed_on is not None
-    assert contract.signed_on.isoformat() == "2007-04-06"
-    assert contract.term_years == 7
-    assert contract.total_value_cents == 4_690_000_000
-    assert contract.signing_team == "Detroit Red Wings"
-    assert contract.seasons[0].season_start_year == 2008
-    assert contract.seasons[0].cap_hit_cents == 670_000_000
-    assert contract.seasons[0].base_salary_cents == 670_000_000
-    assert contract.seasons[0].signing_bonus_cents == 0
-    assert contract.seasons[0].performance_bonus_cents == 0
-    assert contract.seasons[0].clause == "NMC"
-
-
-def test_elc_slide_is_explicit_and_does_not_fake_base_salary(elc_html):
-    contract = capspace.parse_capspace_page(elc_html)[0]
-
-    assert contract.is_entry_level is True
-    slide = contract.seasons[0]
-    assert slide.is_slide is True
-    assert slide.base_salary_cents is None
-    assert slide.minors_salary_cents == 9_500_000
-    assert slide.cap_hit_cents == 95_000_000
-    assert contract.seasons[1].performance_bonus_cents == 55_000_000
-    assert contract.seasons[1].clause == "M-NTC"
+        assert contract.is_entry_level is True
+        slide = contract.seasons[0]
+        assert slide.is_slide is True
+        assert slide.base_salary_cents is None
+        assert slide.minors_salary_cents == 9_500_000
+        assert slide.cap_hit_cents == 95_000_000
+        assert contract.seasons[1].performance_bonus_cents == 55_000_000
+        assert contract.seasons[1].clause == "M-NTC"
 
 
 @pytest.mark.parametrize(
@@ -465,8 +417,22 @@ class TestLegacyCapwagesIdentityRequiresNameSlugAndNhlStatsOverlap:
 
 
 class TestLegacyCapwagesIdentityRequiresPositiveNhlGames:
-    @pytest.fixture
-    def scenario(self, stats):
+    cases = [
+        pytest.param(
+            [{"season": "2010-11", "league": "AHL", "gp": "65"}], id="minor-league"
+        ),
+        pytest.param(
+            [{"season": "2010-11", "league": "NHL", "gp": "0"}], id="zero-games"
+        ),
+        pytest.param(
+            [{"season": "2010-11", "league": "NHL", "gp": "unknown"}],
+            id="unknown-games",
+        ),
+    ]
+
+    @pytest.fixture(params=cases)
+    def scenario(self, request):
+        stats = request.param
         candidate = capspace.Candidate(
             player_id=7,
             first_name="Cory",
@@ -492,24 +458,7 @@ class TestLegacyCapwagesIdentityRequiresPositiveNhlGames:
         )
         return IdentityScenario(candidate=candidate, html=html)
 
-    @pytest.mark.parametrize(
-        "stats",
-        [
-            pytest.param(
-                [{"season": "2010-11", "league": "AHL", "gp": "65"}], id="minor-league"
-            ),
-            pytest.param(
-                [{"season": "2010-11", "league": "NHL", "gp": "0"}], id="zero-games"
-            ),
-            pytest.param(
-                [{"season": "2010-11", "league": "NHL", "gp": "unknown"}],
-                id="unknown-games",
-            ),
-        ],
-    )
-    def test_legacy_capwages_identity_requires_positive_nhl_games(
-        self, scenario, stats
-    ):
+    def test_legacy_capwages_identity_requires_positive_nhl_games(self, scenario):
         candidate = scenario.candidate
         html = scenario.html
         assert not profile_http.capwages_identity_matches(
@@ -920,13 +869,17 @@ class TestRunReturnsCompleteEmptySummaryWithoutFetching:
         repository = EmptyContractRepository()
         return repository
 
+    @pytest.fixture
+    def options(self):
+        return HistoricalContractOptions()
+
     def test_run_returns_complete_empty_summary_without_fetching(
-        self, scenario, monkeypatch
+        self, scenario, options
     ):
         repository = scenario
         summary = capspace.run_historical_contracts(
             None,
-            options=HistoricalContractOptions(),
+            options=options,
             dry_run=True,
             repository_factory=repository.open_repository,
         )

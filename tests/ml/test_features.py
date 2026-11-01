@@ -1,7 +1,5 @@
 """Feature rates, eligibility, replacement isolation, and cap joins."""
 
-from dataclasses import dataclass
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -15,17 +13,13 @@ from ml.features.replacement_level import (
     print_replacement_diagnostics,
 )
 from ml.configuration import FeatureOptions
-
 from ml.pipelines.build_model_dataset import (
     FORBIDDEN_CONTRACT_COLUMNS,
     build_model_dataset,
 )
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class DatasetScenario:
-    players: pd.DataFrame
-    caps: pd.DataFrame
+from ml.tests.fakes import (
+    DatasetScenario,
+)
 
 
 class TestFeatureRates:

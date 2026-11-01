@@ -1,20 +1,13 @@
 import pytest
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from collections.abc import Generator
-
-from app.api.tests.fakes import MemoryApiRepository
-
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
-
 from app.api.routes import get_service
 from app.main import create_app
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class HttpScenario:
-    client: TestClient
-    repository: MemoryApiRepository
+from app.api.tests.fakes import (
+    HttpScenario,
+)
 
 
 class TestApiContract:

@@ -2,14 +2,13 @@
 
 import json
 from importlib.resources import files
-
 import joblib
 import numpy as np
 import pandas as pd
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import given
+from ml.tests.strategies import identical_metric_inputs
 from pydantic import ValidationError
-
 from ml.artifacts import ArtifactPaths, load_model
 from ml.domain import Metric, Split
 from ml.configuration import FeatureOptions
@@ -249,17 +248,9 @@ class TestMetricFailures:
             check_metric_regression(current, baseline, tolerance)
         assert raised.value.metric == Metric.MAE
 
-    @given(
-        value=st.floats(
-            min_value=-1e6, max_value=1e6, allow_nan=False, allow_infinity=False
-        )
-    )
-    def test_identical_finite_metrics_never_regress(self, value):
-        check_metric_regression(
-            dict.fromkeys(Metric, value),
-            dict.fromkeys(Metric, value),
-            dict.fromkeys(Metric, 0.0),
-        )
+    @given(inputs=identical_metric_inputs())
+    def test_identical_finite_metrics_never_regress(self, inputs):
+        check_metric_regression(*inputs)
 
 
 class TestTrainingFailures:

@@ -6,13 +6,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from threading import Barrier, Lock
 from typing import Self
-
 from app.ScriptingFiles.FullDataScript.contracts.domain import Candidate, ProfileResult
 from app.ScriptingFiles.FullDataScript.contracts.options import (
     HistoricalContractOptions,
 )
 from app.ScriptingFiles.FullDataScript.contracts.repository import ContractRepository
 from app.ScriptingFiles.FullDataScript.contracts.tests.fixtures import SavedResponse
+from app.ScriptingFiles.FullDataScript.contracts.services import ProfileFetcher
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -189,3 +189,10 @@ class ActiveSessionProbe:
         finally:
             with self.lock:
                 self.closed.append(session)
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ProfileOptionScenario:
+    probe: ProfileSessionProbe
+    fetcher: ProfileFetcher
+    candidate: Candidate

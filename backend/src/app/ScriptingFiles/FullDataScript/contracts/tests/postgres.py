@@ -4,9 +4,9 @@ from _thread import LockType
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from threading import Lock
-
 from app.ScriptingFiles.FullDataScript.contracts.tests.fixtures import SavedResponse
 from psycopg2.extensions import connection as PgConnection
+from sqlalchemy import text
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -86,3 +86,70 @@ def seed_contract_batch(connection: PgConnection) -> None:
         cursor.execute("""INSERT INTO skater_season_stats(player_id,season_start_year,team_id,stat_scope,game_type,source_id,games_played)
             SELECT 10000+n,y,900,'TEAM',2,ds.id,1 FROM generate_series(1,101) n CROSS JOIN generate_series(2008,2009) y CROSS JOIN data_sources ds WHERE ds.code='nhl'""")
     connection.commit()
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class FixtureSession:
+    body: str
+    requests: list[str] = field(default_factory=list)
+
+    @property
+    def calls(self) -> int:
+        return len(self.requests)
+
+    def get(self, url, timeout):
+        self.requests.append(url)
+        return SavedResponse(status_code=200, headers={}, text=self.body, url=url)
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ContractPreviewScenario:
+    session: FixtureSession
+    before: tuple[int, int, int]
+
+
+def seed_player(
+    engine, player_id: int, season: int = 2008, *, with_nhl_id: str = "8467514"
+):
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO teams (id,abbreviation,name) VALUES (900,'DET','Detroit Red Wings')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO players (id,first_name,last_name,primary_position) VALUES (:id,'Pavel','Datsyuk','C')"
+            ),
+            {"id": player_id},
+        )
+        source_id = connection.execute(
+            text("SELECT id FROM data_sources WHERE code='nhl'")
+        ).scalar_one()
+        connection.execute(
+            text(
+                "INSERT INTO player_external_ids (player_id,source_id,external_id) VALUES (:p,:s,:e)"
+            ),
+            {"p": player_id, "s": source_id, "e": with_nhl_id},
+        )
+        for target_season in (season, season + 1):
+            connection.execute(
+                text(
+                    """INSERT INTO skater_season_stats
+                           (player_id,season_start_year,team_id,stat_scope,
+                            game_type,source_id,games_played)
+                       VALUES (:p,:y,NULL,'TOTAL',2,:s,50)"""
+                ),
+                {"p": player_id, "y": target_season, "s": source_id},
+            )
+
+
+def counts(engine):
+    with engine.connect() as connection:
+        return tuple(
+            connection.execute(
+                text(
+                    "SELECT (SELECT count(*) FROM contracts),(SELECT count(*) FROM contract_seasons),(SELECT count(*) FROM source_records WHERE entity_type='capspace_player_profile')"
+                )
+            ).one()
+        )

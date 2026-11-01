@@ -1,41 +1,14 @@
 """DB-API transaction ownership against an explicitly disposable database."""
 
-from dataclasses import dataclass
 from uuid import uuid4
-
 import psycopg2
 from psycopg2 import sql
 import pytest
-
 from app.config import AppEnvironment, DatabaseSettings
 from app.database import database_transaction
-
-
-@dataclass(slots=True, kw_only=True, frozen=True)
-class TransactionScenario:
-    settings: DatabaseSettings
-    table: str
-
-    def insert_row(self, connection) -> None:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                sql.SQL("INSERT INTO {} VALUES (1)").format(sql.Identifier(self.table))
-            )
-
-    def count_rows(self) -> int:
-        connection = psycopg2.connect(self.settings.database_url)
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    sql.SQL("SELECT count(*) FROM {}").format(
-                        sql.Identifier(self.table)
-                    )
-                )
-                row = cursor.fetchone()
-                assert row is not None
-                return row[0]
-        finally:
-            connection.close()
+from app.shared.tests.resources import (
+    TransactionScenario,
+)
 
 
 @pytest.mark.integration
