@@ -6,14 +6,14 @@ arguments before opening database or HTTP resources. Importable entrypoints
 expose `build_parser()` and `main(argv=None)`; callers should invoke the underlying
 use case rather than another command's `main()`.
 
-OpenAPI export, the nine ML commands and the seven database operational entrypoints,
-including `backend.database.verify_python_rules`, now use the shared Python logging policy.
+All 20 application commands, including the ingestion and ML entrypoints and
+`backend.database.verify_python_rules`, now use the shared Python logging policy.
 They default to `LOG_LEVEL=INFO` and `LOG_FORMAT=json`; DEBUG adds diagnostics,
 and text format is available for terminals. Invalid logging settings exit 2
 before resource acquisition. Help and argument errors retain their existing
 behavior before logging setup. Each invocation generates an `invocation_id`;
 `command.started`, `command.finished` and translated failures share it. Output
-and exit contracts below remain unchanged. Ingestion command migration and final
+and exit contracts below remain unchanged. Alembic framework logging and final
 phase-3 acceptance are still in progress.
 
 OpenAPI, container readiness, migration history, migration preflight, schema
@@ -23,6 +23,7 @@ repair follow the application dotenv/exported-value precedence. Environment and
 verbosity remain independent. Python configuration changes require a new process.
 ML commands also follow application dotenv/exported-value precedence, except the
 standalone metric gate, which reads explicit process values without dotenv.
+Ingestion commands also retain application dotenv/exported-value precedence.
 The structural checker reports bounded `source_module`, `line` and `stage` fields
 instead of serializing arbitrary source diagnostics. Preflight verification
 failures use `stage=unversioned_schema` or `stage=multiple_revisions`: review the
@@ -38,6 +39,24 @@ model write recorded without claiming the whole bundle succeeded. Library caller
 may inject an immutable invocation context explicitly; existing calls without one
 remain silent and retain their existing results. Metadata formats, model options,
 predictions and requested stdout reports are unchanged.
+
+Ingestion passes immutable invocation/source/stage context to services and
+workers, adding the durable `run_id` after allocation. `ingestion.started` and
+`ingestion.finished` describe each tracked source job. Failed job summaries do
+not emit another exception diagnostic. Cancellation summaries are DEBUG-only.
+Successful summaries report counts from the existing durable `records_read`,
+`records_created` and `records_updated` fields when available, rather than
+guessing write counts from dimensions such as player or team totals.
+
+Historical batches emit `ingestion.batch_committed` after their repository
+transaction exits successfully; `ingestion.batch_previewed` reports zero
+committed writes. A later failed batch preserves and reports earlier committed
+progress. Profile retry decisions and fallback details are DEBUG events; batch
+fallback summaries and deliberately retained last-good snapshots are WARNINGs.
+NHL workers include bounded season, player kind and game type fields without
+player rows or upstream URLs. Roster feed progress and classification remain
+distinct from successful transaction completion. Session cleanup preserves the
+original failure/cancellation and retains secondary failure notes.
 
 | Command after `uv run python` | Options |
 | --- | --- |

@@ -11,6 +11,11 @@ from typing import Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 import requests
+from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
+from app.ScriptingFiles.FullDataScript.tracking.services import (
+    report_ingestion_progress,
+)
+from app.shared.observability.domain import LogLevel
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
     AbsenceReason,
     Candidate,
@@ -155,6 +160,8 @@ def request_capspace_attempt(
     candidate: Candidate,
     attempt: int,
     options: ProfileHttpOptions,
+    *,
+    context: IngestionContext | None = None,
 ) -> ProfileResult | None:
     url = f"{options.capspace_base_url}/person/nhl:{candidate.nhl_id}"
     try:
@@ -171,6 +178,12 @@ def request_capspace_attempt(
                     else str(failure),
                 ),
             )
+        report_ingestion_progress(
+            context,
+            event="ingestion.retry_scheduled",
+            values={"attempt": attempt + 2},
+            level=LogLevel.DEBUG,
+        )
         time.sleep(min(2**attempt, options.maximum_backoff))
         return None
     if response.status_code == 404:
@@ -192,6 +205,12 @@ def request_capspace_attempt(
                 reason=FailureReason.FAILED, detail=f"HTTP {response.status_code}"
             ),
         )
+    report_ingestion_progress(
+        context,
+        event="ingestion.retry_scheduled",
+        values={"attempt": attempt + 2, "status": response.status_code},
+        level=LogLevel.DEBUG,
+    )
     time.sleep(calculate_retry_delay(response, attempt, options))
     return None
 
@@ -202,6 +221,7 @@ def fetch_profile(
     *,
     max_attempts: int | None = None,
     options: ProfileHttpOptions | None = None,
+    context: IngestionContext | None = None,
 ) -> ProfileResult:
     options = ProfileHttpOptions() if options is None else options
     if max_attempts is not None:
@@ -217,7 +237,11 @@ def fetch_profile(
     attempts = (
         result
         for attempt in range(options.max_attempts)
-        if (result := request_capspace_attempt(session, candidate, attempt, options))
+        if (
+            result := request_capspace_attempt(
+                session, candidate, attempt, options, context=context
+            )
+        )
         is not None
     )
     return next(attempts)
@@ -371,12 +395,25 @@ def fetch_profile_with_fallback(
     candidate: Candidate,
     *,
     options: ProfileHttpOptions | None = None,
+    context: IngestionContext | None = None,
 ) -> ProfileResult:
     options = ProfileHttpOptions() if options is None else options
-    primary = fetch_profile(session, candidate, options=options)
+    primary = fetch_profile(session, candidate, options=options, context=context)
     if primary.covers_target or candidate.nhl_id in (None, ""):
         return primary
+    report_ingestion_progress(
+        context,
+        event="ingestion.fallback_started",
+        values={"source": "capwages"},
+        level=LogLevel.DEBUG,
+    )
     fallback = fetch_capwages_profile(session, candidate, options=options)
+    report_ingestion_progress(
+        context,
+        event="ingestion.fallback_finished",
+        values={"source": "capwages", "outcome": fallback.status.value},
+        level=LogLevel.DEBUG,
+    )
     chosen = fallback if fallback.covers_target else primary
     return replace(
         chosen,

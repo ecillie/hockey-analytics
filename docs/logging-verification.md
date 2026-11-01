@@ -418,4 +418,64 @@ retry and commit-aware summaries, Alembic logging, broader invalid-configuration
 and cancellation/cleanup acceptance remain before publication. Frontend and
 combined hosted/release acceptance remain later phases, as does the previously
 outstanding phase-7 semantic audit.
+
+### Phase 3 ingestion-context checkpoint
+
+The three ingestion entrypoints now install shared logging from `main()` after
+argument validation and retain application environment precedence. All 20
+application command entrypoints have migrated; Alembic's framework configuration
+is the remaining separate bootstrap. Fresh-process tests now cover invalid level
+and format values before work across every application command, in addition to
+the existing help/unknown-option and failure tests.
+
+An immutable `IngestionContext` carries invocation, source, stage and optional
+durable run identity. The tracking decorator enriches an explicitly supplied
+keyword context with the allocated run ID and forwards it to services/workers.
+It replaces only an existing value verified as `IngestionContext` through a local
+`dict[str, object]` view of Python's per-call keyword dictionary; it does not add
+parameters or alter a caller-owned context. Its public ParamSpec signature is
+preserved. Unit tests prove caller immutability and boundary-controlled source,
+stage and run fields. Legacy calls without context retain their existing behavior.
+
+| Boundary | Events and ownership |
+| --- | --- |
+| Tracked source job | `ingestion.started` and `ingestion.finished`, with outcome, duration and available durable counters. Failed summaries carry no duplicate traceback. Cancellation summaries are DEBUG-only. |
+| MoneyPuck, NHL rosters/stats and schedule | Aggregate validation events, with DEBUG row/page/worker progress; no source rows, paths or URLs. |
+| Concurrent NHL jobs | Each worker receives the service's immutable run context and reports bounded season, game type and player kind. Tests interleave two services and four workers without identity leakage. |
+| Historical contracts | Batch-start detail is DEBUG; committed events occur after repository context exit. Preview events explicitly report zero committed writes. A later failure reports earlier durable progress from `IngestionBatchError`. |
+| Profile retry and fallback | DEBUG decisions carry attempt/status and source identity without URL, player or exception values. Batch fallback summaries are WARNINGs. Last-good snapshot retention emits a correlated WARNING after the retained snapshot is loaded. |
+| Active contracts and roster status | Aggregate snapshot/feed progress travels with the run context. The owning transaction and tracker still control persistence; classification is separate from commit success. |
+| Ingestion runner cleanup | Shared cleanup preserves the original exception/cancellation if session close also fails; a close failure after otherwise successful work still propagates. |
+
+Completed-record counts come from the existing `records_created` and
+`records_updated` counters, not guessed player/team dimensions. The formatter
+allowlists and bounds the added game-type, player-kind and failure-count fields.
+
+Real PostgreSQL tests show that a second historical batch failure leaves the
+first 100 contracts/200 contract seasons committed and emits exactly one completed
+batch event with 300 committed records. The failed run summary agrees with stored
+run accounting. Resumption allocates a distinct run ID and completes. Preview
+tests emit two zero-write preview events and leave contracts, snapshots and run
+tracking untouched. Retry tests run through a worker thread, preserve responses
+and delays, and exclude synthetic URL/payload secrets in both formats and modes.
+Cancellation, secondary reporting failure and partial-progress tests preserve
+original exception identity without library-owned duplicate error diagnostics.
+
+Final checkpoint on newly provisioned and migrated PostgreSQL database
+`tradevalue_test_logging03_ingestion`: **1,101 tests passed, zero skips**,
+**91.38%** aggregate coverage in **124.14 seconds**; API/calendar remains **100%**.
+Isolated units passed **1,051 tests**, with 50 integration cases deselected, in
+**107.81 seconds**. Ruff lint/format, ty, structural rules, dependency/OpenAPI
+parity, installed package boundaries and the ML gate passed. Diff review found
+no new forbidden constructs or comments. Historical `plan.md` remains untouched.
+
+This is an unpublished checkpoint, not completed phase-3 acceptance. Remaining
+work includes transaction outcome/rollback diagnostics, failures in durable-status
+reporting after completed work, command cancellation and secondary cleanup
+diagnostics, Alembic reconciliation, and final phase/container/CI checks. Alembic
+currently retains its old `fileConfig`; its CLI also has framework-owned error
+rendering outside the environment callback, which must be accounted for rather
+than assuming a handler change alone sanitizes that path. No phase-3 PR or release
+completion is claimed. Frontend, hosted capture and the phase-7 semantic audit
+remain later acceptance work.
 The dedicated checkpoint PostgreSQL container was removed after verification.

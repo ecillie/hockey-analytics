@@ -261,7 +261,19 @@ reused across repeated starts; conflicting settings require a restart. Root
 handlers remain untouched. API startup preserves existing Uvicorn handler objects
 while applying safe formatting and coordinating exception/access records.
 SQL/HTTP dependency diagnostics remain at WARNING or above even in application
-DEBUG mode. Commands adopt the shared policy in logging phase 3.
+DEBUG mode. Application commands now install the same policy from `main()` after
+argument validation. Alembic's framework configuration remains to be reconciled
+before logging phase 3 is complete.
+
+Ingestion commands generate an `invocation_id` before opening resources. A frozen
+context adds source, stage and the durable `run_id`, then travels explicitly into
+services and workers. Normal mode reports run outcomes, validated snapshots,
+committed historical batches and retained snapshots. DEBUG adds worker, page,
+batch, retry and fallback decisions without player identifiers, raw URLs or
+payloads. Preview events report zero committed writes. Exception diagnostics
+belong to the command that translates the failure; run summaries are separate.
+Requested JSON stays on stdout. See [command contracts](../docs/python-commands.md)
+for configuration precedence and unchanged exit behavior.
 
 Responses include a generated `X-Request-ID`, exposed through CORS to allowed
 origins, including error responses. Caller IDs, raw paths, query strings and

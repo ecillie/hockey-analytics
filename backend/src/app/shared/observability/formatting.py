@@ -105,6 +105,7 @@ def sanitize_context(
         "outcome",
         "method",
         "source_module",
+        "player_kind",
     )
     numbers = (
         "run_id",
@@ -122,6 +123,8 @@ def sanitize_context(
         "mae",
         "rmse",
         "r2",
+        "game_type",
+        "failed",
     )
     context: DiagnosticFields = {}
     if "route" in values:
@@ -212,6 +215,9 @@ def render_bounded_diagnostic(
             "exceptions",
             "exceptions_truncated",
             "source_module",
+            "player_kind",
+            "game_type",
+            "failed",
             "line",
             "rows",
             "mae",

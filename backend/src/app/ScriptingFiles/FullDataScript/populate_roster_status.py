@@ -35,6 +35,16 @@ from app.ScriptingFiles.FullDataScript.roster_status.services import (
     RosterStatusService,
 )
 from app.shared.cli import ExitCode
+from app.config import load_environment
+from app.shared.observability.domain import CommandOutcome, read_logging_settings
+from app.shared.observability.errors import LoggingSettingsError
+from app.shared.observability.services import (
+    configure_logging,
+    start_command,
+    finish_command,
+)
+from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
+from app.ScriptingFiles.FullDataScript.tracking.services import build_ingestion_context
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +55,7 @@ def sync_roster_status(
     nhl_service: RosterFeed | None = None,
     ahl_service: RosterFeed | None = None,
     as_of: date | None = None,
+    context: IngestionContext | None = None,
 ) -> dict[str, object]:
     nhl_service = (
         NhlRosterService(http_client=JsonHttpClient())
@@ -62,6 +73,7 @@ def sync_roster_status(
             repository=PostgresRosterRepository(connection=connection),
             nhl_service=nhl_service,
             ahl_service=ahl_service,
+            context=context,
         )
         summary = service.sync(as_of)
         if not summary.nhl_complete or not summary.ahl_complete:
@@ -82,20 +94,31 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    build_parser().parse_args(argv)
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
+    parser = build_parser()
+    parser.parse_args(argv)
+    try:
+        settings = read_logging_settings(load_environment())
+    except LoggingSettingsError as error:
+        parser.error(str(error))
+    configure_logging(settings)
+    context = start_command("roster_status")
     try:
         init_db()
-        summary = sync_roster_status()
+        summary = sync_roster_status(
+            context=build_ingestion_context(
+                context, source="nhl", stage="populate_roster_status"
+            )
+        )
     except Exception as error:
         incomplete = isinstance(error, IncompleteRosterFeedError)
         logger.exception(
             "Roster-status sync refused an incomplete feed; changes were rolled back"
             if incomplete
-            else "Roster-status sync failed; database changes were rolled back"
+            else "Roster-status sync failed; database changes were rolled back",
+            extra=context.fields | {"event": "command.failed"},
+        )
+        finish_command(
+            context, CommandOutcome.INCOMPLETE if incomplete else CommandOutcome.FAILED
         )
         return ExitCode.INCOMPLETE if incomplete else ExitCode.FAILURE
 
@@ -108,8 +131,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         summary["ltir_count"],
         summary["unknown_count"],
         summary["preserved_count"],
+        extra=context.fields
+        | {
+            "event": "ingestion.roster_completed",
+            "committed": summary["statuses_updated"],
+        },
     )
     print(json.dumps(summary, indent=2, sort_keys=True, default=str))
+    finish_command(context, CommandOutcome.COMPLETED)
     return ExitCode.SUCCESS
 
 

@@ -2,6 +2,11 @@
 
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
+from app.ScriptingFiles.FullDataScript.tracking.services import (
+    report_ingestion_progress,
+)
+from app.shared.observability.domain import LogLevel
 
 import requests
 from app.ScriptingFiles.FullDataScript.contracts.active_repository import (
@@ -32,6 +37,7 @@ from app.ScriptingFiles.FullDataScript.contracts.schemas.active import (
 class ActiveContractService:
     session_factory: ActiveSessionFactory
     repository_factory: ActiveRepositoryFactory
+    context: IngestionContext | None = None
 
     def fetch_players(self, options: ActiveContractOptions) -> tuple[ActivePlayer, ...]:
         with self.session_factory() as session:
@@ -73,6 +79,16 @@ class ActiveContractService:
             raise ActiveProfileCoverageError(
                 ratio=ratio, minimum=options.minimum_profile_success_ratio
             )
+        report_ingestion_progress(
+            self.context,
+            event="ingestion.profiles_fetched",
+            values={
+                "fetched": len(players),
+                "validated": len(contracts),
+                "failed": len(failed),
+            },
+            level=LogLevel.DEBUG,
+        )
         return ActiveContractSnapshot(
             profiles=tuple(
                 ActiveContractProfile(
@@ -87,6 +103,11 @@ class ActiveContractService:
         if violation := find_active_option_violation(options):
             raise violation
         snapshot = self.fetch_snapshot(options)
+        report_ingestion_progress(
+            self.context,
+            event="ingestion.validated",
+            values={"validated": len(snapshot.profiles)},
+        )
         with self.repository_factory() as repository:
             return repository.save_snapshot(snapshot)
 

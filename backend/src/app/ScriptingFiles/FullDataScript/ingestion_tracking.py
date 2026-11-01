@@ -2,7 +2,9 @@
 
 from collections.abc import Callable, Mapping
 from functools import wraps
-from typing import Protocol, runtime_checkable
+from dataclasses import replace
+import asyncio
+from typing import Protocol, cast, runtime_checkable
 
 from app.ScriptingFiles.FullDataScript.tracking.errors import (
     ConcurrentIngestionError as ConcurrentIngestionError,
@@ -10,6 +12,13 @@ from app.ScriptingFiles.FullDataScript.tracking.errors import (
 from app.ScriptingFiles.FullDataScript.tracking.repository import (
     build_advisory_lock_key,
 )
+from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
+from app.ScriptingFiles.FullDataScript.tracking.errors import IngestionBatchError
+from app.ScriptingFiles.FullDataScript.tracking.services import (
+    report_ingestion_progress,
+)
+from app.ScriptingFiles.FullDataScript.tracking.util import collect_ingestion_counts
+from app.shared.observability.domain import LogLevel
 from app.ScriptingFiles.FullDataScript.tracking.repository import (
     open_ingestion_run,
     PostgresIngestionRun,
@@ -34,12 +43,54 @@ def tracked_ingestion[**P, R: Mapping[str, object]](
             with open_ingestion_run(
                 source_code=source_code, job_name=resolved_job_name
             ) as run:
+                supplied = kwargs.get("context")
+                context = None
+                if isinstance(supplied, IngestionContext):
+                    context = replace(
+                        supplied,
+                        run_id=run.run_id,
+                        source=source_code,
+                        stage=resolved_job_name,
+                    )
+                    cast(dict[str, object], kwargs)["context"] = context
+                report_ingestion_progress(context, event="ingestion.started")
                 try:
                     summary = function(*args, **kwargs)
                     run.succeed(summary)
                 except BaseException as primary:
                     report_ingestion_failure(run, primary)
+                    progress = (
+                        collect_ingestion_counts(primary.committed_summary)
+                        if isinstance(primary, IngestionBatchError)
+                        else {}
+                    )
+                    cancelled = isinstance(
+                        primary, (asyncio.CancelledError, KeyboardInterrupt)
+                    )
+                    report_ingestion_progress(
+                        context,
+                        event="ingestion.finished",
+                        level=LogLevel.DEBUG if cancelled else LogLevel.INFO,
+                        values=progress
+                        | {
+                            "outcome": "cancelled" if cancelled else "failed",
+                            "duration_ms": context.duration_ms
+                            if context is not None
+                            else 0,
+                        },
+                    )
                     raise
+                report_ingestion_progress(
+                    context,
+                    event="ingestion.finished",
+                    values=collect_ingestion_counts(summary)
+                    | {
+                        "outcome": "completed",
+                        "duration_ms": context.duration_ms
+                        if context is not None
+                        else 0,
+                    },
+                )
                 return summary
 
         return wrapped

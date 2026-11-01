@@ -171,6 +171,17 @@ class TestOperationalFailureLogging:
                 id="repair",
             ),
             pytest.param(
+                ("app.ScriptingFiles.FullDataScript.run_all", "run_all"), id="ingestion"
+            ),
+            pytest.param(
+                ("app.ScriptingFiles.FullDataScript.populate_roster_status", "init_db"),
+                id="roster",
+            ),
+            pytest.param(
+                ("app.ScriptingFiles.FullDataScript.capspace", "init_db"),
+                id="contracts",
+            ),
+            pytest.param(
                 ("ml.pipelines.load_salary_cap", "load_salary_cap"), id="ml-caps"
             ),
             pytest.param(
@@ -261,3 +272,37 @@ class TestOperationalFailureLogging:
         assert events[1]["exceptions"][0]["type"] == "CommandFailure"
         assert events[-1]["outcome"] == "failed"
         assert events[-1]["duration_ms"] >= 0
+
+    @pytest.fixture(
+        params=[
+            pytest.param("LOG_LEVEL", id="invalid-level"),
+            pytest.param("LOG_FORMAT", id="invalid-format"),
+        ]
+    )
+    def invalid_completed(self, command, request):
+        environment = {
+            **os.environ,
+            "LOG_LEVEL": "INFO",
+            "LOG_FORMAT": "json",
+            "ENV": "",
+            "TRADEVALUE_ENV_FILE": os.devnull,
+            "PYTHONWARNINGS": "ignore:Using `httpx` with `starlette.testclient` is deprecated:UserWarning",
+        }
+        environment[request.param] = "invalid_secret"
+        return subprocess.run(
+            [sys.executable, "-c", self.script, *command],
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        ), request.param
+
+    def test_invalid_settings_fail_before_the_work_boundary(self, invalid_completed):
+        completed, field = invalid_completed
+        assert completed.returncode == 2
+        assert completed.stdout == ""
+        assert field in completed.stderr
+        assert "invalid_secret" not in completed.stderr
+        assert "source unavailable" not in completed.stderr
+        assert "Traceback" not in completed.stderr
