@@ -1,3 +1,5 @@
+"""Replacement-level command and stdout report compatibility boundary."""
+
 import argparse
 import logging
 from collections.abc import Sequence
@@ -15,112 +17,11 @@ from app.shared.observability.services import (
     finish_command,
 )
 
-from ml.errors import ReplacementPercentileError
-from ml.configuration import HIGHER_IS_BETTER, LOWER_IS_BETTER, FeatureOptions
-from ml.features.build_features import build_features
-
-REPLACEMENT_FEATURES = HIGHER_IS_BETTER + LOWER_IS_BETTER
-
-
-def calculate_replacement_level(
-    df: pd.DataFrame | None = None,
-    replacement_percentile: float | None = None,
-    *,
-    options: FeatureOptions | None = None,
-) -> pd.DataFrame:
-
-    selected = options or FeatureOptions()
-    percentile = (
-        selected.replacement_percentile
-        if replacement_percentile is None
-        else replacement_percentile
-    )
-    if not 0 <= percentile <= 1:
-        raise ReplacementPercentileError(value=percentile)
-    result = build_features(df, options=selected)
-
-    valid_games = result["games_played"].where(result["games_played"] > 0)
-
-    result["toi_per_game"] = result["toi_minutes"] / valid_games
-
-    eligible = result[
-        result["eligible_for_training"]
-        & result["position_group"].notna()
-        & result["toi_per_game"].notna()
-    ].copy()
-
-    thresholds = (
-        eligible.groupby(["season", "position_group"])["toi_per_game"]
-        .quantile(percentile)
-        .rename("replacement_toi_per_game_threshold")
-        .reset_index()
-    )
-
-    eligible = eligible.merge(
-        thresholds,
-        on=["season", "position_group"],
-        how="left",
-        validate="many_to_one",
-    )
-
-    replacement_pool = eligible[
-        eligible["toi_per_game"] <= eligible["replacement_toi_per_game_threshold"]
-    ].copy()
-
-    baselines = (
-        replacement_pool.groupby(["season", "position_group"])[
-            list(REPLACEMENT_FEATURES)
-        ]
-        .median()
-        .reset_index()
-    )
-
-    baselines = baselines.rename(
-        columns={feature: f"replacement_{feature}" for feature in REPLACEMENT_FEATURES}
-    )
-
-    result = result.merge(
-        thresholds,
-        on=["season", "position_group"],
-        how="left",
-        validate="many_to_one",
-    )
-
-    result = result.merge(
-        baselines,
-        on=["season", "position_group"],
-        how="left",
-        validate="many_to_one",
-    )
-
-    replacement_keys = set(
-        zip(
-            replacement_pool["player_id"],
-            replacement_pool["season"],
-        )
-    )
-
-    result["is_replacement_pool"] = [
-        (player_id, season) in replacement_keys
-        for player_id, season in zip(
-            result["player_id"],
-            result["season"],
-        )
-    ]
-
-    for feature in HIGHER_IS_BETTER:
-        result[f"{feature}_above_replacement"] = (
-            result[feature] - result[f"replacement_{feature}"]
-        )
-
-    for feature in LOWER_IS_BETTER:
-        result[f"{feature}_above_replacement"] = (
-            result[f"replacement_{feature}"] - result[feature]
-        )
-
-    result = result.reset_index(drop=True)
-    result.attrs["replacement_percentile"] = percentile
-    return result
+from ml.domain import FeatureOptions
+from ml.features.services import (
+    calculate_replacement_level,
+    REPLACEMENT_FEATURES as REPLACEMENT_FEATURES,
+)
 
 
 def print_replacement_diagnostics(

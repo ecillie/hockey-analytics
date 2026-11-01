@@ -1,3 +1,5 @@
+"""Model-dataset command and stdout report compatibility boundary."""
+
 import argparse
 import logging
 from collections.abc import Sequence
@@ -15,91 +17,10 @@ from app.shared.observability.services import (
     finish_command,
 )
 
-from ml.errors import MinimumGamesError, ContractLeakageError, FrameGrainError
-from ml.configuration import FeatureOptions
-from ml.pipelines.load_player_stats import load_player_stats
-from ml.pipelines.load_salary_cap import load_salary_cap
-from ml.schemas import validate_feature_options, validate_frame
-
-FORBIDDEN_CONTRACT_COLUMNS = frozenset(
-    {
-        "contract_id",
-        "contract_type",
-        "average_value_cents",
-        "cap_hit_cents",
-        "cap_percentage",
-        "actual_cap_hit",
-        "aav",
-    }
+from ml.pipelines.services import (
+    build_model_dataset,
+    FORBIDDEN_CONTRACT_COLUMNS as FORBIDDEN_CONTRACT_COLUMNS,
 )
-
-
-def build_model_dataset(
-    min_games: int = 1,
-    *,
-    players: pd.DataFrame | None = None,
-    salary_cap: pd.DataFrame | None = None,
-    options: FeatureOptions | None = None,
-) -> pd.DataFrame:
-
-    selected = options or FeatureOptions()
-    validate_feature_options(selected)
-    if min_games < 1:
-        raise MinimumGamesError(field="min_games", value=min_games)
-    if players is None:
-        players = load_player_stats(min_games=min_games)
-    if salary_cap is None:
-        salary_cap = load_salary_cap()
-    validate_frame(
-        players,
-        required=("player_id", "season", "position", "games_played"),
-        grain=("player_id", "season"),
-    )
-    validate_frame(
-        salary_cap,
-        required=("season", "season_label", "salary_cap_cents", "salary_cap_dollars"),
-        grain=("season",),
-    )
-    players = players.loc[players["games_played"].fillna(0) >= min_games].copy()
-
-    df = players.merge(
-        salary_cap[
-            [
-                "season",
-                "season_label",
-                "salary_cap_cents",
-                "salary_cap_dollars",
-            ]
-        ],
-        how="left",
-        on="season",
-        validate="many_to_one",
-    )
-
-    df["position_group"] = df["position"].map(
-        {
-            "C": "forward",
-            "LW": "forward",
-            "RW": "forward",
-            "F": "forward",
-            "D": "defense",
-        }
-    )
-    df["salary_cap_fraction"] = (
-        df["salary_cap_dollars"] / selected.salary_cap_normalization_dollars
-    )
-
-    duplicate_count = df.duplicated(subset=["player_id", "season"]).sum()
-
-    if duplicate_count:
-        raise FrameGrainError(grain=("player_id", "season"))
-
-    leaked_columns = FORBIDDEN_CONTRACT_COLUMNS.intersection(df.columns)
-
-    if leaked_columns:
-        raise ContractLeakageError(columns=tuple(sorted(leaked_columns)))
-
-    return df.reset_index(drop=True)
 
 
 def print_model_dataset_diagnostics(

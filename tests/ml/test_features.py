@@ -13,6 +13,7 @@ from ml.features.replacement_level import (
     print_replacement_diagnostics,
 )
 from ml.configuration import FeatureOptions
+from ml.features.util import group_player_positions
 from ml.pipelines.build_model_dataset import (
     FORBIDDEN_CONTRACT_COLUMNS,
     build_model_dataset,
@@ -20,6 +21,42 @@ from ml.pipelines.build_model_dataset import (
 from ml.tests.fakes import (
     DatasetScenario,
 )
+
+
+class TestPositionGroups:
+    @pytest.fixture
+    def positions(self):
+        return pd.Series(
+            ["C", "LW", "RW", "F", "D", "G", "X", "c", "", None], index=range(10, 0, -1)
+        )
+
+    @pytest.fixture
+    def expected(self):
+        return pd.Series(
+            [
+                "forward",
+                "forward",
+                "forward",
+                "forward",
+                "defense",
+                np.nan,
+                np.nan,
+                np.nan,
+                np.nan,
+                np.nan,
+            ],
+            index=range(10, 0, -1),
+        )
+
+    @pytest.fixture
+    def original(self, positions):
+        return positions.copy()
+
+    def test_groups_skater_codes_without_changing_row_identity_or_unknowns(
+        self, positions, expected, original
+    ):
+        pd.testing.assert_series_equal(group_player_positions(positions), expected)
+        pd.testing.assert_series_equal(positions, original)
 
 
 class TestFeatureRates:

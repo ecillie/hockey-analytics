@@ -1,11 +1,11 @@
+"""Dataset pipeline command with frozen CLI options."""
+
 import argparse
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-import pandas as pd
-from app.config import get_database_settings, load_environment
-from app.database import open_database_resources
+from app.config import load_environment
 from app.shared.cli import CommandOptionError, ExitCode
 from app.shared.observability.domain import CommandOutcome, read_logging_settings
 from app.shared.observability.errors import LoggingSettingsError
@@ -18,34 +18,9 @@ from app.shared.observability.services import (
 )
 
 from ml.pipelines.build_model_dataset import (
-    build_model_dataset,
     print_model_dataset_diagnostics,
 )
-from ml.pipelines.load_player_stats import load_player_stats
-from ml.pipelines.load_salary_cap import load_salary_cap
-from ml.errors import MinimumGamesError
-
-
-def run_pipeline(
-    min_games: int = 1,
-    *,
-    players: pd.DataFrame | None = None,
-    salary_caps: pd.DataFrame | None = None,
-) -> pd.DataFrame:
-    if min_games < 1:
-        raise MinimumGamesError(field="min_games", value=min_games)
-    if players is None or salary_caps is None:
-        with (
-            open_database_resources(get_database_settings()) as resources,
-            resources.engine.connect() as connection,
-        ):
-            if players is None:
-                players = load_player_stats(min_games=min_games, connection=connection)
-            if salary_caps is None:
-                salary_caps = load_salary_cap(connection=connection)
-    return build_model_dataset(
-        min_games=min_games, players=players, salary_cap=salary_caps
-    )
+from ml.pipelines.services import run_pipeline
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

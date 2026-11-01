@@ -1,10 +1,10 @@
+"""Salary-cap loading command and stdout report boundary."""
+
 import argparse
 import logging
 from collections.abc import Sequence
 
 import pandas as pd
-from app.config import get_database_settings
-from app.database import open_database_resources
 from app.shared.cli import ExitCode
 from app.config import load_environment
 from app.shared.observability.domain import CommandOutcome, read_logging_settings
@@ -16,33 +16,10 @@ from app.shared.observability.services import (
     configure_command_exceptions,
     finish_command,
 )
-from sqlalchemy import Connection, text
-
-SALARY_CAP_QUERY = """
-SELECT
-    start_year AS season,
-    end_year,
-    label AS season_label,
-    salary_cap_cents,
-    salary_cap_cents / 100.0 AS salary_cap_dollars
-
-FROM seasons
-
-WHERE salary_cap_cents IS NOT NULL
-
-ORDER BY start_year;
-"""
-
-
-def load_salary_cap(*, connection: Connection | None = None) -> pd.DataFrame:
-
-    if connection is None:
-        with (
-            open_database_resources(get_database_settings()) as resources,
-            resources.engine.connect() as owned,
-        ):
-            return load_salary_cap(connection=owned)
-    return pd.read_sql(text(SALARY_CAP_QUERY), connection)
+from ml.pipelines.repository import (
+    load_salary_cap,
+    SALARY_CAP_QUERY as SALARY_CAP_QUERY,
+)
 
 
 def print_cap_diagnostics(df: pd.DataFrame) -> None:

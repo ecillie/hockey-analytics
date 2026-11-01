@@ -34,6 +34,23 @@ class DatasetScenario:
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
+class FrameReader:
+    frames: DatasetScenario
+    reads: list[str] = field(default_factory=list)
+
+    def __len__(self) -> int:
+        return len(self.reads)
+
+    def read_players(self, min_games: int) -> pd.DataFrame:
+        self.reads.append("players")
+        return self.frames.players
+
+    def read_salary_caps(self) -> pd.DataFrame:
+        self.reads.append("caps")
+        return self.frames.caps
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
 class TrainedScenario:
     model: Pipeline
     repeated: Pipeline

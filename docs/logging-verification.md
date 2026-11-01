@@ -784,3 +784,65 @@ These passing
 gates do not substitute for that review or the remaining hosted checks. Phase 5
 and release acceptance remain incomplete; the existing release-to-Prod PR stays
 under normal checks and manual approval.
+
+## Phase 5 ML role and ownership checkpoint
+
+Resolved the three recorded ML review findings on the acceptance branch based
+on `e78db6b`: domain.py now owns frozen options, identifiers, feature-order values
+and artifact paths; repository.py adapters own SQL/artifact/metadata persistence;
+services.py owns dataframe/training/evaluation orchestration; util.py owns pure
+calculations and boundary helpers. Existing CLI modules retain parsing, stdout
+reports, main-owned logging and explicit compatibility exports. Published command
+paths, feature lists, model defaults, metadata, reports and artifact names remain
+available. No dependency versions or locks changed.
+
+One MetricValues alias retains the public string-key metric API, with enums
+controlling internal metric traversal. Both dataset paths now use one controlled
+position-group mapping. Unknown/null/case-mismatched codes remain null, generic
+forward codes remain supported, and input/index ownership is tested. A minimal
+runtime-checkable ModelDataReader permits an injected reader without resource
+acquisition; its frozen SQL implementation borrows a connection. The default
+context factory owns one engine/connection for missing inputs. Preloaded inputs
+cause no reads, and a falsy reader is not replaced. Test arrays are constructed
+in fixtures and class column metadata is immutable.
+
+Final verification on 2026-11-01, Python **3.12.14**:
+
+- Locked sync, Ruff lint/format, ty, structural gate, exports, OpenAPI, linear
+  migrations, preflight, fresh migration/schema snapshot/API smoke and committed
+  ML gate passed.
+- Fresh `tradevalue_test_logging05_roles_final`: **1,208 passed, zero skips**,
+  **90.74%** aggregate coverage in **129.67 seconds**; the API/calendar selection
+  remains **100%**. Isolated units passed **1,158**, with 50 integrations
+  deselected, in **110.27 seconds**.
+- Clean API, Vercel-install and ML wheel/sdist checks passed, including installed
+  legacy entrypoints and the committed model gate. Source comparison against
+  pinned pre-refactor `e78db6b` confirms **22 moved function bodies**, **nine CLI
+  main/parser bodies**, original argparse metadata and both SQL literals are
+  unchanged. Dataset connection ownership and shared grouping changes have
+  separate behavioral regressions.
+- Focused ML/CLI/entrypoint checks passed **295 tests** before the final complete
+  run. The initial complete role run passed 1,208/1,158 as well; final runs above
+  supersede it after fixture corrections and restoration of original help
+  metadata. An early module-docstring placement error and missing compatibility
+  exports were corrected before final checks. Review also removed copied CLI
+  definitions from the evaluation service; passing tests alone were insufficient
+  to detect that layout mistake.
+- `git diff --check` and prohibited-form searches passed. No Python comments,
+  dependency/environment changes or frontend edits were added. The backend and
+  frontend trees are unchanged in this checkpoint, so their prior built-image
+  and Chrome evidence still applies; ML's changed artifacts were rebuilt and
+  tested in fresh installations.
+
+Final transcripts use `/private/tmp/tradevalue-logging05-roles-final-` prefixes;
+the complete gate script is `tradevalue-logging05-roles-final-checks.sh` there.
+The pinned source comparison script is
+`/private/tmp/tradevalue-logging05-verify-moves.py`. The strengthened audit ledger
+now includes **237** tracked/new Python sources: 18 empty modules, 20 docstring-only
+packages and 56 other inspected sources. **143** nonempty files remain pending.
+Operational/shared review identified two further required fixes: caught HTTPError
+response ownership in container smoke, and cleanup-note rendering that can mask
+the original failure. Those findings, exact framework dispositions, hosted
+NonProd success/correlation/mode checks and final release acceptance remain open.
+No acceptance PR is opened until the required work is complete. Historical
+untracked `plan.md` is unchanged.

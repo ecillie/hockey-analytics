@@ -1,7 +1,7 @@
 # Python semantic audit checkpoint
 
 This is an incomplete file-by-file review, not phase-7 acceptance. Scope is all
-227 Git-tracked Python files at acceptance checkpoint `80bde1a`. Source
+237 tracked/new Python files in the acceptance worktree based on `e78db6b`. Source
 digests identify exactly what was inspected; changed files require re-review.
 Generated artifacts, environments and retired `.py.txt` loaders are not source
 entries. The structural gate separately checks all supported executable roots.
@@ -9,7 +9,7 @@ entries. The structural gate separately checks all supported executable roots.
 Read `~/.codex/python-guidelines.md` before this review. Mechanical lint, format,
 type, structural, test and package results do not waive semantic decisions.
 18 empty files and 20 module-docstring-only package files have no executable
-behavior to assess. Twenty-nine other files have received the content review
+behavior to assess. 56 other files have received the content review
 recorded below; unresolved layout/boundary decisions are explicit. Every other
 nonempty file remains pending.
 
@@ -25,38 +25,55 @@ errors and cleanup, await/task/I/O lifetime, main-owned lazy diagnostics and CLI
 options, role layout, fixture-driven tests, metadata-only prose and compatibility.
 Record findings and fixes before assigning final acceptance.
 
+## ML findings resolved in this checkpoint
+
+- Canonical frozen configuration and artifact-path values now live in domain.py.
+  Legacy configuration/artifact imports are explicit compatibility boundaries.
+- Feature, dataset, training and evaluation orchestration use services.py; pure
+  helpers use util.py; database/artifact/metadata adapters use repository.py.
+  Established command modules own parsing, stdout reports and main-only logging.
+- One MetricValues alias preserves the public string-key metric API. Metric
+  identifiers still control the internal comparison traversal. One enum-derived
+  mapping owns skater position grouping in both dataset and feature paths.
+- The dataset reader is a minimal runtime-checkable Protocol. A frozen SQL adapter
+  borrows its connection; its context factory owns resources. Missing inputs share
+  one connection, injected readers retain caller ownership, and preloaded frames
+  do not trigger reads. Tests include a falsy reader and input preservation.
+- Test columns are immutable; arrays are created in fixtures instead of shared
+  decorator data. Invalid-frame arrangement now belongs to fixtures.
+- Source comparison confirms 22 moved function bodies, nine CLI main/parser
+  bodies, argparse metadata and both SQL literals retain their prior behavior.
+  Shared grouping and connection ownership changes have dedicated regressions.
+
 ## Findings requiring resolution
 
-- ML command modules still combine CLI, data access, transformations and reports.
-  Complete the role-layout disposition while preserving published module paths,
-  stdout, fixed feature order and model artifacts. The content review does not
-  declare that layout compliant.
-- Metric maps repeat the same raw type across configuration, evaluation and the
-  gate. Assess a shared semantic alias and typed key boundary; the type checker
-  passing does not resolve the repeated-type guideline by itself.
-- The position-to-group mapping is duplicated in model-dataset and feature
-  construction. Establish one shared owner or explain the separate information
-  boundaries before accepting that duplication.
-- Required framework and historical-migration dispositions above remain open;
-  do not rewrite frozen history or introduce a global-state approximation.
+- Harden cleanup annotation so an exception with hostile repr/add_note behavior
+  cannot replace the primary failure or prevent later cleanup attempts.
+- Close the caught HTTPError response in the container smoke HTTP adapter,
+  preserving its status/body contract and primary failure identity.
+
+Required framework and historical-migration dispositions above remain open.
+Do not rewrite frozen history or introduce a global-state approximation.
+The 143 remaining nonempty files still require complete semantic review;
+passing mechanical and behavior gates does not accept them implicitly.
 
 ## File ledger
 
 | Source | SHA-256 prefix | Review disposition |
 | --- | --- | --- |
 | `backend/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
-| `backend/database/backfill_team_stints.py` | `8cd7c439de15` | Pending semantic review. |
-| `backend/database/container_smoke.py` | `fd9ce96e5e2a` | Pending semantic review. |
-| `backend/database/migration_preflight.py` | `4307aec8a137` | Pending semantic review. |
-| `backend/database/migration_smoke.py` | `64354d6e86c8` | Pending semantic review. |
+| `backend/database/backfill_team_stints.py` | `8cd7c439de15` | Reviewed: frozen command options and ordered bounds, main-owned diagnostics, explicit commit/dry-run rollback, BaseException compensation and close preserving primary failure; core backfill logic delegated. |
+| `backend/database/container_smoke.py` | `fd9ce96e5e2a` | Reviewed content: typed timeout/attempt validation, bounded readiness loop, stdout PASS contract and main-only diagnostics. Finding: caught HTTPError response is read without explicit closure; fix required. |
+| `backend/database/migration_preflight.py` | `4307aec8a137` | Reviewed: explicit operational URL resolver, fixed catalog queries, connection context and engine cleanup, report values kept distinct from command exit ownership; no import-time resources. |
+| `backend/database/migration_smoke.py` | `64354d6e86c8` | Reviewed: fixed reference-data contract and shared payload predicates, context-owned database/TestClient lifetimes, original status/body failures preserved, main-owned logging and fixed stdout PASS lines. |
 | `backend/database/migrations/__init__.py` | `efbca4488e57` | Reviewed: module docstring only; no executable behavior. |
 | `backend/database/migrations/domain.py` | `2b175b1007fe` | Reviewed: frozen invocation options separate CLI/programmatic and offline/online ownership. |
 | `backend/database/migrations/services.py` | `8c2d8f85c21a` | Reviewed: immutable progress callback, NullPool and bounded SQL options, connection/transaction contexts and cleanup preserving original failure; main owns logging, programmatic branch raises without error report. Alembic load boundary remains open. |
 | `backend/database/migrations/util.py` | `fdd2ee713f6f` | Reviewed: locally owned controlled dispatch table, typed configuration fields, no exception text copying or import I/O. |
-| `backend/database/schema_snapshot.py` | `614a2d92fa7a` | Pending semantic review. |
-| `backend/database/verify_migrations.py` | `e2c57a5e94bd` | Pending semantic review. |
-| `backend/database/verify_python_rules.py` | `dac613daa2be` | Pending semantic review. |
-| `backend/export_openapi.py` | `ea0f876c2f0c` | Pending semantic review. |
+| `backend/database/schema_snapshot.py` | `614a2d92fa7a` | Reviewed: named catalog type, local fixed query table, context-owned connection and guaranteed engine disposal, deterministic snapshot rendering, frozen command options and explicit output/update ownership. |
+| `backend/database/verify_migrations.py` | `e2c57a5e94bd` | Reviewed: report collection over native Alembic history, explicit path conversion, frozen command options, main-owned diagnostics/status and no import-time history reads. Compatibility alias retained. |
+| `backend/database/verify_python_rules.py` | `dac613daa2be` | Reviewed: immutable rule IDs/findings, typed scope failure, pure AST classification, explicit root traversal without imports, fail-closed scope, main-owned lazy diagnostics and deterministic exits. Manual scope limits remain documented. |
+| `backend/export_openapi.py` | `ea0f876c2f0c` | Reviewed: schema-only construction with no database/dotenv, deterministic serialization, frozen options and explicit check/write paths; main owns diagnostics. Private schema helper naming remains a small manual naming decision. |
 | `backend/index.py` | `6a1e64c5ed23` | Reviewed content: required ASGI export calls runtime factory at module load; mutable application and dotenv/factory import work need exact owner disposition. |
 | `backend/migrations/env.py` | `68e8ae9c844a` | Reviewed content: thin Alembic-executed main adapter; success returns to framework, failures exit. Load-time bootstrap disposition remains open. |
 | `backend/migrations/versions/20260910_0001_initial_schema.py` | `7e09b5e51a37` | Reviewed content: frozen checksum/schema and revision metadata; external reads/SQL only during revision execution. Historical generic guard error, else branch and cleanup contract require frozen-migration disposition; do not rewrite history silently. |
@@ -157,11 +174,11 @@ Record findings and fixes before assigning final acceptance.
 | `backend/src/app/database.py` | `bf1fa2396edb` | Pending semantic review. |
 | `backend/src/app/main.py` | `5aa95f0094bf` | Reviewed content: native FastAPI extension owns middleware/schema, settings captured at factory, resources owned by lifespan, bounded threaded disposal preserves primary failure. Framework inheritance and approved logging hook are explicit; export/import boundary remains open. |
 | `backend/src/app/shared/__init__.py` | `e27164e808fc` | Reviewed: module docstring only; no executable behavior. |
-| `backend/src/app/shared/calendar.py` | `91d7d52a9526` | Pending semantic review. |
-| `backend/src/app/shared/cleanup.py` | `45b3252d6b24` | Pending semantic review. |
-| `backend/src/app/shared/cli.py` | `321790265705` | Pending semantic review. |
+| `backend/src/app/shared/calendar.py` | `91d7d52a9526` | Reviewed: pure date-derived July-1 boundary and compatibility function alias; no state or I/O. |
+| `backend/src/app/shared/cleanup.py` | `45b3252d6b24` | Reviewed content: attempts all cleanup operations and retains primary cause/secondary data. Finding: unguarded cleanup repr/add_note can replace the primary error; harden before acceptance. |
+| `backend/src/app/shared/cli.py` | `321790265705` | Reviewed: published numeric exit contract is explicit IntEnum values, not tunable ordinals; structured keyword argument error stores its fields. No state/I/O. |
 | `backend/src/app/shared/environment.py` | `46b0dac87bab` | Reviewed: explicit operational URL resolver, no dotenv or import I/O, deliberate missing/empty distinction, controlled configuration failures and compatibility function aliases. |
-| `backend/src/app/shared/errors.py` | `5b1c6847813f` | Pending semantic review. |
+| `backend/src/app/shared/errors.py` | `5b1c6847813f` | Reviewed: dedicated missing-schema failure with typed table field and controlled migration guidance; exception constructor only. |
 | `backend/src/app/shared/observability/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
 | `backend/src/app/shared/observability/domain.py` | `4be6daaf0f62` | Pending semantic review. |
 | `backend/src/app/shared/observability/errors.py` | `a88b112c9f87` | Pending semantic review. |
@@ -181,7 +198,7 @@ Record findings and fixes before assigning final acceptance.
 | `backend/src/app/shared/observability/tests/verify_http.py` | `9dbb5357811a` | Pending semantic review. |
 | `backend/src/app/shared/observability/tests/verify_logs.py` | `c4c01b8e8959` | Pending semantic review. |
 | `backend/src/app/shared/observability/util.py` | `a726d48b2cb7` | Pending semantic review. |
-| `backend/src/app/shared/smoke.py` | `6aca1c758286` | Pending semantic review. |
+| `backend/src/app/shared/smoke.py` | `6aca1c758286` | Reviewed: shared explicit payload predicates and typed operational exception fields; raw response/body values are failure data, not emitted diagnostic fields. No transport effects or state. |
 | `backend/src/app/shared/tests/__init__.py` | `bb3c948c925e` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/shared/tests/entrypoints.py` | `7fa794d77107` | Pending semantic review. |
 | `backend/src/app/shared/tests/fakes.py` | `67bf73843c47` | Pending semantic review. |
@@ -189,36 +206,46 @@ Record findings and fixes before assigning final acceptance.
 | `backend/src/app/shared/tests/python_rules.py` | `b1d328f47d4c` | Pending semantic review. |
 | `backend/src/app/shared/tests/resources.py` | `14cd071167cc` | Pending semantic review. |
 | `ml/src/ml/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
-| `ml/src/ml/artifacts.py` | `b642c4a8106f` | Reviewed: frozen paths, synchronous persistence at explicit calls, validation before writes, installed Pipeline identity check; no payload diagnostics. ML role-layout disposition remains open. |
-| `ml/src/ml/configuration.py` | `50cf964f707c` | Reviewed content: frozen options and fresh metric maps; ordered feature tuples preserve published column contracts. ML role-layout disposition remains open. |
-| `ml/src/ml/domain.py` | `6133e37908c0` | Reviewed: immutable StrEnum split/metric identifiers; no I/O or state. |
+| `ml/src/ml/artifacts.py` | `4243f83c055c` | Reviewed: explicit compatibility exports of domain paths and repository functions only; no persistence at import. |
+| `ml/src/ml/configuration.py` | `3686072e3086` | Reviewed: explicit compatibility exports of canonical domain values only; old configuration import paths remain available without duplicate state. |
+| `ml/src/ml/domain.py` | `2b835e60de10` | Reviewed: canonical frozen options/artifact paths, immutable ordered column contracts, enum identifiers and metric-map alias; no mutable import state or I/O. Position identity maps to a controlled group property. |
 | `ml/src/ml/errors.py` | `0f8351414e08` | Reviewed: dedicated typed exceptions; keyword constructors retain fields and construct messages; no resource effects. |
 | `ml/src/ml/evaluation/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
 | `ml/src/ml/evaluation/diagnostics.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
 | `ml/src/ml/evaluation/evaluate_goalie_model.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
-| `ml/src/ml/evaluation/evaluate_skater_model.py` | `bfa9affc880e` | Reviewed content: copied test-season frame, validated predictions, explicit artifact persistence and synchronous computation; no payload logs. Metric maps and mixed service/report/CLI layout remain open. |
-| `ml/src/ml/evaluation/gate.py` | `45169694e280` | Reviewed content: finite whole temporal seasons, copied splits, guarded prediction shape, metadata policy raises at call site, baseline checks, resource-file context and no dotenv import. Repeated metric-map types and mixed role layout remain open. |
+| `ml/src/ml/evaluation/evaluate_skater_model.py` | `9457c022a79c` | Reviewed: CLI/stdout and artifact-path boundary, metric/function aliases preserved; parser/main and argparse module-docstring metadata match the prior command. |
+| `ml/src/ml/evaluation/gate.py` | `ff426acd4b3f` | Reviewed: committed resource selection, fixed acceptance baseline and main-owned diagnostics; helper exports and original help metadata retained, pure helpers/read adapter moved to role files. |
+| `ml/src/ml/evaluation/repository.py` | `55601cb74f33` | Reviewed: explicitly selected metadata file owned by context manager, then validated through the pure metadata boundary; function body unchanged. |
+| `ml/src/ml/evaluation/services.py` | `309e64930055` | Reviewed: copied evaluation frame, validated prediction shape, explicit artifact adapter and aggregate metrics. Three moved function bodies unchanged; no copied CLI/report definitions remain. |
+| `ml/src/ml/evaluation/util.py` | `6203c7428e4d` | Reviewed: pure finite temporal splits, prediction shape/clipping, metadata validation and metric checks; alias retains published string-key API, enum controls metric traversal. Five moved bodies unchanged. |
 | `ml/src/ml/features/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
-| `ml/src/ml/features/build_features.py` | `ff3cd819c223` | Reviewed content: copies caller frame, validates boundaries, preserves vector calculations, main owns diagnostics/exit and stdout report. CLI/service/helper role separation remains open. |
-| `ml/src/ml/features/replacement_level.py` | `bdc973833297` | Reviewed content: owned options, controlled percentile, copied/merged frames, local mutable working sets, no hidden async or log-and-raise. CLI/service/helper role separation remains open. |
+| `ml/src/ml/features/build_features.py` | `eaba815f2fc8` | Reviewed: command/stdout boundary with explicit compatibility exports; parser/main bodies unchanged, logging configured only in main, diagnostics return exits without rethrow. |
+| `ml/src/ml/features/replacement_level.py` | `7ec2635b0da9` | Reviewed: command/stdout boundary, effective-percentile report and legacy exports; parser/main and calculation bodies preserved through service extraction. |
+| `ml/src/ml/features/services.py` | `db912b834ef8` | Reviewed: dataframe-copy ownership, validation before calculation, source fallback through dataset service, guarded rates/eligibility and season-position replacement isolation. No CLI setup or reporting. |
 | `ml/src/ml/features/skater_features.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
+| `ml/src/ml/features/util.py` | `b9a411c6d87b` | Reviewed: pure per-60 arithmetic and one enum-derived position mapping; source-code spelling preserved, unknown/null codes stay null, row index retained and inputs unmodified. |
 | `ml/src/ml/observability/__init__.py` | `32b606a9a35d` | Reviewed: module docstring only; no executable behavior. |
 | `ml/src/ml/observability/services.py` | `287ef3a17706` | Reviewed: no-context calls silent, explicitly passed invocation owns correlation, numeric aggregate mapping and lazy logging, no global mutable context or dataset/path serialization. |
 | `ml/src/ml/paths.py` | `2752fb3a1c88` | Reviewed: explicit call-time path lookup, no import I/O; empty override intentionally selects source/wheel default; compatibility alias is a function. |
 | `ml/src/ml/pipelines/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
-| `ml/src/ml/pipelines/build_model_dataset.py` | `ca30e9808161` | Reviewed content: frozen forbidden-column set, explicit missing-frame acquisition, copy/validated many-to-one merge and leakage guards. Position mapping is repeated with feature construction; shared-policy/layout assessment remains open. |
-| `ml/src/ml/pipelines/load_player_stats.py` | `947c848e1a93` | Reviewed content: immutable SQL, TOTAL-over-TEAM precedence, explicit connection injection and context-owned fallback resources, copy before filtering, main-owned diagnostics/stdout. Store/CLI/helper layout remains open. |
-| `ml/src/ml/pipelines/load_salary_cap.py` | `bbb3ec3d19f0` | Reviewed content: fixed read-only SQL, context-owned fallback connection, copied query result and stdout-only reports; store/CLI/helper layout remains open. |
-| `ml/src/ml/pipelines/run_pipeline.py` | `217d9a56aca4` | Reviewed content: frozen CLI options, parse/validate before resources, one owned connection for missing inputs, no mutation of injected frames, error report returns exit code. Role layout remains open. |
-| `ml/src/ml/policy.py` | `010d9688c34b` | Reviewed: frozen policies read their fields and return violations; callers own raising; metadata decision order retained. |
-| `ml/src/ml/schemas.py` | `09b98a46482c` | Reviewed content: frozen Pydantic metadata, constrained aliases, frame/options boundary validation and finite/grain guards. Boundary-policy and role-layout disposition remains open. |
+| `ml/src/ml/pipelines/build_model_dataset.py` | `415669da04c1` | Reviewed: command/stdout boundary and public dataset/forbidden-column exports; main/parser preserved and transformation/resource ownership moved to service/repository roles. |
+| `ml/src/ml/pipelines/load_player_stats.py` | `f9ff392f13c3` | Reviewed: command/stdout boundary and public loader/query re-exports; main/parser, loader body and SQL literal preserved. |
+| `ml/src/ml/pipelines/load_salary_cap.py` | `5a9a84f46ec9` | Reviewed: command/stdout boundary and public loader/query re-exports; main/parser, loader body and SQL literal preserved. |
+| `ml/src/ml/pipelines/repository.py` | `168f778693ce` | Reviewed: fixed SQL literals unchanged, explicit borrowed connections, guarded standalone resource scopes, minimal runtime-checkable reader Protocol and frozen SQL adapter; context factory owns engine/connection cleanup. |
+| `ml/src/ml/pipelines/run_pipeline.py` | `bdd0a144e959` | Reviewed: frozen CLI options, validation before resources, public pipeline compatibility and unchanged parser/main; shared reader orchestration resides in services. |
+| `ml/src/ml/pipelines/services.py` | `6824133d52a0` | Reviewed: validate options before acquisition; injected reader distinguished from None, preloaded frames retained, missing inputs share one context-owned reader, pure assembly copies frames and enforces grain/leakage. No raw data diagnostics. |
+| `ml/src/ml/policy.py` | `6c7f532ae6fc` | Reviewed: frozen policies read canonical domain values, return typed violations and retain decision order; no resource effects. |
+| `ml/src/ml/repository.py` | `a8c969308ebc` | Reviewed: explicit model/metadata/CSV persistence, validate before writing, context-owned metadata file reads, sklearn Pipeline guard and aggregate diagnostics. Moved function bodies verified unchanged. |
+| `ml/src/ml/schemas.py` | `e066b47887cd` | Reviewed: frozen Pydantic metadata, constrained aliases and explicit frame/options boundary validation; canonical domain imports replace compatibility-layer dependency. |
 | `ml/src/ml/tests/__init__.py` | `4d67111bded2` | Reviewed: module docstring only; no executable behavior. |
-| `ml/src/ml/tests/fakes.py` | `11f1c32871c8` | Pending semantic review. |
-| `ml/src/ml/tests/fixtures.py` | `5ebabcbb1ac1` | Pending semantic review. |
+| `ml/src/ml/tests/fakes.py` | `7b6b69f8c103` | Reviewed: frozen fixtures hold borrowed resources and frames; call lists are intentionally fixture-owned observation probes, not shared domain values. Falsy reader exercise catches accidental truthiness replacement. |
+| `ml/src/ml/tests/fixtures.py` | `2d449ca1f3d4` | Reviewed: function-scoped scenario generation, local mutable construction and named row alias; no shared dataframe construction or external I/O at import. |
 | `ml/src/ml/tests/strategies.py` | `5f53ce3abcbb` | Pending semantic review. |
 | `ml/src/ml/training/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
+| `ml/src/ml/training/domain.py` | `e46a3b25b6e1` | Reviewed: frozen result separates fitted mutable sklearn resource ownership from immutable metadata; metadata properties return fresh serialized snapshots. No resource effects at construction. |
+| `ml/src/ml/training/services.py` | `b135e78b3535` | Reviewed: copied temporal targets, owned fitted sklearn pipelines, explicit options and artifact adapter, aggregate diagnostics; all five moved calculation bodies verified unchanged. |
 | `ml/src/ml/training/train_goalie_value.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
-| `ml/src/ml/training/train_skater_value.py` | `8296f2b575a5` | Reviewed content: copied temporal target frames, owned fitted sklearn resources, frozen result/metadata, explicit artifact adapter, aggregate diagnostics and main-owned exit. Domain/service/CLI placement and metric-map aliases remain open. |
+| `ml/src/ml/training/train_skater_value.py` | `fc330df0e81e` | Reviewed: CLI artifact-path selection and unchanged parser/main; explicit exports retain training functions, result type, feature constants and train/evaluate aliases. |
 | `ml/src/ml/valuation/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
 | `ml/src/ml/valuation/cap_allocation.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
 | `ml/src/ml/valuation/fair_cap_hit.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
@@ -265,8 +292,8 @@ Record findings and fixes before assigning final acceptance.
 | `tests/conftest.py` | `2084ef23201a` | Pending semantic review. |
 | `tests/ml/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
 | `tests/ml/conftest.py` | `3a7bc20eebd4` | Pending semantic review. |
-| `tests/ml/test_boundaries.py` | `751135e90cc5` | Pending semantic review. |
-| `tests/ml/test_features.py` | `6ab99d4f5ea2` | Pending semantic review. |
+| `tests/ml/test_boundaries.py` | `5d4dfa12759d` | Reviewed: fixtures own settings/resources/arrays and immutable class column metadata; borrowed/preloaded reader tests, snapshot mutation and artifact round trips preserve input ownership. Arrangement removed from invalid-shape acts; normal imports replace inline module discovery. |
+| `tests/ml/test_features.py` | `fcf5144a399d` | Reviewed: fixture-owned scenarios, named percentile regressions, independent position-code contract, input/index preservation and meaningful numerical/grain/leakage assertions. No external resources. |
 | `tests/ml/test_logging.py` | `ac7c5f639499` | Pending semantic review. |
 | `tests/ml/test_metadata.py` | `d29807141a1a` | Pending semantic review. |
 | `tests/ml/test_paths.py` | `f3fb2d5bd22e` | Pending semantic review. |

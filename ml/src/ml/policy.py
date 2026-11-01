@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from ml.configuration import CATEGORICAL_FEATURES, NUMERIC_FEATURES
+from ml.domain import CATEGORICAL_FEATURES, NUMERIC_FEATURES
 from ml.errors import (
     ContractFeaturesError,
     FeatureKind,
