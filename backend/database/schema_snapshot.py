@@ -3,11 +3,23 @@
 import argparse
 import json
 import logging
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.shared.cli import ExitCode
+from app.shared.observability.domain import (
+    CommandOutcome,
+    InvocationContext,
+    read_logging_settings,
+)
+from app.shared.observability.errors import LoggingSettingsError
+from app.shared.observability.services import (
+    configure_logging,
+    start_command,
+    finish_command,
+)
 from app.shared.environment import resolve_database_url
 from app.shared.cleanup import complete_cleanup
 from sqlalchemy import create_engine, text
@@ -111,15 +123,32 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     options = CommandOptions(**vars(parser.parse_args(argv)))
-    logging.basicConfig(level=logging.INFO)
     try:
-        return execute_command(options)
+        settings = read_logging_settings(os.environ)
+    except LoggingSettingsError as error:
+        parser.error(str(error))
+    configure_logging(settings)
+    context = start_command("schema_snapshot")
+    try:
+        result = execute_command(options, context=context)
     except Exception:
-        logger.exception("Command failed")
+        logger.exception(
+            "Command failed", extra=context.fields | {"event": "command.failed"}
+        )
+        finish_command(context, CommandOutcome.FAILED)
         return ExitCode.FAILURE
+    finish_command(
+        context,
+        CommandOutcome.COMPLETED
+        if result == ExitCode.SUCCESS
+        else CommandOutcome.FAILED,
+    )
+    return result
 
 
-def execute_command(options: CommandOptions) -> int:
+def execute_command(
+    options: CommandOptions, *, context: InvocationContext | None = None
+) -> int:
 
     actual = render_schema_catalog(capture_schema_catalog())
     if options.actual is not None:
@@ -130,12 +159,19 @@ def execute_command(options: CommandOptions) -> int:
         print(f"Updated {options.expected}")
         return ExitCode.SUCCESS
     if not options.expected.exists():
-        logger.error("schema snapshot is missing: %s", options.expected)
+        logger.error(
+            "schema snapshot is missing: %s",
+            options.expected,
+            extra=({} if context is None else context.fields)
+            | {"event": "command.verification_failed"},
+        )
         return ExitCode.FAILURE
     expected = options.expected.read_text(encoding="utf-8")
     if actual != expected:
         logger.error(
-            "migrated database does not match schema.snapshot.json; run schema_snapshot.py --update only after reviewing the migration."
+            "migrated database does not match schema.snapshot.json; run schema_snapshot.py --update only after reviewing the migration.",
+            extra=({} if context is None else context.fields)
+            | {"event": "command.verification_failed"},
         )
         return ExitCode.FAILURE
     print("Migrated database matches the committed schema snapshot.")

@@ -104,6 +104,7 @@ def sanitize_context(
         "source",
         "outcome",
         "method",
+        "source_module",
     )
     numbers = (
         "run_id",
@@ -116,6 +117,7 @@ def sanitize_context(
         "attempted",
         "committed",
         "rolled_back",
+        "line",
     )
     context: DiagnosticFields = {}
     if "route" in values:

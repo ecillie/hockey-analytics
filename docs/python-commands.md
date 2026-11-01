@@ -6,6 +6,27 @@ arguments before opening database or HTTP resources. Importable entrypoints
 expose `build_parser()` and `main(argv=None)`; callers should invoke the underlying
 use case rather than another command's `main()`.
 
+OpenAPI export and the seven database operational entrypoints, including
+`backend.database.verify_python_rules`, now use the shared Python logging policy.
+They default to `LOG_LEVEL=INFO` and `LOG_FORMAT=json`; DEBUG adds diagnostics,
+and text format is available for terminals. Invalid logging settings exit 2
+before resource acquisition. Help and argument errors retain their existing
+behavior before logging setup. Each invocation generates an `invocation_id`;
+`command.started`, `command.finished` and translated failures share it. Output
+and exit contracts below remain unchanged. Ingestion and ML command migration
+is still in progress in logging phase 3.
+
+OpenAPI, container readiness, migration history, migration preflight, schema
+snapshot and structural verification read logging settings directly from the
+process environment without loading dotenv. API migration smoke and team-stint
+repair follow the application dotenv/exported-value precedence. Environment and
+verbosity remain independent. Python configuration changes require a new process.
+The structural checker reports bounded `source_module`, `line` and `stage` fields
+instead of serializing arbitrary source diagnostics. Preflight verification
+failures use `stage=unversioned_schema` or `stage=multiple_revisions`: review the
+schema and follow the documented baseline-stamping procedure before migrating
+an unversioned database; resolve conflicting revision records before continuing.
+
 | Command after `uv run python` | Options |
 | --- | --- |
 | `backend/export_openapi.py` | `--check`, `--output PATH` |

@@ -335,4 +335,40 @@ full attempt found the new database's missing schema; it was initialized before
 this successful acceptance run. No phase-3 PR is open yet. Other commands, ingestion
 and worker correlation, commit-aware summaries, ML boundaries, Alembic, cancellation
 and cleanup evidence remain to complete this phase.
+
+### Phase 3 operational-command checkpoint
+
+All seven database operational entrypoints now install the shared policy from
+their `main()` after argument validation. Along with OpenAPI export, they emit
+generated invocation identity, source, monotonic duration, completion outcome
+and a single owned exception diagnostic. Application-aware smoke/repair commands
+retain dotenv precedence; standalone verification commands use explicit process
+values. Existing requested reports, transaction ownership and exit codes remain
+unchanged. Preflight rejection uses controlled `unversioned_schema` or
+`multiple_revisions` stage fields. Structural violations retain bounded source
+module, line and rule fields without exposing absolute paths.
+
+Forty-two fresh-process operational failure cases cover INFO, DEBUG and CRITICAL
+thresholds in both formats. The harness narrowly ignores the known Starlette
+httpx deprecation warning during imports; production warning behavior is unchanged
+and these tests establish logging output, not the absence of pre-configuration
+dependency warnings. Existing dependency warnings remain visible in full-suite
+results. In-process command tests restore namespace state and close their owned
+handler; this fixture now covers structural and snapshot command callers too.
+The `source_module` field avoids Python LogRecord's reserved `module` name.
+
+Final checkpoint verification on disposable migrated PostgreSQL database
+`tradevalue_test_logging03_operations`: **944 tests passed, zero skips**, **91.51%**
+coverage in **57.14 seconds**; API/calendar remains **100%**. Isolated units passed
+**894 tests**, with 50 integration cases deselected, in **46.01 seconds**. The real
+migration lifecycle passed unsafe-schema rejection, offline SQL, repeated upgrade,
+schema parity, API smoke and downgrade/re-upgrade. Ruff lint/format, ty, structural
+rules, dependency/OpenAPI parity, isolated packages and ML gate passed. Diff review's
+only new forbidden-word hit is the assertion that the structural fixture reports
+the `lambda` rule; it is test data, not executable lambda syntax.
+
+This remains an internal phase-3 checkpoint. Ingestion/worker correlation,
+commit-aware source summaries, ML boundaries, Alembic logging reconciliation and
+cancellation/cleanup coverage still precede the phase-3 PR. No phase-3 publication
+or release acceptance is implied by these checks.
 The dedicated checkpoint PostgreSQL container was removed after verification.

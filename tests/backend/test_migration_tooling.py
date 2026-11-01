@@ -1,5 +1,6 @@
 from app.shared.tests.fakes import build_migration_history, build_migration_revision
 from pathlib import Path
+import json
 from collections.abc import Generator
 from app.shared.tests.fakes import (
     CatalogDatabase,
@@ -199,6 +200,7 @@ def test_schema_snapshot_render_is_deterministic():
     )
 
 
+@pytest.mark.usefixtures("isolate_command_logging")
 class TestSchemaSnapshot:
     @pytest.fixture
     def paths(self, tmp_path):
@@ -490,7 +492,10 @@ class TestCompleteMigrationLifecycle:
             "backend/database/migration_preflight.py",
             success=False,
         )
-        assert "has no Alembic revision" in unsafe.stderr
+        unsafe_events = [json.loads(line) for line in unsafe.stderr.splitlines()]
+        assert unsafe_events[1]["event"] == "command.verification_failed"
+        assert unsafe_events[1]["stage"] == "unversioned_schema"
+        assert unsafe_events[-1]["outcome"] == "failed"
         with isolated.begin() as connection:
             connection.execute(text("DROP TABLE players"))
         isolated.dispose()

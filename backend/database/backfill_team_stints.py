@@ -13,6 +13,14 @@ from app.ScriptingFiles.FullDataScript.team_stints import (
 )
 from app.shared.cleanup import complete_cleanup
 from app.shared.cli import CommandOptionError, ExitCode
+from app.config import load_environment
+from app.shared.observability.domain import CommandOutcome, read_logging_settings
+from app.shared.observability.errors import LoggingSettingsError
+from app.shared.observability.services import (
+    configure_logging,
+    start_command,
+    finish_command,
+)
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -50,13 +58,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     options = CommandOptions(**vars(parser.parse_args(argv)))
     if violation := find_option_violation(options):
         parser.error(str(violation))
-    logging.basicConfig(level=logging.INFO)
+    try:
+        settings = read_logging_settings(load_environment())
+    except LoggingSettingsError as error:
+        parser.error(str(error))
+    configure_logging(settings)
+    context = start_command("backfill_team_stints")
     try:
         result = repair_team_stints(options)
     except Exception:
-        logger.exception("Team-stint repair failed; changes were rolled back")
+        logger.exception(
+            "Team-stint repair failed; changes were rolled back",
+            extra=context.fields | {"event": "command.failed"},
+        )
+        finish_command(context, CommandOutcome.FAILED)
         return ExitCode.FAILURE
     print(json.dumps(result, sort_keys=True))
+    finish_command(context, CommandOutcome.COMPLETED)
     return ExitCode.SUCCESS
 
 

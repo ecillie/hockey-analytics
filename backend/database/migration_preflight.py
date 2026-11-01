@@ -2,9 +2,21 @@
 
 import argparse
 import logging
+import os
 from collections.abc import Sequence
 
 from app.shared.cli import ExitCode
+from app.shared.observability.domain import (
+    CommandOutcome,
+    InvocationContext,
+    read_logging_settings,
+)
+from app.shared.observability.errors import LoggingSettingsError
+from app.shared.observability.services import (
+    configure_logging,
+    start_command,
+    finish_command,
+)
 from app.shared.environment import resolve_database_url
 from app.shared.cleanup import complete_cleanup
 from sqlalchemy import create_engine, text
@@ -53,16 +65,32 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    build_parser().parse_args(argv)
-    logging.basicConfig(level=logging.INFO)
+    parser = build_parser()
+    parser.parse_args(argv)
     try:
-        return execute_command()
+        settings = read_logging_settings(os.environ)
+    except LoggingSettingsError as error:
+        parser.error(str(error))
+    configure_logging(settings)
+    context = start_command("migration_preflight")
+    try:
+        result = execute_command(context=context)
     except Exception:
-        logger.exception("Database check failed")
+        logger.exception(
+            "Database check failed", extra=context.fields | {"event": "command.failed"}
+        )
+        finish_command(context, CommandOutcome.FAILED)
         return ExitCode.FAILURE
+    finish_command(
+        context,
+        CommandOutcome.COMPLETED
+        if result == ExitCode.SUCCESS
+        else CommandOutcome.FAILED,
+    )
+    return result
 
 
-def execute_command() -> int:
+def execute_command(*, context: InvocationContext | None = None) -> int:
     engine = create_engine(resolve_database_url(), pool_pre_ping=True)
     primary: BaseException | None = None
     try:
@@ -79,6 +107,13 @@ def execute_command() -> int:
         logger.error(
             "%s. Verify its schema and follow the one-time baseline stamping procedure.",
             error,
+            extra=({} if context is None else context.fields)
+            | {
+                "event": "command.verification_failed",
+                "stage": "multiple_revisions"
+                if len(versions) > 1
+                else "unversioned_schema",
+            },
         )
         return ExitCode.FAILURE
     print(

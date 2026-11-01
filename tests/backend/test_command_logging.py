@@ -130,3 +130,102 @@ class TestInvalidCommandLogging:
         assert "invalid_secret" not in process.stderr
         assert "Traceback" not in process.stderr
         assert not output.exists()
+
+
+class TestOperationalFailureLogging:
+    script = textwrap.dedent("""
+        import importlib
+        import sys
+        from app.shared.tests.fakes import FailingAction
+
+        module_name, action = sys.argv[1:]
+        command = importlib.import_module(module_name)
+        setattr(command, action, FailingAction())
+        raise SystemExit(command.main([]))
+    """)
+
+    @pytest.fixture(
+        params=[
+            pytest.param(
+                ("backend.database.container_smoke", "execute_command"), id="container"
+            ),
+            pytest.param(
+                ("backend.database.schema_snapshot", "execute_command"), id="snapshot"
+            ),
+            pytest.param(
+                ("backend.database.verify_migrations", "execute_command"), id="history"
+            ),
+            pytest.param(
+                ("backend.database.verify_python_rules", "inspect_repository"),
+                id="rules",
+            ),
+            pytest.param(
+                ("backend.database.migration_preflight", "execute_command"),
+                id="preflight",
+            ),
+            pytest.param(
+                ("backend.database.migration_smoke", "execute_command"), id="smoke"
+            ),
+            pytest.param(
+                ("backend.database.backfill_team_stints", "repair_team_stints"),
+                id="repair",
+            ),
+        ]
+    )
+    def command(self, request):
+        return request.param
+
+    @pytest.fixture(
+        params=[pytest.param(format, id=format.value) for format in LogFormat]
+    )
+    def format(self, request):
+        return request.param
+
+    @pytest.fixture(
+        params=[
+            pytest.param(level, id=level.name)
+            for level in (LogLevel.INFO, LogLevel.DEBUG, LogLevel.CRITICAL)
+        ]
+    )
+    def level(self, request):
+        return request.param
+
+    @pytest.fixture
+    def completed(self, command, format, level):
+        return subprocess.run(
+            [sys.executable, "-c", self.script, *command],
+            env={
+                **os.environ,
+                "LOG_LEVEL": level.name,
+                "LOG_FORMAT": format.value,
+                "ENV": "",
+                "TRADEVALUE_ENV_FILE": os.devnull,
+                "PYTHONWARNINGS": "ignore:Using `httpx` with `starlette.testclient` is deprecated:UserWarning",
+            },
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+
+    def test_boundary_owns_one_safe_error_with_stable_exit(self, completed, level):
+        assert completed.returncode == 1
+        assert completed.stdout == ""
+        assert "source unavailable" not in completed.stderr
+        assert "Traceback" not in completed.stderr
+        if level is LogLevel.CRITICAL:
+            assert completed.stderr == ""
+            return
+        events = [
+            json.loads(line.removeprefix("event "))
+            for line in completed.stderr.splitlines()
+        ]
+        assert [item["event"] for item in events] == [
+            "command.started",
+            "command.failed",
+            "command.finished",
+        ]
+        assert len({item["invocation_id"] for item in events}) == 1
+        assert events[1]["exceptions"][0]["type"] == "CommandFailure"
+        assert events[-1]["outcome"] == "failed"
+        assert events[-1]["duration_ms"] >= 0
