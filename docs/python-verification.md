@@ -150,6 +150,20 @@ native Session health/close failures. Focused checks passed **366**; fresh
 ML checks passed. Other recorded test/host-program, role/interface and exact
 framework/historical findings, hosted NonProd and final acceptance remain open.
 
+The command/source scenario checkpoint makes CLI argument, summary and error
+templates immutable or fresh fixture values, with context-owned event streams.
+Named repair, pagination, session, validator and quality scenarios replace
+positional dependencies; retry sessions and external-output options are
+fixture-owned. The contract-conflict fixture records preview counts before SQL
+setup while retaining the original preview/apply assertions. All **180** compared
+test IDs are unchanged, and focused units passed **175**. Fresh
+`tradevalue_test_logging05_command_scenarios` passed **1,439 tests, zero skips**,
+**91.26%** coverage and the **100%** API/calendar gate. Other recorded test/host
+program findings remain open. Isolated units passed **1,389**, with 50 integrations
+deselected; static, package/export, schema/API and ML checks passed. Other
+role/interface and exact framework/historical findings, hosted NonProd
+and final combined acceptance remain open.
+
 The supported runtime is Python 3.12. Install the root uv workspace with
 `uv sync --locked --all-groups`. Runtime, ingestion, ML, and development
 requirements are generated from the same lock. Run these checks at the root:

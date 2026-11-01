@@ -1407,3 +1407,49 @@ all 237 files retain inspection records. Other explicit test/host-program,
 runtime role/interface and exact framework/historical findings remain open,
 along with hosted NonProd mode/correlation and final combined acceptance/release
 promotion. No acceptance PR or production promotion is made by this checkpoint.
+
+## Command and source scenario ownership
+
+CLI argument and class summary templates are immutable descriptions; fixtures
+create fresh dictionaries and exceptions. Named command/mode scenarios carry
+exact arguments, constrained expected mode and context-owned StringIO event
+streams. External-output options and expected failure exits belong to fixtures;
+actual command calls retain their stdout, usage, failure and transaction checks.
+
+Named frozen scenarios replace positional backfill failure, pagination,
+managed-session, native-validator and quality-policy collaborators. The actual
+native adapters/fake clients remain fixture-owned handles. Production retry
+sessions are opened/closed by a narrow fixture. The native contract-conflict
+fixture captures the preview result and before/after counts before inserting the
+conflict input; the original test still asserts preview nonmutation, refusal to
+overwrite and no extra contract-season writes. Repeated contract count shapes
+share one exact tuple alias, and preview results use a read-only typed mapping.
+
+Verification under Python 3.12.14:
+
+- All **180** compared test IDs are unchanged: 175 command/source/operational/
+  identity cases and five native contract cases. Focused units passed **175** in
+  **8.79 seconds**. No new cases duplicate these fixture-only changes.
+- Fresh migrated `tradevalue_test_logging05_command_scenarios`: **1,439 passed,
+  zero skips**, **91.26%** aggregate coverage in **133.09 seconds**, with the
+  **100%** API/calendar gate. Isolated units passed **1,389**, with 50 integrations
+  deselected, in **112.60 seconds**.
+- Locked sync, Ruff lint/format, ty, structural scope, dependency exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke,
+  clean API/Vercel/ML artifact installs/exclusions and committed-model gates pass.
+- Changes are confined to excluded test/support sources and documentation.
+  Installed application code, frontend, public HTTP schema and committed models
+  are unchanged. Existing API probes describe that runtime; the final combined
+  candidate image build remains required. No new image/hosted success is claimed.
+
+Evidence uses `/private/tmp/tradevalue-logging05-command-scenarios-` prefixes:
+`focused-final.txt`, `collection-before.txt`/`collection-final.txt`,
+`before-nodes.txt`/`final-nodes.txt`, `contract-before-nodes.txt`/
+`contract-final-nodes.txt`, `checks.sh`/`checks.txt`, `pytest.txt`, `units.txt` and
+`packages.txt`.
+
+Nine source dispositions were re-reviewed with current digests. All 237 files
+retain inspection records; other explicit test/host-program, runtime
+role/interface and exact framework/historical findings remain open, along with
+hosted NonProd mode/correlation and final combined acceptance/release promotion.
+No acceptance PR or production promotion is made by this checkpoint.

@@ -8,28 +8,31 @@ from app.config import ConfigurationError, get_api_settings, get_database_settin
 from app.shared.environment import resolve_database_url
 from app.shared.smoke import ContainerReadinessError, SmokeResponseError
 from app.shared.tests.fakes import StageOutcome
-from app.shared.tests.resources import ResourceProbe
+from app.shared.tests.resources import ResourceProbe, RepairFailureScenario
 from backend.database import backfill_team_stints, container_smoke, migration_smoke
 
 
 class TestOperationalEnvironment:
     cases = (
-        pytest.param(({}, None), id="missing"),
-        pytest.param(({"DATABASE_URL": "", "TEST_DATABASE_URL": ""}, None), id="empty"),
+        pytest.param(((), None), id="missing"),
         pytest.param(
-            ({"DATABASE_URL": "", "TEST_DATABASE_URL": "test"}, "test"),
+            ((("DATABASE_URL", ""), ("TEST_DATABASE_URL", "")), None), id="empty"
+        ),
+        pytest.param(
+            ((("DATABASE_URL", ""), ("TEST_DATABASE_URL", "test")), "test"),
             id="empty-primary",
         ),
         pytest.param(
-            ({"DATABASE_URL": "primary", "TEST_DATABASE_URL": "test"}, "primary"),
+            ((("DATABASE_URL", "primary"), ("TEST_DATABASE_URL", "test")), "primary"),
             id="primary",
         ),
-        pytest.param(({"DATABASE_URL": " "}, " "), id="preserve-whitespace"),
+        pytest.param(((("DATABASE_URL", " "),), " "), id="preserve-whitespace"),
     )
 
     @pytest.fixture(params=cases)
     def configured(self, request):
-        return request.param
+        values, expected = request.param
+        return dict(values), expected
 
     def test_missing_empty_and_configured_values(self, configured):
         values, expected = configured
@@ -101,27 +104,30 @@ class TestBackfillCleanup:
             StageOutcome(result={}, failure=primary),
         )
         expected = primary if primary is not None else failures[stages[0]]
-        return probe, primary, expected, cause
+        return RepairFailureScenario(
+            probe=probe, primary=primary, expected=expected, cause=cause
+        )
 
-    def test_primary_failure_survives_cleanup(self, scenario):
-        probe, primary, expected, cause = scenario
+    @pytest.fixture
+    def options(self):
+        return backfill_team_stints.CommandOptions(
+            apply=True, first_season=None, last_season=None
+        )
+
+    def test_primary_failure_survives_cleanup(self, scenario, options):
         with pytest.raises(BaseException) as raised:
-            backfill_team_stints.repair_team_stints(
-                backfill_team_stints.CommandOptions(
-                    apply=True, first_season=None, last_season=None
-                )
-            )
-        assert raised.value is expected
-        assert probe.events == (
+            backfill_team_stints.repair_team_stints(options)
+        assert raised.value is scenario.expected
+        assert scenario.probe.events == (
             ["rollback", "close"]
-            if primary is not None
+            if scenario.primary is not None
             else ["commit", "rollback", "close"]
-            if "commit" in probe.failures
+            if "commit" in scenario.probe.failures
             else ["commit", "close"]
         )
-        if primary is not None:
-            assert raised.value.__cause__ is cause
-        secondary = len(probe.failures) - int(primary is None)
+        if scenario.primary is not None:
+            assert raised.value.__cause__ is scenario.cause
+        secondary = len(scenario.probe.failures) - int(scenario.primary is None)
         assert len(getattr(raised.value, "__notes__", [])) == secondary
 
 

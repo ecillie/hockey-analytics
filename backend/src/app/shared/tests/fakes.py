@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from collections.abc import Iterator, Mapping
-from typing import Self
+from typing import Literal, Self
 import httpx
 from io import StringIO
 from pathlib import Path
@@ -222,6 +222,22 @@ class RepairConnection:
 class CommandCase:
     module: ModuleType
     action: str
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class CommandInvocation:
+    module: ModuleType
+    argv: tuple[str, ...]
+
+
+type HistoricalMode = Literal["preview", "apply", "coverage"]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class CommandModeScenario:
+    argv: tuple[str, ...]
+    events: StringIO
+    expected_mode: HistoricalMode
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

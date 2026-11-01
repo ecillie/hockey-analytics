@@ -8,6 +8,15 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.domain import (
     NhlStatsSnapshot,
 )
 from typing import TypedDict
+from pydantic import TypeAdapter
+from app.ScriptingFiles.FullDataScript.source_ingestion.domain import DataQualityReport
+from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
+    IngestionValidationError,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.tests.fakes import (
+    MemorySourceClient,
+    ManagedSession,
+)
 from app.ScriptingFiles.FullDataScript.roster_status.tests.fakes import FixedRosterFeed
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.repository import (
     PostgresMoneyPuckRepository,
@@ -42,6 +51,32 @@ class WorkerStage[S, R, F]:
 class BorrowedTransport[F, S]:
     factory: F
     session: S
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class PaginationScenario:
+    client: MemorySourceClient
+    maximum_pages: int
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class SessionScenario:
+    session: ManagedSession
+    failing: bool
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ValidationBoundary:
+    adapter: TypeAdapter[object]
+    failure_type: type[ValueError]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class QualityScenario:
+    report: DataQualityReport
+    minimum_rows: int
+    maximum_duplicate_ratio: float
+    error: type[IngestionValidationError] | None
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

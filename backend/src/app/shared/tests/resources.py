@@ -102,6 +102,14 @@ class ResourceFailureScenario:
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
+class RepairFailureScenario:
+    probe: ResourceProbe
+    primary: BaseException | None
+    expected: BaseException
+    cause: Exception
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
 class CursorFailureScenario:
     connection: ResourceProbe
     primary: BaseException | None

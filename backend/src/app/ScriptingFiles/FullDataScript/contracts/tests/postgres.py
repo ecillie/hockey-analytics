@@ -13,6 +13,9 @@ from app.database import connect_database, open_database_cursor
 from app.shared.cleanup import complete_cleanup
 
 
+type ContractCounts = tuple[int, int, int]
+
+
 @dataclass(slots=True, kw_only=True, frozen=True)
 class HistoricalFixtureSession:
     body: str
@@ -38,7 +41,7 @@ class ContractDatabaseScenario:
     connection: PgConnection
     session: HistoricalFixtureSession
 
-    def count_rows(self) -> tuple[int, int, int]:
+    def count_rows(self) -> ContractCounts:
         with open_database_cursor(self.connection) as cursor:
             cursor.execute(
                 "SELECT (SELECT count(*) FROM contracts),(SELECT count(*) FROM contract_seasons),(SELECT count(*) FROM source_records)"
@@ -134,7 +137,14 @@ class FixtureSession:
 @dataclass(slots=True, kw_only=True, frozen=True)
 class ContractPreviewScenario:
     session: FixtureSession
-    before: tuple[int, int, int]
+    before: ContractCounts
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ContractConflictScenario:
+    before: ContractCounts
+    after_preview: ContractCounts
+    preview: Mapping[str, int]
 
 
 def seed_player(

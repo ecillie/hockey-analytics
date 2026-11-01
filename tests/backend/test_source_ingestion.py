@@ -14,6 +14,9 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.tests.scenarios import (
     ClientStage,
     BorrowedTransport,
     WorkerStage,
+    PaginationScenario,
+    SessionScenario,
+    ValidationBoundary,
 )
 from threading import Barrier, Lock
 import json
@@ -213,14 +216,21 @@ class TestStatsPagination:
         if request.param == "limit":
             first["total"] = 8
             second["total"] = 8
-        return MemorySourceClient(
-            pages={(self.url, 0): first, (self.url, 2): second}
-        ), maximum_pages
+        return PaginationScenario(
+            client=MemorySourceClient(
+                pages={(self.url, 0): first, (self.url, 2): second}
+            ),
+            maximum_pages=maximum_pages,
+        )
 
     def test_malformed_metadata_cannot_return_a_partial_success(self, malformed, job):
-        client, maximum = malformed
         with pytest.raises(IngestionValidationError):
-            fetch_stats_pages(client, job, page_size=2, maximum_pages=maximum)
+            fetch_stats_pages(
+                malformed.client,
+                job,
+                page_size=2,
+                maximum_pages=malformed.maximum_pages,
+            )
 
 
 class TestNhlWorkerOwnership:
@@ -394,21 +404,20 @@ class TestOwnedHttpTransport:
         monkeypatch.setattr(
             source_http, "open_http_session", ManagedSessionFactory(session=session)
         )
-        return session, request.param
+        return SessionScenario(session=session, failing=request.param)
 
     def test_owned_session_closes_on_success_and_source_failure(self, session, options):
-        resource, failing = session
-        if failing:
+        if session.failing:
             with pytest.raises(RuntimeError, match="source unavailable"):
                 with source_http.open_source_client(options) as client:
                     client.get_json("https://source.test")
-        if not failing:
+        if session.failing is False:
             with source_http.open_source_client(options) as client:
                 assert client.get_json("https://source.test") == {"ok": True}
                 assert client.get_csv("https://source.test/file.csv") == "csv-content"
-            assert resource.calls[-1][1] == 3
-        assert resource.calls[0][1] == 2
-        assert resource.opened == resource.closed == [True]
+            assert session.session.calls[-1][1] == 3
+        assert session.session.calls[0][1] == 2
+        assert session.session.opened == session.session.closed == [True]
 
 
 class TestInvalidQualityOptions:
@@ -525,14 +534,18 @@ class TestBorrowedTransport:
 
 
 class TestProductionRetryConfiguration:
-    def test_existing_get_retry_and_backoff_policy_is_preserved(self):
+    @pytest.fixture
+    def session(self):
         with source_http.open_http_session() as session:
-            retry = session.get_adapter("https://").max_retries
-            assert retry.total == 4
-            assert retry.backoff_factor == 0.6
-            assert retry.status_forcelist == (429, 500, 502, 503, 504)
-            assert retry.allowed_methods == ("GET",)
-            assert retry.respect_retry_after_header
+            yield session
+
+    def test_existing_get_retry_and_backoff_policy_is_preserved(self, session):
+        retry = session.get_adapter("https://").max_retries
+        assert retry.total == 4
+        assert retry.backoff_factor == 0.6
+        assert retry.status_forcelist == (429, 500, 502, 503, 504)
+        assert retry.allowed_methods == ("GET",)
+        assert retry.respect_retry_after_header
 
 
 class TestInvalidMinimumRows:
@@ -643,7 +656,7 @@ class TestTypedNativeValidatorFailures:
     @pytest.fixture(params=cases)
     def boundary(self, request):
         schema, failure = request.param
-        return TypeAdapter(schema), failure
+        return ValidationBoundary(adapter=TypeAdapter(schema), failure_type=failure)
 
     @pytest.fixture
     def value(self):
@@ -652,11 +665,10 @@ class TestTypedNativeValidatorFailures:
     def test_native_validation_retains_typed_context_without_echoing_input(
         self, boundary, value
     ):
-        adapter, failure_type = boundary
         with pytest.raises(ValidationError) as raised:
-            adapter.validate_python(value)
+            boundary.adapter.validate_python(value)
         issue = raised.value.errors(include_input=False)[0]
         failure = issue["ctx"]["error"]
-        assert isinstance(failure, failure_type)
+        assert isinstance(failure, boundary.failure_type)
         assert failure.value == value
         assert "input_secret" not in issue["msg"]
