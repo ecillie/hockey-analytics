@@ -28,6 +28,7 @@ from backend.database import (
     migration_smoke,
     schema_snapshot,
     verify_migrations,
+    verify_python_rules,
 )
 from ml.evaluation import evaluate_skater_model, gate
 from app.shared.tests.fakes import (
@@ -40,6 +41,10 @@ from app.shared.tests.fakes import (
 
 class TestCommandBoundaries:
     cases = (
+        pytest.param(
+            CommandCase(module=verify_python_rules, action="inspect_repository"),
+            id="python-rules",
+        ),
         pytest.param(CommandCase(module=capspace, action="init_db"), id="contracts"),
         pytest.param(
             CommandCase(module=populate_roster_status, action="init_db"), id="roster"
