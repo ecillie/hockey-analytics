@@ -118,6 +118,10 @@ def sanitize_context(
         "committed",
         "rolled_back",
         "line",
+        "rows",
+        "mae",
+        "rmse",
+        "r2",
     )
     context: DiagnosticFields = {}
     if "route" in values:
@@ -207,6 +211,12 @@ def render_bounded_diagnostic(
         (
             "exceptions",
             "exceptions_truncated",
+            "source_module",
+            "line",
+            "rows",
+            "mae",
+            "rmse",
+            "r2",
             "route",
             "source",
             "stage",

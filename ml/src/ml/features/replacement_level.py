@@ -4,6 +4,15 @@ from collections.abc import Sequence
 
 import pandas as pd
 from app.shared.cli import ExitCode
+from app.config import load_environment
+from app.shared.observability.domain import CommandOutcome, read_logging_settings
+from app.shared.observability.errors import LoggingSettingsError
+from ml.observability.services import report_ml_progress
+from app.shared.observability.services import (
+    configure_logging,
+    start_command,
+    finish_command,
+)
 
 from ml.errors import ReplacementPercentileError
 from ml.configuration import HIGHER_IS_BETTER, LOWER_IS_BETTER, FeatureOptions
@@ -195,14 +204,30 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    build_parser().parse_args(argv)
-    logging.basicConfig(level=logging.INFO)
+    parser = build_parser()
+    parser.parse_args(argv)
+    try:
+        settings = read_logging_settings(load_environment())
+    except LoggingSettingsError as error:
+        parser.error(str(error))
+    configure_logging(settings)
+    context = start_command("ml.replacement_level")
     try:
         replacement_data = calculate_replacement_level()
+        report_ml_progress(
+            context,
+            event="ml.dataset_ready",
+            stage="replacement_level",
+            values={"rows": len(replacement_data)},
+        )
         print_replacement_diagnostics(replacement_data)
     except Exception:
-        logger.exception("Command failed")
+        logger.exception(
+            "Command failed", extra=context.fields | {"event": "command.failed"}
+        )
+        finish_command(context, CommandOutcome.FAILED)
         return ExitCode.FAILURE
+    finish_command(context, CommandOutcome.COMPLETED)
     return ExitCode.SUCCESS
 
 

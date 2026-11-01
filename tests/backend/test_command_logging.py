@@ -170,6 +170,38 @@ class TestOperationalFailureLogging:
                 ("backend.database.backfill_team_stints", "repair_team_stints"),
                 id="repair",
             ),
+            pytest.param(
+                ("ml.pipelines.load_salary_cap", "load_salary_cap"), id="ml-caps"
+            ),
+            pytest.param(
+                ("ml.pipelines.load_player_stats", "load_player_stats"), id="ml-players"
+            ),
+            pytest.param(
+                ("ml.pipelines.build_model_dataset", "build_model_dataset"),
+                id="ml-dataset",
+            ),
+            pytest.param(
+                ("ml.pipelines.run_pipeline", "run_pipeline"), id="ml-pipeline"
+            ),
+            pytest.param(
+                ("ml.features.build_features", "build_features"), id="ml-features"
+            ),
+            pytest.param(
+                ("ml.features.replacement_level", "calculate_replacement_level"),
+                id="ml-replacement",
+            ),
+            pytest.param(
+                ("ml.training.train_skater_value", "train_skater_model"),
+                id="ml-training",
+            ),
+            pytest.param(
+                ("ml.evaluation.evaluate_skater_model", "evaluate_model"),
+                id="ml-evaluation",
+            ),
+            pytest.param(
+                ("ml.evaluation.gate", "validate_committed_model_metadata"),
+                id="ml-gate",
+            ),
         ]
     )
     def command(self, request):

@@ -371,4 +371,51 @@ This remains an internal phase-3 checkpoint. Ingestion/worker correlation,
 commit-aware source summaries, ML boundaries, Alembic logging reconciliation and
 cancellation/cleanup coverage still precede the phase-3 PR. No phase-3 publication
 or release acceptance is implied by these checks.
+
+### Phase 3 ML checkpoint
+
+All nine supported ML commands now install the shared policy only in `main()`,
+after argument validation. Application-aware commands retain dotenv/exported
+precedence; the standalone metric gate uses explicit process values. Generated
+invocation identity connects their command summaries and translated failures.
+The former per-command `basicConfig` calls have been removed.
+
+| Boundary | Owner and evidence |
+| --- | --- |
+| Standalone data/feature commands and dataset pipeline | CLI emits `ml.dataset_ready` with aggregate rows before its original requested report. Pure transformation helpers remain silent. |
+| Training dataset and split preparation | Explicitly supplied context connects dataset readiness/validation and DEBUG-only `ml.split_ready` counts. No global context store is used. |
+| Model fitting and split evaluation | Training orchestration emits fit boundaries and validated aggregate rows/MAE/RMSE/R2. Model options, split selection and metadata serialization are unchanged. |
+| Model evaluation | Orchestration emits loaded-bundle, dataset readiness and aggregate evaluation events; no predictions or player values enter diagnostics. |
+| Artifact writes | Adapter emits `ml.artifact_written` only after the corresponding model, metadata or prediction write. A later failure retains only earlier completed-write events. Artifact paths are excluded. |
+| Committed metric gate | Metadata validation and each successful aggregate metric comparison are reported before the unchanged stdout success line. |
+| Exceptions | CLI translation owns one `command.failed` diagnostic and a failed completion summary; library functions propagate the original failure without logging it again. |
+
+Library entrypoints accept optional immutable invocation context. Existing callers
+without it remain silent. The shared formatter allowlists only numeric aggregate
+metric/count fields and includes them in its bounded truncation policy.
+
+New behavioral tests exercise real deterministic training, artifact persistence
+and evaluation in INFO/DEBUG and JSON/text. Logged and unlogged training produce
+identical predictions and metadata; input frames remain unchanged. Private input
+columns, player values and artifact paths are absent from diagnostics. A metadata
+write failure after model persistence records only the completed model write.
+Nine ML cases extend the fresh-process failure matrix across INFO, DEBUG and
+CRITICAL in both formats; all retain exit 1, empty stdout and one safe diagnostic
+when allowed by the selected threshold. Targeted command/ML checks passed **227
+tests**. Existing help and argument-validation contract tests still pass.
+
+Checkpoint acceptance on newly provisioned, migrated PostgreSQL database
+`tradevalue_test_logging03_ml`: **1,010 tests passed, zero skips**, **91.28%**
+aggregate coverage in **98.94 seconds**; API/calendar remains **100%**. Isolated
+units passed **960 tests**, with 50 integration cases deselected, in **82.53
+seconds**. Ruff lint/format, ty, structural rules, dependency/OpenAPI parity,
+isolated package boundaries and the committed ML metric gate passed. Diff review
+found no added forbidden constructs or comments. ML support remains excluded from
+the API wheel; the installed ML wheel resolves its shared logging dependency.
+
+This checkpoint does not complete phase 3. Ingestion/run/worker correlation,
+retry and commit-aware summaries, Alembic logging, broader invalid-configuration
+and cancellation/cleanup acceptance remain before publication. Frontend and
+combined hosted/release acceptance remain later phases, as does the previously
+outstanding phase-7 semantic audit.
 The dedicated checkpoint PostgreSQL container was removed after verification.

@@ -4,9 +4,17 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import pandas as pd
-from app.config import get_database_settings
+from app.config import get_database_settings, load_environment
 from app.database import open_database_resources
 from app.shared.cli import CommandOptionError, ExitCode
+from app.shared.observability.domain import CommandOutcome, read_logging_settings
+from app.shared.observability.errors import LoggingSettingsError
+from ml.observability.services import report_ml_progress
+from app.shared.observability.services import (
+    configure_logging,
+    start_command,
+    finish_command,
+)
 
 from ml.pipelines.build_model_dataset import (
     build_model_dataset,
@@ -73,12 +81,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     options = PipelineOptions(**vars(parser.parse_args(argv)))
     if violation := find_option_violation(options):
         parser.error(str(violation))
-    logging.basicConfig(level=logging.INFO)
     try:
-        print_model_dataset_diagnostics(run_pipeline(min_games=options.min_games))
+        settings = read_logging_settings(load_environment())
+    except LoggingSettingsError as error:
+        parser.error(str(error))
+    configure_logging(settings)
+    context = start_command("ml.run_pipeline")
+    try:
+        dataset = run_pipeline(min_games=options.min_games)
+        report_ml_progress(
+            context,
+            event="ml.dataset_ready",
+            stage="pipeline",
+            values={"rows": len(dataset)},
+        )
+        print_model_dataset_diagnostics(dataset)
     except Exception:
-        logger.exception("ML dataset pipeline failed")
+        logger.exception(
+            "ML dataset pipeline failed",
+            extra=context.fields | {"event": "command.failed"},
+        )
+        finish_command(context, CommandOutcome.FAILED)
         return ExitCode.FAILURE
+    finish_command(context, CommandOutcome.COMPLETED)
     return ExitCode.SUCCESS
 
 

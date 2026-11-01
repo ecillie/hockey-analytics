@@ -6,26 +6,38 @@ arguments before opening database or HTTP resources. Importable entrypoints
 expose `build_parser()` and `main(argv=None)`; callers should invoke the underlying
 use case rather than another command's `main()`.
 
-OpenAPI export and the seven database operational entrypoints, including
-`backend.database.verify_python_rules`, now use the shared Python logging policy.
+OpenAPI export, the nine ML commands and the seven database operational entrypoints,
+including `backend.database.verify_python_rules`, now use the shared Python logging policy.
 They default to `LOG_LEVEL=INFO` and `LOG_FORMAT=json`; DEBUG adds diagnostics,
 and text format is available for terminals. Invalid logging settings exit 2
 before resource acquisition. Help and argument errors retain their existing
 behavior before logging setup. Each invocation generates an `invocation_id`;
 `command.started`, `command.finished` and translated failures share it. Output
-and exit contracts below remain unchanged. Ingestion and ML command migration
-is still in progress in logging phase 3.
+and exit contracts below remain unchanged. Ingestion command migration and final
+phase-3 acceptance are still in progress.
 
 OpenAPI, container readiness, migration history, migration preflight, schema
 snapshot and structural verification read logging settings directly from the
 process environment without loading dotenv. API migration smoke and team-stint
 repair follow the application dotenv/exported-value precedence. Environment and
 verbosity remain independent. Python configuration changes require a new process.
+ML commands also follow application dotenv/exported-value precedence, except the
+standalone metric gate, which reads explicit process values without dotenv.
 The structural checker reports bounded `source_module`, `line` and `stage` fields
 instead of serializing arbitrary source diagnostics. Preflight verification
 failures use `stage=unversioned_schema` or `stage=multiple_revisions`: review the
 schema and follow the documented baseline-stamping procedure before migrating
 an unversioned database; resolve conflicting revision records before continuing.
+
+ML commands report aggregate dataset row counts. Training reports temporal split
+counts at DEBUG, fit boundaries and validated split metrics at INFO. Evaluation
+reports aggregate rows and metrics; artifact events identify model, metadata or
+predictions by stage without logging their paths or contents. Each artifact-written
+event follows its completed write, so a later metadata failure can leave an earlier
+model write recorded without claiming the whole bundle succeeded. Library callers
+may inject an immutable invocation context explicitly; existing calls without one
+remain silent and retain their existing results. Metadata formats, model options,
+predictions and requested stdout reports are unchanged.
 
 | Command after `uv run python` | Options |
 | --- | --- |
