@@ -14,6 +14,7 @@ from ml.pipelines.build_model_dataset import (
 )
 from ml.pipelines.load_player_stats import load_player_stats
 from ml.pipelines.load_salary_cap import load_salary_cap
+from ml.errors import MinimumGamesError
 
 
 def run_pipeline(
@@ -23,7 +24,7 @@ def run_pipeline(
     salary_caps: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if min_games < 1:
-        raise ValueError("min_games must be positive")
+        raise MinimumGamesError(field="min_games", value=min_games)
     if players is None or salary_caps is None:
         with (
             database_resources(get_database_settings()) as resources,

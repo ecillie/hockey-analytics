@@ -5,6 +5,7 @@ from collections.abc import Sequence
 import pandas as pd
 from app.shared.cli import ExitCode
 
+from ml.errors import MinimumGamesError, ContractLeakageError, FrameGrainError
 from ml.configuration import FeatureOptions
 from ml.pipelines.load_player_stats import load_player_stats
 from ml.pipelines.load_salary_cap import load_salary_cap
@@ -34,7 +35,7 @@ def build_model_dataset(
     selected = options or FeatureOptions()
     validate_feature_options(selected)
     if min_games < 1:
-        raise ValueError("min_games must be positive")
+        raise MinimumGamesError(field="min_games", value=min_games)
     if players is None:
         players = load_player_stats(min_games=min_games)
     if salary_cap is None:
@@ -81,16 +82,12 @@ def build_model_dataset(
     duplicate_count = df.duplicated(subset=["player_id", "season"]).sum()
 
     if duplicate_count:
-        raise RuntimeError(
-            f"Model dataset contains {duplicate_count} duplicate player-season rows."
-        )
+        raise FrameGrainError(grain=("player_id", "season"))
 
     leaked_columns = FORBIDDEN_CONTRACT_COLUMNS.intersection(df.columns)
 
     if leaked_columns:
-        raise RuntimeError(
-            f"Contract data leaked into model dataset: {sorted(leaked_columns)}"
-        )
+        raise ContractLeakageError(columns=tuple(sorted(leaked_columns)))
 
     return df.reset_index(drop=True)
 

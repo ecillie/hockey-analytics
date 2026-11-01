@@ -11,31 +11,43 @@ import numpy as np
 import pandas as pd
 from app.shared.cli import ExitCode
 
-from ml.configuration import CATEGORICAL_FEATURES, NUMERIC_FEATURES, MetricTolerance
+from ml.configuration import MetricTolerance
 from ml.schemas import ModelMetadata, validate_frame
+from ml.domain import Metric, Split
+from ml.errors import (
+    MissingTargetSeasonError,
+    InvalidTargetSeasonsError,
+    InsufficientSeasonsError,
+    PredictionValuesError,
+    MissingMetricError,
+    InvalidMetricError,
+    MetricRegressionError,
+)
+from ml.policy import find_metadata_violation
 
 PREDICTION_COLUMNS = ("player_id", "season", "prediction")
-METRICS = ("mae", "rmse", "r2")
-SPLITS = ("train", "validation", "test")
+METRICS = tuple(Metric)
+SPLITS = tuple(Split)
 
 
-def temporal_splits(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+def temporal_splits(df: pd.DataFrame) -> dict[Split, pd.DataFrame]:
     if "target_season" not in df.columns:
-        raise ValueError("target_season is required for temporal splits")
-    if (
-        df["target_season"].isna().any()
-        or not np.isfinite(df["target_season"]).all()
-        or (df["target_season"] % 1 != 0).any()
-    ):
-        raise ValueError("Target seasons must be finite whole years")
+        raise MissingTargetSeasonError(columns=tuple(df.columns))
+    invalid = (
+        df["target_season"].isna()
+        | ~np.isfinite(df["target_season"])
+        | (df["target_season"] % 1 != 0)
+    )
+    if invalid.any():
+        raise InvalidTargetSeasonsError(invalid_rows=int(invalid.sum()))
     seasons = sorted(df["target_season"].unique())
     if len(seasons) < 3:
-        raise ValueError("At least three target seasons are required")
+        raise InsufficientSeasonsError(seasons=tuple(map(int, seasons)))
     validation_season, test_season = seasons[-2:]
     return {
-        "train": df[df["target_season"] < validation_season].copy(),
-        "validation": df[df["target_season"] == validation_season].copy(),
-        "test": df[df["target_season"] == test_season].copy(),
+        Split.TRAIN: df[df["target_season"] < validation_season].copy(),
+        Split.VALIDATION: df[df["target_season"] == validation_season].copy(),
+        Split.TEST: df[df["target_season"] == test_season].copy(),
     }
 
 
@@ -47,7 +59,7 @@ def prediction_frame(df: pd.DataFrame, predictions: np.ndarray) -> pd.DataFrame:
     )
     values = np.asarray(predictions, dtype=float)
     if values.ndim != 1 or len(values) != len(df) or not np.isfinite(values).all():
-        raise ValueError("Predictions must be finite and match the input rows")
+        raise PredictionValuesError(shape=values.shape, expected_rows=len(df))
     return pd.DataFrame(
         {
             "player_id": df["player_id"].to_numpy(),
@@ -57,23 +69,11 @@ def prediction_frame(df: pd.DataFrame, predictions: np.ndarray) -> pd.DataFrame:
     )[list(PREDICTION_COLUMNS)]
 
 
-def validate_metadata(metadata: dict) -> None:
+def validate_metadata(metadata: object) -> ModelMetadata:
     parsed = ModelMetadata.model_validate(metadata)
-    if metadata["contract_features_used"] is not False:
-        raise ValueError("Contract features must not be used by the model")
-    if tuple(metadata["numeric_features"]) != NUMERIC_FEATURES:
-        raise ValueError("Metadata numeric feature list is out of sync")
-    if tuple(metadata["categorical_features"]) != CATEGORICAL_FEATURES:
-        raise ValueError("Metadata categorical feature list is out of sync")
-    if not metadata["validation_target_season"] < metadata["test_target_season"]:
-        raise ValueError("Validation must precede test")
-    if set(metadata["metrics"]) != set(SPLITS):
-        raise ValueError("Metadata must contain train, validation, and test metrics")
-    if (
-        parsed.model_type != "HistGradientBoostingRegressor"
-        or parsed.target != "next_season_hockey_value"
-    ):
-        raise ValueError("Unsupported model type or target")
+    if violation := find_metadata_violation(parsed):
+        raise violation
+    return parsed
 
 
 def check_metric_regression(
@@ -84,7 +84,7 @@ def check_metric_regression(
     tolerance = MetricTolerance().values if tolerance is None else tolerance
     for metric in METRICS:
         if metric not in current or metric not in baseline or metric not in tolerance:
-            raise ValueError(f"Missing metric: {metric}")
+            raise MissingMetricError(metric=metric)
         if (
             not all(
                 np.isfinite(value)
@@ -92,28 +92,37 @@ def check_metric_regression(
             )
             or tolerance[metric] < 0
         ):
-            raise ValueError(f"Invalid metric or tolerance: {metric}")
+            raise InvalidMetricError(
+                metric=metric,
+                current=current[metric],
+                baseline=baseline[metric],
+                tolerance=tolerance[metric],
+            )
         regression = (
             current[metric] - baseline[metric]
             if metric != "r2"
             else baseline[metric] - current[metric]
         )
         if regression > tolerance[metric]:
-            raise AssertionError(
-                f"{metric} regressed by {regression:.4f}; allowed {tolerance[metric]:.4f}"
+            raise MetricRegressionError(
+                metric=metric, regression=regression, tolerance=tolerance[metric]
             )
 
 
-def validate_committed_model_metadata(path: Path) -> dict:
+def validate_committed_model_metadata(path: Path) -> ModelMetadata:
     with path.open(encoding="utf-8") as handle:
         metadata = json.load(handle)
-    validate_metadata(metadata)
-    return metadata
+    return validate_metadata(metadata)
 
 
-def stable_metadata_json(metadata: dict) -> str:
-    validate_metadata(metadata)
-    return json.dumps(metadata, indent=2, sort_keys=True) + "\n"
+def stable_metadata_json(metadata: object) -> str:
+    parsed = validate_metadata(metadata)
+    return (
+        json.dumps(
+            parsed.model_dump(mode="json", exclude_unset=True), indent=2, sort_keys=True
+        )
+        + "\n"
+    )
 
 
 logger = logging.getLogger(__name__)
@@ -146,8 +155,9 @@ def execute_command() -> None:
         "test": {"mae": 9.3361370822, "rmse": 13.2279709137, "r2": 0.5664511622},
     }
     for split in SPLITS:
+        values = metadata.metrics.split_values(split)
         check_metric_regression(
-            metadata["metrics"][split],
+            {metric: values.metric_value(metric) for metric in METRICS},
             limits[split],
             {"mae": 0.0, "rmse": 0.0, "r2": 0.0},
         )

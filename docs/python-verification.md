@@ -122,3 +122,83 @@ runtime user. Frontend CI verifies generated API types, lint, all tests at its
 100% coverage thresholds, and the production build. Root test, workspace,
 lockfile, and workflow changes select all affected CI jobs. Review the draft
 phase PR's checks before merging; production promotion remains manual.
+
+## ML metadata follow-up, phase 1
+
+The follow-up starts from `Release-1.0.1` at
+`762751f590c750ae956783f5a2537c4e563b663b`, which includes the merged original
+phase 12. Its scope is F01 in ML, F03, and the ML portion of F11 in `plan.md`.
+Other follow-up findings remain separate work.
+
+`validate_metadata`, `validate_committed_model_metadata`, and `load_model` now
+return validated `ModelMetadata` values. Read fields as attributes, including
+`metadata.metrics.test.mae`. Both split containers and their metric values are
+frozen, and feature collections are tuples. Parsing detaches caller-owned JSON
+containers. `TrainingResult.metadata_value` retains this typed representation;
+its existing `metadata` property returns a detached JSON-compatible snapshot,
+and `metadata_json` retains the canonical sorted JSON format. Training split
+evaluation returns `SplitMetrics`. `Split` and `Metric` retain the published
+`train`/`validation`/`test` and `mae`/`rmse`/`r2` strings.
+
+Metadata policies return structured violations for feature order, temporal
+order, and supported model identity. ML-owned failures have dedicated exception
+types with keyword context fields; existing ValueError, TypeError,
+RuntimeError, and AssertionError categories remain compatible. Pydantic retains
+its own schema-validation errors. This change adds no dependency and changes
+neither committed metadata values, model calculations, nor OpenAPI.
+
+Regression coverage checks nested immutability and source aliasing, the exact
+canonical serialization of committed metadata, strict rows and seasons, split
+membership, feature order, model identity, finite metrics, regression directions
+and tolerances, failure context, and train/save/load/evaluate round trips.
+The local acceptance record is maintained in `plan.md`; verification uses the
+commands and unchanged coverage gates above, a dedicated disposable PostgreSQL
+15 database, isolated units, installed wheels, and an API container smoke.
+
+Local phase-1 acceptance on Python 3.12/PostgreSQL 15: 675 tests passed with
+zero skips, 91.44% aggregate coverage, and 100% API/shared-calendar coverage.
+Isolated units passed 628 tests with 47 integration tests deselected. Ruff,
+formatting, ty, model/OpenAPI/export gates, isolated wheel checks, Docker build,
+and health/seasons/teams HTTP smoke passed. No frontend boundary changed.
+
+## Options and source identity follow-up, phase 2
+
+The follow-up starts from `Release-1.0.1` at
+`30d03d65b7e7a865be71f98e4c27ef191a941941`, containing merged phase-1 PR #150.
+It addresses F02, F04, and F09 in the local remediation plan.
+
+Source quality checks compose the existing `CountPolicy` with a separate
+`DuplicateRatioPolicy`, returning count failures before ratio failures.
+Historical contract defaults live in `HistoricalContractOptions`; its owned,
+frozen `HistoricalContractLimits` supplies worker and batch ceilings to
+validation. Existing compatibility constants derive from these options and
+`ProfileHttpOptions`. CLI defaults come from one options instance. Historical
+seasons remain 2008–2025, with four workers and a batch size of 100; default
+ceilings remain eight workers and 1,000 players per batch. Candidate and coverage
+query defaults use the same authority. Explicit overrides remain supported.
+
+Replacement calculations retain their effective percentile in the returned
+DataFrame’s `attrs["replacement_percentile"]` metadata. Diagnostics use that value,
+including an explicit argument taking precedence over configured options, and
+fall back to the default for externally supplied frames without the attribute.
+Calculations and output columns remain unchanged.
+
+NHL and MoneyPuck persistence identities now use validated integer player IDs.
+MoneyPuck also canonicalizes integer grain fields during deduplication, so
+`7`, `7.0`, `"0007"`, `"7.0"`, and `"7e0"` share one identity and grain. The last
+original row still wins, with its unmodified source hash; canonicalization does
+not rewrite source payloads. Alias rows contribute to duplicate counts and can
+therefore trigger existing quality thresholds. PostgreSQL tests verify both
+skater and goalie identity linking in the existing MoneyPuck-to-NHL ingestion
+order, one stat grain per source, and repeat-ingestion idempotence.
+
+Existing persisted aliases are not merged or rewritten. Any historical data
+repair requires a separate collision audit and reviewed operation. No hosted
+data or live upstream feeds are used for verification.
+
+Local phase-2 acceptance on Python 3.12/PostgreSQL 15: 706 tests passed with
+zero skips, 91.69% aggregate coverage, and 100% API/shared-calendar coverage.
+Isolated units passed 657 tests with 49 integration tests deselected. Ruff,
+formatting, ty, model/OpenAPI/export gates, isolated wheel checks, Docker build,
+and health/seasons/teams HTTP smoke passed. Both verification containers were
+removed after acceptance.

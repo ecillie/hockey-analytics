@@ -84,7 +84,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.services import (
     fetch_stats_pages,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.policy import (
-    QualityPolicy,
+    find_quality_violation,
     RowPolicy,
     stat_violation,
     validate_rows,
@@ -198,9 +198,11 @@ def validate_and_deduplicate_rows(
 def enforce_quality_thresholds(
     report: DataQualityReport, *, minimum_rows: int, maximum_duplicate_ratio: float
 ) -> None:
-    if violation := QualityPolicy(
-        minimum_rows=minimum_rows, maximum_duplicate_ratio=maximum_duplicate_ratio
-    ).find_violation(report):
+    if violation := find_quality_violation(
+        report,
+        minimum_rows=minimum_rows,
+        maximum_duplicate_ratio=maximum_duplicate_ratio,
+    ):
         raise violation
 
 

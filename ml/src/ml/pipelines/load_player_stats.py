@@ -7,6 +7,8 @@ from app.config import get_database_settings
 from app.database import database_resources
 from app.shared.cli import ExitCode
 from sqlalchemy import Connection, text
+from ml.errors import MinimumGamesError
+
 
 PLAYER_SEASON_QUERY = """
 WITH basic_total AS (
@@ -282,7 +284,7 @@ def load_player_stats(
 ) -> pd.DataFrame:
 
     if min_games < 1:
-        raise ValueError("min_games must be positive")
+        raise MinimumGamesError(field="min_games", value=min_games)
     if connection is None:
         with (
             database_resources(get_database_settings()) as resources,

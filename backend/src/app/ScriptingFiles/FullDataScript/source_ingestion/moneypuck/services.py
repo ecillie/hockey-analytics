@@ -17,7 +17,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import 
     MoneyPuckSnapshot,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.policy import (
-    QualityPolicy,
+    find_quality_violation,
     RowPolicy,
     validate_rows,
     quality_options_violation,
@@ -75,10 +75,11 @@ class MoneyPuckService:
                 numeric_fields=frozenset({"icetime"}),
             )
             valid, report = validate_rows(incoming, policy)
-            if violation := QualityPolicy(
+            if violation := find_quality_violation(
+                report,
                 minimum_rows=self.options.minimum_rows_per_kind,
                 maximum_duplicate_ratio=self.options.maximum_duplicate_ratio,
-            ).find_violation(report):
+            ):
                 raise violation
             layout = stat_layout(kind, advanced=True)
             rows.extend(normalize_row(row, kind, layout) for row in valid)
@@ -107,7 +108,7 @@ def normalize_row(
     team = parse_team_abbreviation(value.team)
     return StatRow(
         kind=kind,
-        external_id=str(raw["playerId"]).strip(),
+        external_id=str(value.playerId),
         season=value.season,
         name=value.name,
         position=normalize_position(value.position, kind == PlayerKind.GOALIE),

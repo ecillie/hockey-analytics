@@ -5,11 +5,9 @@ from collections.abc import Sequence
 import pandas as pd
 from app.shared.cli import ExitCode
 
+from ml.errors import ReplacementPercentileError
 from ml.configuration import HIGHER_IS_BETTER, LOWER_IS_BETTER, FeatureOptions
 from ml.features.build_features import build_features
-
-REPLACEMENT_PERCENTILE = FeatureOptions().replacement_percentile
-
 
 REPLACEMENT_FEATURES = HIGHER_IS_BETTER + LOWER_IS_BETTER
 
@@ -28,7 +26,7 @@ def calculate_replacement_level(
         else replacement_percentile
     )
     if not 0 <= percentile <= 1:
-        raise ValueError("replacement_percentile must be between zero and one")
+        raise ReplacementPercentileError(value=percentile)
     result = build_features(df, options=selected)
 
     valid_games = result["games_played"].where(result["games_played"] > 0)
@@ -110,7 +108,9 @@ def calculate_replacement_level(
             result[f"replacement_{feature}"] - result[feature]
         )
 
-    return result.reset_index(drop=True)
+    result = result.reset_index(drop=True)
+    result.attrs["replacement_percentile"] = percentile
+    return result
 
 
 def print_replacement_diagnostics(
@@ -124,7 +124,10 @@ def print_replacement_diagnostics(
 
     print(f"Replacement-pool rows: {replacement_count:,}")
 
-    print(f"Replacement percentile: {REPLACEMENT_PERCENTILE:.0%}")
+    percentile = df.attrs.get(
+        "replacement_percentile", FeatureOptions().replacement_percentile
+    )
+    print(f"Replacement percentile: {percentile:.0%}")
 
     print("\nReplacement players by position:")
 

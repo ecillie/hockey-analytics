@@ -524,3 +524,24 @@ class TestProductionRetryConfiguration:
             assert retry.status_forcelist == (429, 500, 502, 503, 504)
             assert retry.allowed_methods == ("GET",)
             assert retry.respect_retry_after_header
+
+
+class TestInvalidMinimumRows:
+    @pytest.fixture
+    def stage(self, source_puck_options):
+        options = replace(source_puck_options, minimum_rows_per_kind=-1)
+        client = MemorySourceClient()
+        repository = MemoryMoneyPuckRepository()
+        return ClientStage(
+            service=MoneyPuckService(
+                client=client, repository=repository, options=options
+            ),
+            repository=repository,
+            client=client,
+        )
+
+    def test_negative_minimum_fails_before_fetching_or_writing(self, stage):
+        with pytest.raises(IngestionValidationError):
+            stage.service.ingest()
+        assert stage.client.calls == []
+        assert stage.repository.snapshots == []

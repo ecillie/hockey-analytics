@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -26,12 +25,14 @@ from ml.configuration import (
     FeatureOptions,
     ModelOptions,
 )
-from ml.evaluation.gate import stable_metadata_json, temporal_splits
+from ml.evaluation.gate import stable_metadata_json, temporal_splits, validate_metadata
 from ml.features.replacement_level import (
     calculate_replacement_level,
 )
 from ml.paths import artifact_directory
-from ml.schemas import validate_frame
+from ml.schemas import ModelMetadata, SplitMetrics, validate_frame
+from ml.domain import Split
+from ml.errors import TrainingRowsError, TrainingTargetsError
 
 
 def build_training_data(
@@ -40,7 +41,7 @@ def build_training_data(
 
     all_rows = calculate_replacement_level(df, options=options)
     if all_rows.empty:
-        raise ValueError("Training requires player-season rows")
+        raise TrainingRowsError(rows=len(all_rows))
 
     all_rows["hockey_value"] = (
         all_rows["game_score_per_60_above_replacement"] * all_rows["toi_hours"]
@@ -157,7 +158,7 @@ def build_model(options: ModelOptions | None = None) -> Pipeline:
 def evaluate(
     model: Pipeline,
     df: pd.DataFrame,
-) -> dict[str, float]:
+) -> SplitMetrics:
 
     X = df[list(NUMERIC_FEATURES + CATEGORICAL_FEATURES)]
 
@@ -182,22 +183,21 @@ def evaluate(
         predictions,
     )
 
-    return {
-        "rows": int(len(df)),
-        "mae": float(mae),
-        "rmse": float(rmse),
-        "r2": float(r2),
-    }
+    return SplitMetrics(rows=len(df), mae=float(mae), rmse=float(rmse), r2=float(r2))
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
 class TrainingResult:
     model: Pipeline
-    metadata_json: str
+    metadata_value: ModelMetadata
 
     @property
-    def metadata(self) -> dict:
-        return json.loads(self.metadata_json)
+    def metadata(self) -> dict[str, object]:
+        return self.metadata_value.model_dump(mode="json", exclude_unset=True)
+
+    @property
+    def metadata_json(self) -> str:
+        return stable_metadata_json(self.metadata_value)
 
 
 def train_model(
@@ -218,13 +218,17 @@ def train_model(
         grain=("player_id", "season"),
     )
     if data["next_season_hockey_value"].isna().any():
-        raise ValueError("Training targets must be finite")
+        raise TrainingTargetsError(
+            invalid_rows=int(data["next_season_hockey_value"].isna().sum())
+        )
     splits = temporal_splits(data)
-    validation_season = int(splits["validation"]["target_season"].iloc[0])
-    test_season = int(splits["test"]["target_season"].iloc[0])
+    validation_season = int(splits[Split.VALIDATION]["target_season"].iloc[0])
+    test_season = int(splits[Split.TEST]["target_season"].iloc[0])
     columns = list(NUMERIC_FEATURES + CATEGORICAL_FEATURES)
     model = build_model(options)
-    model.fit(splits["train"][columns], splits["train"]["next_season_hockey_value"])
+    model.fit(
+        splits[Split.TRAIN][columns], splits[Split.TRAIN]["next_season_hockey_value"]
+    )
     split_metrics = {name: evaluate(model, frame) for name, frame in splits.items()}
     final_training = data[data["target_season"] < test_season]
     final_model = build_model(options)
@@ -243,9 +247,7 @@ def train_model(
         "test_target_season": test_season,
         "metrics": split_metrics,
     }
-    return TrainingResult(
-        model=final_model, metadata_json=stable_metadata_json(metadata)
-    )
+    return TrainingResult(model=final_model, metadata_value=validate_metadata(metadata))
 
 
 def train(
@@ -256,7 +258,7 @@ def train(
 ) -> Pipeline:
     result = train_model(build_training_data(df), options=options)
     if paths is not None:
-        save_model(result.model, result.metadata, paths)
+        save_model(result.model, result.metadata_value, paths)
     return result.model
 
 

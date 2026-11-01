@@ -14,7 +14,15 @@ from pydantic import (
 )
 
 from ml.configuration import FeatureOptions
-from ml.errors import FrameColumnsError, FrameGrainError, FrameValuesError
+from ml.domain import Metric, Split
+from ml.errors import (
+    MinimumGamesError,
+    ReplacementPercentileError,
+    SalaryCapNormalizationError,
+    FrameColumnsError,
+    FrameGrainError,
+    FrameValuesError,
+)
 
 type RowCount = Annotated[StrictInt, Field(gt=0)]
 
@@ -25,6 +33,19 @@ class SplitMetrics(BaseModel):
     mae: FiniteFloat
     rmse: FiniteFloat
     r2: FiniteFloat
+
+    def metric_value(self, metric: Metric) -> float:
+        return getattr(self, metric)
+
+
+class ModelMetrics(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    train: SplitMetrics
+    validation: SplitMetrics
+    test: SplitMetrics
+
+    def split_values(self, split: Split) -> SplitMetrics:
+        return getattr(self, split)
 
 
 class ModelMetadata(BaseModel):
@@ -37,7 +58,7 @@ class ModelMetadata(BaseModel):
     categorical_features: tuple[str, ...]
     validation_target_season: StrictInt
     test_target_season: StrictInt
-    metrics: dict[str, SplitMetrics]
+    metrics: ModelMetrics
 
 
 def validate_frame(
@@ -61,11 +82,16 @@ def validate_frame(
 
 def validate_feature_options(options: FeatureOptions) -> None:
     if options.minimum_training_games < 1:
-        raise ValueError("minimum_training_games must be positive")
+        raise MinimumGamesError(
+            field="minimum_training_games",
+            value=options.minimum_training_games,
+        )
     if not 0 <= options.replacement_percentile <= 1:
-        raise ValueError("replacement_percentile must be between zero and one")
+        raise ReplacementPercentileError(value=options.replacement_percentile)
     if (
         not np.isfinite(options.salary_cap_normalization_dollars)
         or options.salary_cap_normalization_dollars <= 0
     ):
-        raise ValueError("salary_cap_normalization_dollars must be finite and positive")
+        raise SalaryCapNormalizationError(
+            value=options.salary_cap_normalization_dollars
+        )

@@ -24,26 +24,29 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class QualityPolicy:
-    minimum_rows: int
-    maximum_duplicate_ratio: float
+class DuplicateRatioPolicy:
+    maximum: float
 
     def find_violation(
         self, report: DataQualityReport
-    ) -> IngestionValidationError | None:
-        if report.records_valid < self.minimum_rows:
-            return RowCountViolation(
-                source=report.source,
-                actual=report.records_valid,
-                minimum=self.minimum_rows,
-            )
-        if report.duplicate_ratio > self.maximum_duplicate_ratio:
+    ) -> DuplicateRatioViolation | None:
+        if report.duplicate_ratio > self.maximum:
             return DuplicateRatioViolation(
                 source=report.source,
                 actual=report.duplicate_ratio,
-                maximum=self.maximum_duplicate_ratio,
+                maximum=self.maximum,
             )
         return None
+
+
+def find_quality_violation(
+    report: DataQualityReport, *, minimum_rows: int, maximum_duplicate_ratio: float
+) -> RowCountViolation | DuplicateRatioViolation | None:
+    if violation := CountPolicy(
+        source=report.source, minimum=minimum_rows
+    ).find_violation(report.records_valid):
+        return violation
+    return DuplicateRatioPolicy(maximum=maximum_duplicate_ratio).find_violation(report)
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -131,7 +134,10 @@ def validate_rows(
         assert season is not None
         seasons.add(season)
         key = tuple(
-            str("" if row.get(field) is None else row[field]).strip().upper()
+            str(integer)
+            if field in policy.integer_fields
+            and (integer := parse_strict_integer(row.get(field))) is not None
+            else str("" if row.get(field) is None else row[field]).strip().upper()
             for field in policy.grain_fields
         )
         deduplicated[key] = row
