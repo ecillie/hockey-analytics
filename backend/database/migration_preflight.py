@@ -2,18 +2,12 @@
 
 import argparse
 import logging
-import os
 from collections.abc import Sequence
 
 from app.shared.cli import ExitCode
+from app.shared.environment import database_url
+from app.shared.cleanup import complete_cleanup
 from sqlalchemy import create_engine, text
-
-
-def database_url() -> str:
-    url = os.getenv("DATABASE_URL") or os.getenv("TEST_DATABASE_URL")
-    if not url:
-        raise RuntimeError("DATABASE_URL or TEST_DATABASE_URL is required")
-    return url
 
 
 def inspect_database(connection) -> tuple[list[str], list[str]]:
@@ -44,7 +38,7 @@ def inspect_database(connection) -> tuple[list[str], list[str]]:
 
 
 def validate_preconditions(tables: list[str], versions: list[str]) -> str | None:
-    if tables and not versions:
+    if len(tables) > 0 and len(versions) == 0:
         return "database contains application tables but has no Alembic revision"
     if len(versions) > 1:
         return f"database reports multiple Alembic revisions: {versions}"
@@ -70,14 +64,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def execute_command() -> int:
     engine = create_engine(database_url(), pool_pre_ping=True)
+    primary: BaseException | None = None
     try:
         with engine.connect() as connection:
             tables, versions = inspect_database(connection)
+    except BaseException as failure:
+        primary = failure
+        raise
     finally:
-        engine.dispose()
+        complete_cleanup((engine.dispose,), primary)
 
     error = validate_preconditions(tables, versions)
-    if error:
+    if error is not None:
         logger.error(
             "%s. Verify its schema and follow the one-time baseline stamping procedure.",
             error,
@@ -85,7 +83,7 @@ def execute_command() -> int:
         return ExitCode.FAILURE
     print(
         "Migration preflight passed: "
-        f"{len(tables)} application tables, revisions={versions or ['base']}."
+        f"{len(tables)} application tables, revisions={versions if len(versions) > 0 else ['base']}."
     )
     return ExitCode.SUCCESS
 

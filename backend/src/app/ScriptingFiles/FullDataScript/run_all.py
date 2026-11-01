@@ -32,12 +32,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         summary = run_all()
         init_db()
         sync_roster_status()
-    except IncompleteRosterFeedError:
-        logger.exception("Ingestion refused an incomplete roster feed")
-        return ExitCode.INCOMPLETE
-    except Exception:
-        logger.exception("Ingestion failed")
-        return ExitCode.FAILURE
+    except Exception as error:
+        incomplete = isinstance(error, IncompleteRosterFeedError)
+        logger.exception(
+            "Ingestion refused an incomplete roster feed"
+            if incomplete
+            else "Ingestion failed"
+        )
+        return ExitCode.INCOMPLETE if incomplete else ExitCode.FAILURE
+
     print(json.dumps(summary, indent=2, sort_keys=True))
     return ExitCode.SUCCESS
 

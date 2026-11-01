@@ -70,13 +70,14 @@ def get_api_settings(values: Mapping[str, str] | None = None) -> ApiSettings:
         for origin in values.get(
             "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
         ).split(",")
-        if origin.strip()
+        if origin.strip() != ""
     )
     if len(origins) == 0:
         raise ConfigurationError(
             field="CORS_ORIGINS", reason="must contain at least one origin"
         )
-    origin_regex = values.get("CORS_ORIGIN_REGEX", "").strip() or None
+    configured_regex = values.get("CORS_ORIGIN_REGEX", "").strip()
+    origin_regex = None if configured_regex == "" else configured_regex
     if origin_regex is not None:
         try:
             re.compile(origin_regex)
@@ -90,8 +91,9 @@ def get_api_settings(values: Mapping[str, str] | None = None) -> ApiSettings:
 def read_integer(
     values: Mapping[str, str], name: str, default: int, minimum: int
 ) -> int:
+    configured = values.get(name, str(default)).strip()
     try:
-        value = int(values.get(name, str(default)).strip() or str(default))
+        value = int(str(default) if configured == "" else configured)
     except ValueError as error:
         raise ConfigurationError(field=name, reason="must be an integer") from error
     if value < minimum:
@@ -114,9 +116,10 @@ def development_database_url(values: Mapping[str, str]) -> str:
     if port > 65535:
         raise ConfigurationError(field="DB_PORT", reason="must be between 1 and 65535")
     credentials = quote(user, safe="")
-    if password := values.get("DB_PASSWORD", ""):
+    if (password := values.get("DB_PASSWORD", "")) != "":
         credentials += f":{quote(password, safe='')}"
-    host = values.get("DB_HOST", "localhost").strip() or "localhost"
+    configured_host = values.get("DB_HOST", "localhost").strip()
+    host = "localhost" if configured_host == "" else configured_host
     return f"postgresql://{credentials}@{host}:{port}/{quote(database, safe='')}"
 
 
@@ -129,8 +132,9 @@ def get_database_settings(values: Mapping[str, str] | None = None) -> DatabaseSe
             field="ENV", reason="must be one of: dev, nonprod, prod"
         ) from error
     scoped_name = f"{environment.value.upper()}_DATABASE_URL"
+    scoped_url = values.get(scoped_name, "").strip()
     database_url = (
-        values.get(scoped_name, "").strip() or values.get("DATABASE_URL", "").strip()
+        values.get("DATABASE_URL", "").strip() if scoped_url == "" else scoped_url
     )
     if database_url == "":
         if environment is not AppEnvironment.DEV:

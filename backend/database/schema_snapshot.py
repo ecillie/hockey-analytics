@@ -3,13 +3,17 @@
 import argparse
 import json
 import logging
-import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.shared.cli import ExitCode
+from app.shared.environment import database_url
+from app.shared.cleanup import complete_cleanup
 from sqlalchemy import create_engine, text
+
+
+type SchemaCatalog = dict[str, list[dict[str, object]]]
 
 
 def catalog_queries() -> dict[str, str]:
@@ -58,26 +62,23 @@ def catalog_queries() -> dict[str, str]:
     }
 
 
-def database_url() -> str:
-    url = os.getenv("DATABASE_URL") or os.getenv("TEST_DATABASE_URL")
-    if not url:
-        raise RuntimeError("DATABASE_URL or TEST_DATABASE_URL is required")
-    return url
-
-
-def snapshot() -> dict[str, list[dict[str, object]]]:
+def snapshot() -> SchemaCatalog:
     engine = create_engine(database_url(), pool_pre_ping=True)
+    primary: BaseException | None = None
     try:
         with engine.connect() as connection:
             return {
                 name: [dict(row) for row in connection.execute(text(query)).mappings()]
                 for name, query in catalog_queries().items()
             }
+    except BaseException as failure:
+        primary = failure
+        raise
     finally:
-        engine.dispose()
+        complete_cleanup((engine.dispose,), primary)
 
 
-def render(value: dict[str, list[dict[str, object]]]) -> str:
+def render(value: SchemaCatalog) -> str:
     return json.dumps(value, indent=2, sort_keys=True, default=str) + "\n"
 
 

@@ -11,6 +11,7 @@ from app.ScriptingFiles.FullDataScript.team_stints import (
     apply_team_stint_backfill,
     plan_team_stint_backfill,
 )
+from app.shared.cleanup import complete_cleanup
 from app.shared.cli import CommandOptionError, ExitCode
 
 
@@ -62,6 +63,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def repair_team_stints(options: CommandOptions) -> dict:
     init_db()
     connection = connect_database()
+    primary: BaseException | None = None
     try:
         if options.apply:
             result = apply_team_stint_backfill(
@@ -80,11 +82,12 @@ def repair_team_stints(options: CommandOptions) -> dict:
         connection.rollback()
         result["applied"] = False
         return result
-    except Exception:
-        connection.rollback()
+    except BaseException as failure:
+        primary = failure
+        complete_cleanup((connection.rollback,), primary)
         raise
     finally:
-        connection.close()
+        complete_cleanup((connection.close,), primary)
 
 
 if __name__ == "__main__":

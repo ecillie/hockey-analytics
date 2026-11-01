@@ -90,14 +90,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         init_db()
         summary = sync_roster_status()
-    except IncompleteRosterFeedError:
+    except Exception as error:
+        incomplete = isinstance(error, IncompleteRosterFeedError)
         logger.exception(
             "Roster-status sync refused an incomplete feed; changes were rolled back"
+            if incomplete
+            else "Roster-status sync failed; database changes were rolled back"
         )
-        return ExitCode.INCOMPLETE
-    except Exception:
-        logger.exception("Roster-status sync failed; database changes were rolled back")
-        return ExitCode.FAILURE
+        return ExitCode.INCOMPLETE if incomplete else ExitCode.FAILURE
 
     logger.info(
         "Roster sync complete: updated=%s active=%s minors=%s ltir=%s "

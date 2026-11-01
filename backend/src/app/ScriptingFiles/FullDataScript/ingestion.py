@@ -15,6 +15,9 @@ from pathlib import Path
 from typing import Iterable
 
 import requests
+from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
+    MissingSourceSnapshotError,
+)
 from app.database import database_transaction, init_db
 from app.ScriptingFiles.FullDataScript import capspace
 from app.ScriptingFiles.FullDataScript.contracts.active_repository import (
@@ -155,10 +158,8 @@ def existing_capwages_summary() -> dict[str, int]:
         )
         players, contracts, contract_seasons = cursor.fetchone()
         cursor.close()
-    if not contracts:
-        raise RuntimeError(
-            "CapWages is unavailable and no last-good database snapshot exists"
-        )
+    if contracts == 0:
+        raise MissingSourceSnapshotError(source="CapWages")
     return {
         "players": players,
         "contracts": contracts,
