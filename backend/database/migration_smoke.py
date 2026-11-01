@@ -14,6 +14,15 @@ from app.shared.smoke import (
     ReferenceDataError,
 )
 from app.shared.cli import ExitCode
+from app.config import load_environment
+from app.shared.observability.domain import CommandOutcome, read_logging_settings
+from app.shared.observability.errors import LoggingSettingsError
+from app.shared.observability.services import (
+    configure_logging,
+    start_command,
+    configure_command_exceptions,
+    finish_command,
+)
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -71,13 +80,25 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    build_parser().parse_args(argv)
-    logging.basicConfig(level=logging.INFO)
+    parser = build_parser()
+    parser.parse_args(argv)
     try:
-        return execute_command()
+        settings = read_logging_settings(load_environment())
+    except LoggingSettingsError as error:
+        parser.error(str(error))
+    configure_logging(settings)
+    context = start_command("migration_smoke")
+    configure_command_exceptions(context)
+    try:
+        result = execute_command()
     except Exception:
-        logger.exception("Database check failed")
+        logger.exception(
+            "Database check failed", extra=context.fields | {"event": "command.failed"}
+        )
+        finish_command(context, CommandOutcome.FAILED)
         return ExitCode.FAILURE
+    finish_command(context, CommandOutcome.COMPLETED)
+    return result
 
 
 def execute_command() -> int:

@@ -3,12 +3,21 @@
 import argparse
 import ast
 import logging
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum, auto
 from pathlib import Path
 
 from app.shared.cli import ExitCode
+from app.shared.observability.domain import CommandOutcome, read_logging_settings
+from app.shared.observability.errors import LoggingSettingsError
+from app.shared.observability.services import (
+    configure_logging,
+    start_command,
+    configure_command_exceptions,
+    finish_command,
+)
 
 
 class Rule(StrEnum):
@@ -139,17 +148,41 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     options = CommandOptions(**vars(parser.parse_args(argv)))
-    logging.basicConfig(level=logging.INFO)
+    try:
+        settings = read_logging_settings(os.environ)
+    except LoggingSettingsError as error:
+        parser.error(str(error))
+    configure_logging(settings)
+    context = start_command("verify_python_rules")
+    configure_command_exceptions(context)
     try:
         violations = inspect_repository(options.root.resolve())
     except Exception:
-        logger.exception("Python rule inspection failed")
+        logger.exception(
+            "Python rule inspection failed",
+            extra=context.fields | {"event": "command.failed"},
+        )
+        finish_command(context, CommandOutcome.FAILED)
         return ExitCode.FAILURE
     for violation in violations:
-        logger.error("%s:%s: %s", violation.path, violation.line, violation.rule)
+        logger.error(
+            "%s:%s: %s",
+            violation.path,
+            violation.line,
+            violation.rule,
+            extra=context.fields
+            | {
+                "event": "command.verification_failed",
+                "source_module": ".".join(violation.path.with_suffix("").parts),
+                "line": violation.line,
+                "stage": violation.rule.value,
+            },
+        )
     if len(violations) > 0:
+        finish_command(context, CommandOutcome.FAILED)
         return ExitCode.FAILURE
     print("Python structural rules passed; semantic rules require manual review.")
+    finish_command(context, CommandOutcome.COMPLETED)
     return ExitCode.SUCCESS
 
 

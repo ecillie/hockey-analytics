@@ -18,7 +18,11 @@ from app.shared.observability.domain import (
 )
 from app.shared.observability.policy import find_record_limits_violation
 from app.shared.observability.schemas import LifecycleReport, read_lifecycle_report
-from app.shared.observability.util import read_cleanup_failure, read_request_failure
+from app.shared.observability.util import (
+    has_truncated_cleanup,
+    read_cleanup_failure,
+    read_request_failure,
+)
 
 
 type DiagnosticFields = dict[str, object]
@@ -85,7 +89,10 @@ def collect_exceptions(
         if following is None and cleanup is not None and id(cleanup) not in seen:
             following, cleanup = cleanup, None
         current = following
-    return DiagnosticCollection(items=tuple(errors), truncated=current is not None)
+    return DiagnosticCollection(
+        items=tuple(errors),
+        truncated=current is not None or has_truncated_cleanup(error),
+    )
 
 
 def collect_context(
@@ -104,6 +111,9 @@ def sanitize_context(
         "source",
         "outcome",
         "method",
+        "source_module",
+        "player_kind",
+        "revision",
     )
     numbers = (
         "run_id",
@@ -116,6 +126,13 @@ def sanitize_context(
         "attempted",
         "committed",
         "rolled_back",
+        "line",
+        "rows",
+        "mae",
+        "rmse",
+        "r2",
+        "game_type",
+        "failed",
     )
     context: DiagnosticFields = {}
     if "route" in values:
@@ -205,6 +222,16 @@ def render_bounded_diagnostic(
         (
             "exceptions",
             "exceptions_truncated",
+            "source_module",
+            "player_kind",
+            "revision",
+            "game_type",
+            "failed",
+            "line",
+            "rows",
+            "mae",
+            "rmse",
+            "r2",
             "route",
             "source",
             "stage",

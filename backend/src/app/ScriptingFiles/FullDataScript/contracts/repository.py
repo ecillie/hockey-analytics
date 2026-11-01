@@ -11,6 +11,7 @@ from types import MappingProxyType
 from typing import Protocol, runtime_checkable
 
 from app.database import open_database_transaction
+from app.shared.observability.domain import DiagnosticContext
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
     Candidate,
     ContractSeason,
@@ -755,6 +756,19 @@ type ContractRepositoryFactory = Callable[
 
 
 @contextmanager
-def open_contract_repository() -> Generator[ContractRepository]:
-    with open_database_transaction() as connection, connection.cursor() as cursor:
+def open_contract_repository(
+    *, context: DiagnosticContext | None = None
+) -> Generator[ContractRepository]:
+    with (
+        open_database_transaction(context=context) as connection,
+        connection.cursor() as cursor,
+    ):
         yield PostgresContractRepository(cursor=cursor)
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ContextualContractRepositoryFactory:
+    context: DiagnosticContext | None
+
+    def __call__(self) -> AbstractContextManager[ContractRepository]:
+        return open_contract_repository(context=self.context)

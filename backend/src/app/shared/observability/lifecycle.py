@@ -12,7 +12,7 @@ from app.shared.cleanup import retain_cleanup_failure
 from app.shared.observability.domain import LoggingSettings
 from app.shared.observability.formatting import collect_exceptions
 from app.shared.observability.schemas import LifecycleEvent, LifecycleReport
-from app.shared.observability.util import read_cleanup_failure
+from app.shared.observability.util import is_expected_cancellation
 
 
 logger = logging.getLogger(__name__)
@@ -26,10 +26,7 @@ def serialize_lifecycle_failure(
     event: LifecycleEvent = (
         "service.startup_failed" if phase == "startup" else "service.shutdown_failed"
     )
-    cleanup = read_cleanup_failure(error)
-    if isinstance(error, asyncio.CancelledError) and (
-        cleanup is None or isinstance(cleanup, asyncio.CancelledError)
-    ):
+    if isinstance(error, asyncio.CancelledError) and is_expected_cancellation(error):
         event = (
             "service.startup_cancelled"
             if phase == "startup"

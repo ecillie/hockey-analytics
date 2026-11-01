@@ -182,9 +182,12 @@ class InvalidContractSession:
 @dataclass(slots=True, kw_only=True, frozen=True)
 class SessionLifecycle:
     closures: list[bool] = field(default_factory=list)
+    failure: BaseException | None = None
 
     def close(self) -> None:
         self.closures.append(True)
+        if self.failure is not None:
+            raise self.failure
 
 
 def build_nhl_stat_rows(kind, season, game_type, *, goals=5):

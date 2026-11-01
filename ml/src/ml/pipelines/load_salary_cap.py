@@ -6,6 +6,16 @@ import pandas as pd
 from app.config import get_database_settings
 from app.database import open_database_resources
 from app.shared.cli import ExitCode
+from app.config import load_environment
+from app.shared.observability.domain import CommandOutcome, read_logging_settings
+from app.shared.observability.errors import LoggingSettingsError
+from ml.observability.services import report_ml_progress
+from app.shared.observability.services import (
+    configure_logging,
+    start_command,
+    configure_command_exceptions,
+    finish_command,
+)
 from sqlalchemy import Connection, text
 
 SALARY_CAP_QUERY = """
@@ -62,15 +72,32 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    build_parser().parse_args(argv)
-    logging.basicConfig(level=logging.INFO)
+    parser = build_parser()
+    parser.parse_args(argv)
+    try:
+        settings = read_logging_settings(load_environment())
+    except LoggingSettingsError as error:
+        parser.error(str(error))
+    configure_logging(settings)
+    context = start_command("ml.load_salary_cap")
+    configure_command_exceptions(context)
     try:
         df = load_salary_cap()
+        report_ml_progress(
+            context,
+            event="ml.dataset_ready",
+            stage="salary_cap",
+            values={"rows": len(df)},
+        )
 
         print_cap_diagnostics(df)
     except Exception:
-        logger.exception("Command failed")
+        logger.exception(
+            "Command failed", extra=context.fields | {"event": "command.failed"}
+        )
+        finish_command(context, CommandOutcome.FAILED)
         return ExitCode.FAILURE
+    finish_command(context, CommandOutcome.COMPLETED)
     return ExitCode.SUCCESS
 
 

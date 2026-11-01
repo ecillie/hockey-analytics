@@ -1,6 +1,7 @@
 """Pure extraction of request and failure metadata without formatting payloads."""
 
 import logging
+import asyncio
 
 from starlette.routing import Route
 from starlette.types import Scope
@@ -29,6 +30,27 @@ def read_cleanup_failure(error: BaseException) -> BaseException | None:
     except Exception:
         return None
     return cleanup if isinstance(cleanup, BaseException) else None
+
+
+def has_truncated_cleanup(error: BaseException) -> bool:
+    try:
+        return error.__dict__.get("tradevalue_cleanup_truncated") is True
+    except Exception:
+        return True
+
+
+def is_expected_cancellation(error: BaseException) -> bool:
+    if not isinstance(error, (asyncio.CancelledError, KeyboardInterrupt)):
+        return False
+    cleanup = read_cleanup_failure(error)
+    try:
+        failed = error.__dict__.get("tradevalue_cleanup_failed") is True
+    except Exception:
+        return False
+    return (
+        cleanup is None
+        or isinstance(cleanup, (asyncio.CancelledError, KeyboardInterrupt))
+    ) and not failed
 
 
 def read_request_failure(

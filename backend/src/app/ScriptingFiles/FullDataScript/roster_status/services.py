@@ -3,6 +3,11 @@
 from dataclasses import dataclass
 from datetime import date
 from typing import Protocol, runtime_checkable
+from app.ScriptingFiles.FullDataScript.tracking.domain import IngestionContext
+from app.ScriptingFiles.FullDataScript.tracking.services import (
+    report_ingestion_progress,
+)
+from app.shared.observability.domain import LogLevel
 
 from app.ScriptingFiles.FullDataScript.roster_status.domain import (
     FetchResult,
@@ -24,6 +29,7 @@ class RosterStatusService:
     repository: RosterRepository
     nhl_service: RosterFeed
     ahl_service: RosterFeed
+    context: IngestionContext | None = None
 
     def sync(self, as_of: date | None = None) -> SyncSummary:
         as_of = date.today() if as_of is None else as_of
@@ -31,6 +37,26 @@ class RosterStatusService:
         ltir_player_ids = self.repository.load_active_ltir_player_ids(as_of)
         nhl_result = self.nhl_service.fetch_current_rosters()
         ahl_result = self.ahl_service.fetch_current_rosters()
+        report_ingestion_progress(
+            self.context,
+            event="ingestion.feed_received",
+            values={
+                "source": "nhl",
+                "fetched": len(nhl_result.items),
+                "outcome": "completed" if nhl_result.complete else "incomplete",
+            },
+            level=LogLevel.DEBUG,
+        )
+        report_ingestion_progress(
+            self.context,
+            event="ingestion.feed_received",
+            values={
+                "source": "ahl",
+                "fetched": len(ahl_result.items),
+                "outcome": "completed" if ahl_result.complete else "incomplete",
+            },
+            level=LogLevel.DEBUG,
+        )
         ahl_matches = match_ahl_players(players, ahl_result.items)
         self.repository.save_ahl_external_ids(
             (player_id, match.external_id, match.full_name)
