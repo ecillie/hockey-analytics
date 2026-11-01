@@ -770,13 +770,17 @@ Completed local combined gates on Python **3.12.14**, 2026-11-01:
 
 Transcripts use `/private/tmp/tradevalue-logging05-` prefixes; image captures are
 under `/private/tmp/tradevalue-logging05-capture` with the reused verifier's
-phase-2 basenames inside that separate directory. The complete commands are in
-`tradevalue-logging05-checks.sh` and `tradevalue-logging05-image-checks.sh` there.
+phase-2 basenames inside that separate directory. The complete command scripts
+are `/private/tmp/tradevalue-logging05-checks.sh` and
+`/private/tmp/tradevalue-logging05-image-checks.sh`.
 Frontend phase-4 evidence still applies: no frontend changes were made after its
 verified and merged head. The final full semantic review is tracked file by file
 in [Python semantic audit checkpoint](python-semantic-audit.md), which currently
-records 18 empty modules and 20 inspected nonempty sources while explicitly
-retaining unresolved dispositions and all other files as pending. These passing
+records 18 empty modules, 20 docstring-only packages and 29 other inspected
+sources. It explicitly retains unresolved dispositions and all other files as
+pending. ML content inspection identified remaining role-layout, repeated
+metric-map types and duplicated position-group mapping decisions to resolve.
+These passing
 gates do not substitute for that review or the remaining hosted checks. Phase 5
 and release acceptance remain incomplete; the existing release-to-Prod PR stays
 under normal checks and manual approval.
