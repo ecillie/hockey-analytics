@@ -1,12 +1,19 @@
 """Disposable PostgreSQL contract lifecycle scenarios."""
 
 from _thread import LockType
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from threading import Lock
 from app.ScriptingFiles.FullDataScript.contracts.tests.fixtures import SavedResponse
 from psycopg2.extensions import connection as PgConnection
 from sqlalchemy import text
+from app.config import DatabaseSettings
+from app.database import connect_database, open_database_cursor
+from app.shared.cleanup import complete_cleanup
+
+
+type ContractCounts = tuple[int, int, int]
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -34,8 +41,8 @@ class ContractDatabaseScenario:
     connection: PgConnection
     session: HistoricalFixtureSession
 
-    def count_rows(self) -> tuple[int, int, int]:
-        with self.connection.cursor() as cursor:
+    def count_rows(self) -> ContractCounts:
+        with open_database_cursor(self.connection) as cursor:
             cursor.execute(
                 "SELECT (SELECT count(*) FROM contracts),(SELECT count(*) FROM contract_seasons),(SELECT count(*) FROM source_records)"
             )
@@ -44,7 +51,7 @@ class ContractDatabaseScenario:
             return row[0], row[1], row[2]
 
     def latest_run(self) -> tuple[str, int, int, Mapping[str, object]]:
-        with self.connection.cursor() as cursor:
+        with open_database_cursor(self.connection) as cursor:
             cursor.execute(
                 "SELECT status,records_created,records_read,metadata FROM ingestion_runs WHERE job_name='populate_historical_contracts' ORDER BY id DESC LIMIT 1"
             )
@@ -53,7 +60,7 @@ class ContractDatabaseScenario:
             return row[0], row[1], row[2], row[3]
 
     def install_batch_failure(self) -> None:
-        with self.connection.cursor() as cursor:
+        with open_database_cursor(self.connection) as cursor:
             cursor.execute("""CREATE FUNCTION phase9_reject_late_contract() RETURNS trigger LANGUAGE plpgsql AS $$
                 BEGIN
                     IF NEW.player_id=10101 THEN
@@ -67,14 +74,39 @@ class ContractDatabaseScenario:
         self.connection.commit()
 
     def remove_batch_failure(self) -> None:
-        with self.connection.cursor() as cursor:
+        with open_database_cursor(self.connection) as cursor:
             cursor.execute("DROP TRIGGER IF EXISTS phase9_late_contract ON contracts")
             cursor.execute("DROP FUNCTION IF EXISTS phase9_reject_late_contract()")
         self.connection.commit()
 
 
+@contextmanager
+def open_contract_scenario(
+    settings: DatabaseSettings,
+    session: HistoricalFixtureSession,
+    *,
+    cleanup_batch_failure: bool = False,
+) -> Generator[ContractDatabaseScenario]:
+    connection = connect_database(settings)
+    scenario = ContractDatabaseScenario(connection=connection, session=session)
+    primary: BaseException | None = None
+    try:
+        seed_contract_batch(connection)
+        yield scenario
+    except BaseException as failure:
+        primary = failure
+        raise
+    finally:
+        operations = (
+            (connection.rollback, scenario.remove_batch_failure, connection.close)
+            if cleanup_batch_failure
+            else (connection.close,)
+        )
+        complete_cleanup(operations, primary)
+
+
 def seed_contract_batch(connection: PgConnection) -> None:
-    with connection.cursor() as cursor:
+    with open_database_cursor(connection) as cursor:
         cursor.execute("TRUNCATE teams,players,ingestion_runs RESTART IDENTITY CASCADE")
         cursor.execute(
             "INSERT INTO teams(id,abbreviation,name) VALUES (900,'DET','Detroit Red Wings')"
@@ -105,7 +137,14 @@ class FixtureSession:
 @dataclass(slots=True, kw_only=True, frozen=True)
 class ContractPreviewScenario:
     session: FixtureSession
-    before: tuple[int, int, int]
+    before: ContractCounts
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ContractConflictScenario:
+    before: ContractCounts
+    after_preview: ContractCounts
+    preview: Mapping[str, int]
 
 
 def seed_player(

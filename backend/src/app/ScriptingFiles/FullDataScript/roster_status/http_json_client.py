@@ -6,18 +6,45 @@ import re
 from typing import Protocol, runtime_checkable
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from app.ScriptingFiles.FullDataScript.roster_status.domain import HttpOptions
+from app.shared.cleanup import complete_cleanup
 from app.ScriptingFiles.FullDataScript.roster_status.errors import (
     InvalidJsonResponseError,
+    FeedFetchError,
 )
 
 
 @runtime_checkable
 class JsonClient(Protocol):
     def get_json(self, url: str, params: Mapping[str, str] | None = None) -> object: ...
+
+
+def fetch_validated[T: BaseModel](
+    client: JsonClient,
+    url: str,
+    model: type[T],
+    source: str,
+    params: Mapping[str, str] | None = None,
+) -> T:
+    try:
+        return model.model_validate(client.get_json(url, params))
+    except (
+        URLError,
+        OSError,
+        UnicodeError,
+        InvalidJsonResponseError,
+        ValidationError,
+    ) as exc:
+        reason = (
+            "response shape is invalid"
+            if isinstance(exc, ValidationError)
+            else str(exc)
+        )
+        raise FeedFetchError(source=source, reason=reason) from exc
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -34,7 +61,12 @@ class JsonHttpClient:
                 "User-Agent": self.options.user_agent,
             },
         )
-        with urlopen(request, timeout=self.options.timeout_seconds) as response:
+        try:
+            response = urlopen(request, timeout=self.options.timeout_seconds)
+        except HTTPError as error:
+            complete_cleanup((error.close,), error)
+            raise
+        with response:
             body = response.read().decode("utf-8")
         return decode_json_or_jsonp(body)
 

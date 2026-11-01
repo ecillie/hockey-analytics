@@ -1,12 +1,11 @@
 """DB-API transaction ownership against an explicitly disposable database."""
 
 from uuid import uuid4
-import psycopg2
 from psycopg2 import sql
 import pytest
 import logging
 from app.config import AppEnvironment, DatabaseSettings
-from app.database import open_database_transaction
+from app.database import open_database_cursor, open_database_transaction
 from app.shared.observability.domain import InvocationContext
 from app.shared.tests.resources import (
     TransactionScenario,
@@ -29,23 +28,23 @@ class TestDatabaseTransactions:
         settings = DatabaseSettings(
             environment=AppEnvironment.DEV, database_url=database_url
         )
-        connection = psycopg2.connect(database_url)
+        with (
+            open_database_transaction(settings) as connection,
+            open_database_cursor(connection) as cursor,
+        ):
+            cursor.execute(
+                sql.SQL("CREATE TABLE {} (value integer)").format(sql.Identifier(table))
+            )
         try:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    sql.SQL("CREATE TABLE {} (value integer)").format(
-                        sql.Identifier(table)
-                    )
-                )
-            connection.commit()
             yield TransactionScenario(settings=settings, table=table)
         finally:
-            with connection.cursor() as cursor:
+            with (
+                open_database_transaction(settings) as connection,
+                open_database_cursor(connection) as cursor,
+            ):
                 cursor.execute(
                     sql.SQL("DROP TABLE IF EXISTS {}").format(sql.Identifier(table))
                 )
-            connection.commit()
-            connection.close()
 
     def test_success_commits_and_closes(self, scenario, context, caplog):
         with open_database_transaction(

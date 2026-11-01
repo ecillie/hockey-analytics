@@ -1,14 +1,29 @@
 """Typed ingestion stages validate before persistence and own their clients."""
 
 from dataclasses import replace
+import asyncio
+import requests
+from app.shared.tests.fakes import StageOutcome
 from copy import deepcopy
-from pydantic import ValidationError
-from app.ScriptingFiles.FullDataScript.source_ingestion.schemas import StatsPage
+from pydantic import TypeAdapter, ValidationError
+from app.ScriptingFiles.FullDataScript.source_ingestion.schemas import (
+    Integer,
+    SchedulePage,
+    StatsPage,
+    TeamAbbreviation,
+)
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.scenarios import (
     RepositoryStage,
     ClientStage,
     BorrowedTransport,
     WorkerStage,
+    PaginationScenario,
+    SessionScenario,
+    SessionSetupScenario,
+    SessionCloseProbe,
+    SessionLifetimeScenario,
+    exercise_session_owner,
+    ValidationBoundary,
 )
 from threading import Barrier, Lock
 import json
@@ -24,10 +39,16 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     IngestionValidationError,
+    IntegerValueViolation,
+    TeamAbbreviationViolation,
+    OptionsViolation,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion import util as source_utils
-from app.ScriptingFiles.FullDataScript.source_ingestion import http as source_http
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository import (
+    http as source_http,
+)
+from app.ScriptingFiles.FullDataScript.contracts.repository import http as profile_http
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
     SourceHttpOptions,
     SessionSourceClient,
     SynchronizedSourceClient,
@@ -51,6 +72,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.schedule.domain import (
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.schedule.services import (
     ScheduleService,
+    parse_schedule_page,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.fakes import (
     MemorySourceClient,
@@ -205,14 +227,53 @@ class TestStatsPagination:
         if request.param == "limit":
             first["total"] = 8
             second["total"] = 8
-        return MemorySourceClient(
-            pages={(self.url, 0): first, (self.url, 2): second}
-        ), maximum_pages
+        return PaginationScenario(
+            client=MemorySourceClient(
+                pages={(self.url, 0): first, (self.url, 2): second}
+            ),
+            maximum_pages=maximum_pages,
+        )
 
     def test_malformed_metadata_cannot_return_a_partial_success(self, malformed, job):
-        client, maximum = malformed
         with pytest.raises(IngestionValidationError):
-            fetch_stats_pages(client, job, page_size=2, maximum_pages=maximum)
+            fetch_stats_pages(
+                malformed.client,
+                job,
+                page_size=2,
+                maximum_pages=malformed.maximum_pages,
+            )
+
+
+class TestNhlOptionsBeforeResources:
+    cases = (
+        pytest.param(("first_season", 2026), id="unordered-seasons"),
+        pytest.param(("workers", 0), id="zero-workers"),
+        pytest.param(("page_size", 0), id="zero-page-size"),
+        pytest.param(("maximum_pages", 0), id="zero-page-budget"),
+    )
+
+    @pytest.fixture(params=cases)
+    def stage(self, request):
+        field, value = request.param
+        options = replace(
+            NhlStatsOptions(first_season=2025, last_season=2025), **{field: value}
+        )
+        factory = OwnedClientFactory(client=MemorySourceClient(), barrier=Barrier(1))
+        repository = MemoryNhlStatsRepository()
+        return WorkerStage(
+            service=NhlStatsService(
+                client_factory=factory, repository=repository, options=options
+            ),
+            factory=factory,
+            repository=repository,
+            invalid=True,
+        )
+
+    def test_invalid_options_open_no_clients_and_write_no_snapshot(self, stage):
+        with pytest.raises(OptionsViolation):
+            stage.service.ingest()
+        assert stage.factory.state == {}
+        assert stage.repository.snapshots == []
 
 
 class TestNhlWorkerOwnership:
@@ -386,21 +447,191 @@ class TestOwnedHttpTransport:
         monkeypatch.setattr(
             source_http, "open_http_session", ManagedSessionFactory(session=session)
         )
-        return session, request.param
+        return SessionScenario(session=session, failing=request.param)
 
     def test_owned_session_closes_on_success_and_source_failure(self, session, options):
-        resource, failing = session
-        if failing:
+        if session.failing:
             with pytest.raises(RuntimeError, match="source unavailable"):
                 with source_http.open_source_client(options) as client:
                     client.get_json("https://source.test")
-        if not failing:
+        if session.failing is False:
             with source_http.open_source_client(options) as client:
                 assert client.get_json("https://source.test") == {"ok": True}
                 assert client.get_csv("https://source.test/file.csv") == "csv-content"
-            assert resource.calls[-1][1] == 3
-        assert resource.calls[0][1] == 2
-        assert resource.opened == resource.closed == [True]
+            assert session.session.calls[-1][1] == 3
+        assert session.session.calls[0][1] == 2
+        assert session.session.opened == session.session.closed == [True]
+
+
+class TestSessionSetupCleanup:
+    @pytest.fixture(
+        params=[
+            pytest.param("retry", id="retry-construction"),
+            pytest.param("mount", id="adapter-installation"),
+            pytest.param("headers", id="header-installation"),
+        ]
+    )
+    def operation(self, request):
+        return request.param
+
+    @pytest.fixture(
+        params=[
+            pytest.param(RuntimeError, id="error"),
+            pytest.param(asyncio.CancelledError, id="cancelled"),
+            pytest.param(KeyboardInterrupt, id="interrupted"),
+        ]
+    )
+    def failure_kind(self, request):
+        return request.param
+
+    @pytest.fixture(
+        params=[
+            pytest.param(False, id="closed"),
+            pytest.param(True, id="close-failed"),
+        ]
+    )
+    def cleanup_fails(self, request):
+        return request.param
+
+    @pytest.fixture
+    def scenario(self, operation, failure_kind, cleanup_fails, monkeypatch):
+        with requests.Session() as session, monkeypatch.context() as patches:
+            cause = ValueError("session setup cause")
+            primary = failure_kind("session setup failed")
+            primary.__cause__ = cause
+            scenario = SessionSetupScenario(
+                resource=SessionCloseProbe(
+                    session=session,
+                    native_close=session.close,
+                    cleanup=RuntimeError("session close failed")
+                    if cleanup_fails
+                    else None,
+                    closed=[],
+                ),
+                primary=primary,
+                cause=cause,
+            )
+            patches.setattr(
+                source_http.requests, "Session", StageOutcome(result=session)
+            )
+            patches.setattr(session, "close", scenario.resource.close)
+            rejected = StageOutcome(result=None, failure=primary)
+            if operation == "retry":
+                patches.setattr(source_http, "Retry", rejected)
+            if operation == "mount":
+                patches.setattr(session, "mount", rejected)
+            if operation == "headers":
+                patches.setattr(session.headers, "update", rejected)
+            yield scenario
+
+    def test_setup_failure_closes_session_without_masking_primary(self, scenario):
+        with pytest.raises(type(scenario.primary)) as failure:
+            source_http.open_http_session()
+        assert failure.value is scenario.primary
+        assert failure.value.__cause__ is scenario.cause
+        assert scenario.resource.closed == [True]
+        if scenario.resource.cleanup is not None:
+            assert (
+                failure.value.__dict__["tradevalue_cleanup"]
+                is scenario.resource.cleanup
+            )
+
+
+class TestSessionLifetimeCleanup:
+    failure_cases = (
+        pytest.param(None, id="success"),
+        pytest.param(RuntimeError, id="error"),
+        pytest.param(asyncio.CancelledError, id="cancelled"),
+        pytest.param(KeyboardInterrupt, id="interrupted"),
+    )
+
+    @pytest.fixture(params=failure_cases)
+    def primary_kind(self, request):
+        return request.param
+
+    @pytest.fixture(params=failure_cases)
+    def cleanup_kind(self, request):
+        return request.param
+
+    @pytest.fixture(
+        params=[
+            pytest.param("source", id="source-client"),
+            pytest.param("historical", id="historical-profile"),
+            pytest.param("active", id="active-profile"),
+        ]
+    )
+    def factory(self, request):
+        return {
+            "source": source_http.open_source_client,
+            "historical": profile_http.open_profile_session,
+            "active": profile_http.open_active_session,
+        }[request.param]
+
+    @pytest.fixture(
+        params=[
+            pytest.param(True, id="entry"),
+            pytest.param(False, id="body"),
+        ]
+    )
+    def fail_during_entry(self, request):
+        return request.param
+
+    @pytest.fixture
+    def scenario(
+        self, factory, primary_kind, cleanup_kind, fail_during_entry, monkeypatch
+    ):
+        with requests.Session() as session, monkeypatch.context() as patches:
+            cause = ValueError("session lifetime cause")
+            primary = (
+                primary_kind("session lifetime failed")
+                if primary_kind is not None
+                else None
+            )
+            cleanup = (
+                cleanup_kind("session cleanup failed")
+                if cleanup_kind is not None
+                else None
+            )
+            if primary is not None:
+                primary.__cause__ = cause
+            if cleanup is not None:
+                cleanup.__cause__ = cause
+            resource = SessionCloseProbe(
+                session=session, native_close=session.close, cleanup=cleanup, closed=[]
+            )
+            patches.setattr(session, "close", resource.close)
+            created = StageOutcome(result=session)
+            patches.setattr(source_http, "open_http_session", created)
+            patches.setattr(profile_http, "open_http_session", created)
+            if fail_during_entry:
+                patches.setattr(
+                    requests.Session,
+                    "__enter__",
+                    StageOutcome(result=session, failure=primary),
+                )
+            yield SessionLifetimeScenario(
+                factory=factory,
+                resource=resource,
+                primary=primary,
+                cause=cause,
+                fail_during_entry=fail_during_entry,
+            )
+
+    def test_entry_body_and_close_retain_the_correct_failure(self, scenario):
+        expected = scenario.expected_failure
+        if expected is None:
+            exercise_session_owner(scenario)
+        if expected is not None:
+            with pytest.raises(BaseException) as failure:
+                exercise_session_owner(scenario)
+            assert failure.value is expected
+            assert failure.value.__cause__ is scenario.cause
+        assert scenario.resource.closed == [True]
+        if scenario.primary is not None and scenario.resource.cleanup is not None:
+            assert (
+                scenario.primary.__dict__["tradevalue_cleanup"]
+                is scenario.resource.cleanup
+            )
 
 
 class TestInvalidQualityOptions:
@@ -517,14 +748,18 @@ class TestBorrowedTransport:
 
 
 class TestProductionRetryConfiguration:
-    def test_existing_get_retry_and_backoff_policy_is_preserved(self):
+    @pytest.fixture
+    def session(self):
         with source_http.open_http_session() as session:
-            retry = session.get_adapter("https://").max_retries
-            assert retry.total == 4
-            assert retry.backoff_factor == 0.6
-            assert retry.status_forcelist == (429, 500, 502, 503, 504)
-            assert retry.allowed_methods == ("GET",)
-            assert retry.respect_retry_after_header
+            yield session
+
+    def test_existing_get_retry_and_backoff_policy_is_preserved(self, session):
+        retry = session.get_adapter("https://").max_retries
+        assert retry.total == 4
+        assert retry.backoff_factor == 0.6
+        assert retry.status_forcelist == (429, 500, 502, 503, 504)
+        assert retry.allowed_methods == ("GET",)
+        assert retry.respect_retry_after_header
 
 
 class TestInvalidMinimumRows:
@@ -579,3 +814,75 @@ class TestStatsPageSnapshots:
     def test_serialization_retains_source_shape(self, page, expected):
         assert json.loads(page.model_dump_json()) == expected
         assert page.model_dump()["data"] == tuple(expected["data"])
+
+
+class TestSchedulePageSnapshots:
+    @pytest.fixture
+    def payload(self, source_schedule_page):
+        source_schedule_page["gameWeek"][0]["games"].append(
+            {
+                "gameType": 3,
+                "id": "not-a-regular-game",
+                "homeTeam": {"score": "invalid"},
+            }
+        )
+        return source_schedule_page
+
+    @pytest.fixture
+    def expected(self, payload):
+        return deepcopy(payload)
+
+    @pytest.fixture
+    def page(self, payload):
+        return SchedulePage.model_validate(payload)
+
+    def test_input_aliases_cannot_change_validated_games(self, page, payload, expected):
+        payload["gameWeek"][0]["games"][0]["homeTeam"]["abbrev"] = "CCC"
+        assert json.loads(page.model_dump_json()) == expected
+
+    def test_returned_games_are_detached(self, page, expected):
+        games = page.gameWeek[0].games
+        games[0]["homeTeam"]["abbrev"] = "CCC"
+        games[0]["id"] = 99
+        assert json.loads(page.model_dump_json()) == expected
+        assert page.gameWeek[0].games == tuple(expected["gameWeek"][0]["games"])
+
+    def test_serialization_retains_source_shape(self, page, expected):
+        assert json.loads(page.model_dump_json()) == expected
+        assert page.model_dump()["gameWeek"][0]["games"] == tuple(
+            expected["gameWeek"][0]["games"]
+        )
+
+    def test_nonregular_games_are_filtered_before_game_validation(self, page):
+        games = parse_schedule_page(page, source="fixture")
+        assert len(games) == 1
+        assert games[0].external_id == 1
+
+
+class TestTypedNativeValidatorFailures:
+    cases = (
+        pytest.param((Integer, IntegerValueViolation), id="finite-integer"),
+        pytest.param(
+            (TeamAbbreviation, TeamAbbreviationViolation), id="team-abbreviation"
+        ),
+    )
+
+    @pytest.fixture(params=cases)
+    def boundary(self, request):
+        schema, failure = request.param
+        return ValidationBoundary(adapter=TypeAdapter(schema), failure_type=failure)
+
+    @pytest.fixture
+    def value(self):
+        return "input_secret"
+
+    def test_native_validation_retains_typed_context_without_echoing_input(
+        self, boundary, value
+    ):
+        with pytest.raises(ValidationError) as raised:
+            boundary.adapter.validate_python(value)
+        issue = raised.value.errors(include_input=False)[0]
+        failure = issue["ctx"]["error"]
+        assert isinstance(failure, boundary.failure_type)
+        assert failure.value == value
+        assert "input_secret" not in issue["msg"]

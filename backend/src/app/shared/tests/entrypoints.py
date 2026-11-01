@@ -3,7 +3,7 @@
 import ast
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[5]
+ROOT = Path(__file__).parents[5]
 
 BACKEND = ROOT.joinpath("backend")
 
@@ -53,7 +53,7 @@ def find_imported_modules(path: Path) -> set[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             imports.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
             imports.add(node.module)
     return imports
 

@@ -24,7 +24,7 @@ from app.shared.observability.services import (
 )
 
 
-def _schema_text() -> str:
+def render_schema_text() -> str:
     return json.dumps(create_app().openapi(), indent=2, sort_keys=True) + "\n"
 
 
@@ -79,7 +79,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 def export_schema(
     options: CommandOptions, *, context: InvocationContext | None = None
 ) -> int:
-    rendered = _schema_text()
+    rendered = render_schema_text()
 
     if options.check:
         if (

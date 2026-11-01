@@ -26,8 +26,6 @@ from app.api.domain import (
     PlayerIdentityData,
     PlayerSummaryData,
     PlayerQuery,
-    PlayerSort,
-    SortOrder,
     SeasonHistoryRowData,
     SummaryRow,
     TeamSummaryData,
@@ -103,39 +101,16 @@ class TradeValueService:
     def summary_for_player(self, player_id: int, season: int) -> SummaryRow | None:
         return self.repository.summary_for_player(player_id, season)
 
-    def players(
-        self,
-        season: int,
-        team: str | None,
-        position: str | None,
-        roster_status: str | None,
-        search: str | None,
-        sort: PlayerSort,
-        order: SortOrder,
-        page: int,
-        page_size: int,
-    ) -> PaginatedPlayersData:
-        self.require_season(season)
-        result = self.repository.players(
-            PlayerQuery(
-                season=season,
-                team=team,
-                position=position,
-                roster_status=roster_status,
-                search=search,
-                sort=sort,
-                order=order,
-                page=page,
-                page_size=page_size,
-            )
-        )
+    def players(self, query: PlayerQuery) -> PaginatedPlayersData:
+        self.require_season(query.season)
+        result = self.repository.players(query)
         return {
             "data": list(map(build_summary_data, result.rows)),
             "pagination": {
-                "page": page,
-                "pageSize": page_size,
+                "page": query.page,
+                "pageSize": query.page_size,
                 "totalItems": result.total,
-                "totalPages": ceil(result.total / page_size),
+                "totalPages": ceil(result.total / query.page_size),
             },
         }
 

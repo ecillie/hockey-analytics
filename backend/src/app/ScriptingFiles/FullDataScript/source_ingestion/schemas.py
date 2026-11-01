@@ -15,7 +15,11 @@ from pydantic import (
     ValidationError,
 )
 
-from app.ScriptingFiles.FullDataScript.source_ingestion.errors import PayloadViolation
+from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
+    IntegerValueViolation,
+    PayloadViolation,
+    TeamAbbreviationViolation,
+)
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
     parse_strict_integer,
     parse_team_abbreviation,
@@ -25,14 +29,14 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
 def parse_required_integer(value: object) -> int:
     result = parse_strict_integer(value)
     if result is None:
-        raise ValueError("a finite integer is required")
+        raise IntegerValueViolation(value=value)
     return result
 
 
 def normalize_team_abbreviation(value: str) -> str:
     abbreviation = parse_team_abbreviation(value)
     if abbreviation is None:
-        raise ValueError("a team abbreviation is required")
+        raise TeamAbbreviationViolation(value=value)
     return abbreviation
 
 
@@ -177,8 +181,16 @@ class ScheduleGame(BoundaryModel):
 
 
 class ScheduleDay(BoundaryModel):
+    model_config = ConfigDict(serialize_by_alias=True)
+
     date: date
-    games: tuple[dict[str, object], ...]
+    games_snapshot: PageSnapshots = Field(
+        validation_alias="games", serialization_alias="games"
+    )
+
+    @property
+    def games(self) -> PageRows:
+        return decode_page_rows(self.games_snapshot)
 
 
 class SchedulePage(BoundaryModel):

@@ -4,6 +4,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from app.ScriptingFiles.FullDataScript.contracts.tests.fixtures import SavedResponse
 import json
+from unittest.mock import MagicMock
+from app.ScriptingFiles.FullDataScript.contracts.domain import ProfileStatus
 from app.ScriptingFiles.FullDataScript import capspace
 
 
@@ -34,6 +36,15 @@ class SleepRecorder:
 class ProfileScenario:
     session: ScriptedProfileSession
     sleep: SleepRecorder
+    expected_status: ProfileStatus
+    expected_error: str | None
+    expected_delays: tuple[float, ...]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ParserCalls:
+    parse: MagicMock
+    decode: MagicMock
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

@@ -17,7 +17,9 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.policy import CountPolic
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     PaginationViolation,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import SourceClient
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
+    SourceClient,
+)
 from app.ScriptingFiles.FullDataScript.source_ingestion.schemas import (
     SchedulePage,
     ScheduleGame,

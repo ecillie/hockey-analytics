@@ -5,6 +5,7 @@ from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Protocol, runtime_checkable
 
 from app.shared.cleanup import complete_cleanup as close_run_resources
 from app.database import connect_database
@@ -36,7 +37,17 @@ def count_summary_records(
     summary: Mapping[str, object], key: str, default: int = 0
 ) -> int:
     value = summary.get(key, default)
-    return value if isinstance(value, int) else default
+    return value if type(value) is int and value >= 0 else default
+
+
+@runtime_checkable
+class IngestionRun(Protocol):
+    @property
+    def run_id(self) -> int: ...
+
+    def succeed(self, summary: Mapping[str, object]) -> None: ...
+
+    def fail(self, failure: BaseException) -> None: ...
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -146,7 +157,7 @@ def open_ingestion_run(
     source_code: str,
     job_name: str,
     connection_factory: Callable[[], PgConnection] = connect_database,
-) -> Generator[PostgresIngestionRun]:
+) -> Generator[IngestionRun]:
     connection = connection_factory()
     cursor: PgCursor | None = None
     locked = False

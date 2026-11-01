@@ -134,25 +134,11 @@ class DataQualityReport:
 def serialize_summary(
     summary: MoneyPuckSummary | NhlStatsSummary | RosterSummary | ScheduleSummary,
 ) -> dict[str, int | str]:
-    if isinstance(summary, RosterSummary):
-        return {"teams": summary.teams, "active_players": summary.active_players}
-    dimensions = (
-        {"games": summary.games}
-        if isinstance(summary, ScheduleSummary)
-        else {"skater": summary.skater, "goalie": summary.goalie}
+    from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
+        serialize_summary as serialize_report,
     )
-    if isinstance(summary, MoneyPuckSummary):
-        dimensions["players"] = summary.players
-    if isinstance(summary, NhlStatsSummary):
-        dimensions["team_stints"] = summary.team_stints
-    return {
-        **dimensions,
-        "records_read": summary.counts.records_read,
-        "records_created": summary.counts.records_created,
-        "records_updated": summary.counts.records_updated,
-        "records_skipped": summary.counts.records_skipped,
-        "reconciliation_policy": "retain_missing",
-    }
+
+    return serialize_report(summary)
 
 
 def build_moneypuck_skater_layout() -> StatLayout:
@@ -387,3 +373,13 @@ def select_stat_layout(kind: PlayerKind, *, advanced: bool) -> StatLayout:
         if kind == PlayerKind.SKATER
         else build_nhl_goalie_layout()
     )
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class SourceHttpOptions:
+    json_timeout: float = 30.0
+    csv_timeout: float = 60.0
+    retry_total: int = 4
+    retry_backoff: float = 0.6
+    retry_statuses: tuple[int, ...] = (429, 500, 502, 503, 504)
+    user_agent: str = "TradeValue/1.0 (NHL analytics data ingestion)"

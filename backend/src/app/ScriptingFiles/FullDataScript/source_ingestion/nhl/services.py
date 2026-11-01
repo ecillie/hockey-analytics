@@ -26,9 +26,10 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     PaginationViolation,
     PayloadViolation,
-    OptionsViolation,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import SourceClient
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
+    SourceClient,
+)
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import select_stat_layout
 from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.domain import (
     NhlRosterOptions,
@@ -36,6 +37,9 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.domain import (
     NhlStatsOptions,
     NhlStatsSnapshot,
     StatsJob,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.policy import (
+    NhlStatsOptionsPolicy,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.policy import (
     find_stat_violation,
@@ -79,15 +83,8 @@ class NhlStatsService:
     context: IngestionContext | None = None
 
     def ingest(self) -> NhlStatsSummary:
-        if (
-            self.options.first_season > self.options.last_season
-            or self.options.workers < 1
-            or self.options.page_size < 1
-            or self.options.maximum_pages < 1
-        ):
-            raise OptionsViolation(
-                reason="NHL season range, workers, and page size must be valid"
-            )
+        if violation := NhlStatsOptionsPolicy(options=self.options).find_violation():
+            raise violation
         jobs = (
             StatsJob(kind=kind, season=season, game_type=game_type)
             for kind, season, game_type in product(

@@ -1,13 +1,9 @@
 """Set-based reconstruction of canonical season-ending team assignments."""
 
 from psycopg2.extensions import connection as PgConnection
-
-
-class SeasonRangeError(ValueError):
-    def __init__(self, *, first_season: int, last_season: int) -> None:
-        super().__init__("first_season cannot be greater than last_season")
-        self.first_season = first_season
-        self.last_season = last_season
+from app.database import open_database_cursor
+from typing import Protocol, runtime_checkable
+from app.ScriptingFiles.FullDataScript.team_stints.policy import SeasonRangePolicy
 
 
 _CANDIDATES_SQL = r"""
@@ -115,15 +111,24 @@ SELECT
 )
 
 
+@runtime_checkable
+class TeamStintQuery(Protocol):
+    def __call__(
+        self,
+        connection: PgConnection,
+        *,
+        first_season: int | None = None,
+        last_season: int | None = None,
+    ) -> dict[str, int]: ...
+
+
 def build_team_stint_params(
     first_season: int | None, last_season: int | None
 ) -> dict[str, int | None]:
-    if (
-        first_season is not None
-        and last_season is not None
-        and first_season > last_season
-    ):
-        raise SeasonRangeError(first_season=first_season, last_season=last_season)
+    if violation := SeasonRangePolicy(
+        first_season=first_season, last_season=last_season
+    ).find_violation():
+        raise violation
     return {"first_season": first_season, "last_season": last_season}
 
 
@@ -133,16 +138,14 @@ def plan_team_stint_backfill(
     first_season: int | None = None,
     last_season: int | None = None,
 ) -> dict[str, int]:
-    cursor = connection.cursor()
-    try:
-        cursor.execute(_PLAN_SQL, build_team_stint_params(first_season, last_season))
+    params = build_team_stint_params(first_season, last_season)
+    with open_database_cursor(connection) as cursor:
+        cursor.execute(_PLAN_SQL, params)
         canonical, missing = cursor.fetchone()
         return {
             "canonical_assignments": canonical,
             "missing_assignments": missing,
         }
-    finally:
-        cursor.close()
 
 
 def apply_team_stint_backfill(
@@ -151,14 +154,12 @@ def apply_team_stint_backfill(
     first_season: int | None = None,
     last_season: int | None = None,
 ) -> dict[str, int]:
-    cursor = connection.cursor()
-    try:
-        cursor.execute(_APPLY_SQL, build_team_stint_params(first_season, last_season))
+    params = build_team_stint_params(first_season, last_season)
+    with open_database_cursor(connection) as cursor:
+        cursor.execute(_APPLY_SQL, params)
         canonical, missing, inserted = cursor.fetchone()
         return {
             "canonical_assignments": canonical,
             "missing_assignments": missing,
             "inserted_assignments": inserted,
         }
-    finally:
-        cursor.close()

@@ -4,9 +4,8 @@ import json
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import FrozenInstanceError
-from importlib import import_module
 from importlib.resources import files
-from ml.tests.fakes import PipelineResources, ReadScenario, DatasetScenario
+from ml.tests.fakes import PipelineResources, ReadScenario, DatasetScenario, FrameReader
 import numpy as np
 import pandas as pd
 import pytest
@@ -29,6 +28,8 @@ from ml.features.build_features import build_features
 from ml.features.replacement_level import calculate_replacement_level
 from ml.pipelines.build_model_dataset import build_model_dataset
 from ml.pipelines.run_pipeline import run_pipeline
+from ml.pipelines import repository as pipeline_repository
+from ml.pipelines.repository import ModelDataReader
 from ml.training.train_skater_value import (
     build_model,
     build_training_data,
@@ -51,7 +52,7 @@ class TestDataBoundaries:
 
     @pytest.fixture
     def counted_reads(self, monkeypatch, player_seasons, caps):
-        module = import_module("ml.pipelines.run_pipeline")
+        module = pipeline_repository
         scenario = ReadScenario(connection=object())
         calls = scenario.calls
         connection = scenario.connection
@@ -104,6 +105,30 @@ class TestDataBoundaries:
         assert len(result) == len(player_seasons)
         pd.testing.assert_frame_equal(original_frames.players, player_seasons)
         pd.testing.assert_frame_equal(original_frames.caps, caps)
+
+    @pytest.fixture
+    def reader(self, player_seasons, caps):
+        return FrameReader(frames=DatasetScenario(players=player_seasons, caps=caps))
+
+    def test_borrowed_reader_loads_inputs_without_acquiring_default_resources(
+        self, reader, counted_reads, original_frames
+    ):
+        assert len(reader) == 0
+        assert isinstance(reader, ModelDataReader)
+        result = run_pipeline(reader=reader)
+        assert len(result) == 20
+        assert reader.reads == ["players", "caps"]
+        assert counted_reads.calls == []
+        pd.testing.assert_frame_equal(reader.frames.players, original_frames.players)
+        pd.testing.assert_frame_equal(reader.frames.caps, original_frames.caps)
+
+    def test_preloaded_frames_do_not_read_from_a_borrowed_reader(
+        self, reader, counted_reads, player_seasons, caps
+    ):
+        result = run_pipeline(players=player_seasons, salary_caps=caps, reader=reader)
+        assert len(result) == 20
+        assert reader.reads == []
+        assert counted_reads.calls == []
 
     @pytest.fixture
     def original_frames(self, player_seasons, caps):
@@ -190,7 +215,7 @@ class TestDataBoundaries:
 
 
 class TestArtifacts:
-    columns = list(NUMERIC_FEATURES + CATEGORICAL_FEATURES)
+    columns = NUMERIC_FEATURES + CATEGORICAL_FEATURES
 
     @pytest.fixture
     def training_options(self):
@@ -249,8 +274,8 @@ class TestArtifacts:
         save_predictions(actual, prediction_output)
         assert len(pd.read_csv(prediction_output)) == len(actual)
         np.testing.assert_array_equal(
-            model.predict(training_data[self.columns]),
-            trained.model.predict(training_data[self.columns]),
+            model.predict(training_data[list(self.columns)]),
+            trained.model.predict(training_data[list(self.columns)]),
         )
 
     def test_metadata_property_returns_snapshot(self, trained):
@@ -302,23 +327,35 @@ class TestArtifacts:
 
     @pytest.fixture(
         params=[
-            pytest.param(np.ones((20, 1)), id="matrix"),
-            pytest.param(np.array(1.0), id="scalar"),
-            pytest.param(np.full(20, np.inf), id="infinite"),
+            pytest.param("matrix", id="matrix"),
+            pytest.param("scalar", id="scalar"),
+            pytest.param("infinite", id="infinite"),
         ]
     )
     def invalid_predictions(self, request):
-        return request.param
+        if request.param == "matrix":
+            return np.ones((20, 1))
+        if request.param == "scalar":
+            return np.array(1.0)
+        return np.full(20, np.inf)
+
+    @pytest.fixture
+    def prediction_source(self, player_seasons):
+        return player_seasons.assign(target_season=player_seasons["season"] + 1)
 
     def test_prediction_schema_rejects_invalid_shape_and_values(
-        self, player_seasons, invalid_predictions
+        self, prediction_source, invalid_predictions
     ):
         with pytest.raises(ValueError):
             build_prediction_frame(
-                player_seasons.assign(target_season=player_seasons["season"] + 1),
+                prediction_source,
                 invalid_predictions,
             )
 
-    def test_missing_target_seasons_are_rejected(self, training_data):
+    @pytest.fixture
+    def missing_target(self, training_data):
+        return training_data.assign(target_season=np.nan)
+
+    def test_missing_target_seasons_are_rejected(self, missing_target):
         with pytest.raises(ValueError, match="whole years"):
-            split_temporal_data(training_data.assign(target_season=np.nan))
+            split_temporal_data(missing_target)

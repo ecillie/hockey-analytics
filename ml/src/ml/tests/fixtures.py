@@ -3,10 +3,12 @@
 import pandas as pd
 import pytest
 
+type PlayerSeasonRow = dict[str, str | float | None]
+
 
 @pytest.fixture
 def player_seasons() -> pd.DataFrame:
-    rows: list[dict[str, str | float | None]] = []
+    rows: list[PlayerSeasonRow] = []
     for season in range(2021, 2026):
         for player_id, position, multiplier in (
             (1, "C", 1.0),

@@ -68,6 +68,11 @@ npm run dev
 
 Create a production build with `npm run build` and run lint with `npm run lint`.
 Browser diagnostics appear as structured JSON strings in the browser console.
+Application logging is disabled when `ENV=nonprod` or `ENV=prod`, including
+ERROR and CRITICAL records. `ENV=dev` retains the configured severity. Backend
+commands and the approved API lifespan hook apply this rule before output.
+Frontend builds read the same `ENV` value at build time; rebuild after changing
+it. Only the recognized environment name is exposed to the browser.
 `VITE_LOG_LEVEL` defaults to `INFO`; set it to `DEBUG` and rebuild for request
 lifecycle diagnostics. It does not select mock data or change the API origin.
 These records are local to the browser; no central browser collector is installed.

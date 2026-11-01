@@ -22,6 +22,7 @@ from app.shared.observability.errors import (
     LoggingConfigurationConflictError,
 )
 from app.shared.observability.policy import (
+    EnvironmentLoggingFilter,
     ReportedRequestFilter,
     RequestFailureFilter,
     LifecycleReportFilter,
@@ -172,6 +173,10 @@ def configure_api_host_logging(
     if len(host.handlers) == 0:
         host.addHandler(handler)
     for existing in tuple(host.handlers) + tuple(errors.handlers):
+        if not any(
+            isinstance(item, EnvironmentLoggingFilter) for item in existing.filters
+        ):
+            existing.addFilter(EnvironmentLoggingFilter(settings=settings))
         existing.setLevel(settings.level)
         existing.setFormatter(SafeFormatter(settings=settings))
         if isinstance(existing, logging.StreamHandler) and not isinstance(

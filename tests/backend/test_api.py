@@ -1,4 +1,5 @@
 import pytest
+import json
 from dataclasses import replace
 from collections.abc import Generator
 from fastapi.testclient import TestClient
@@ -14,9 +15,12 @@ class TestApiContract:
     @pytest.fixture
     def scenario(self, request, service) -> Generator[HttpScenario]:
         application = create_app()
-        repository = replace(
-            service.repository, health_failure=getattr(request, "param", None)
+        failure = (
+            OperationalError("SELECT 1", {}, Exception("database unavailable"))
+            if getattr(request, "param", None) is True
+            else None
         )
+        repository = replace(service.repository, health_failure=failure)
         service = replace(service, repository=repository)
 
         def provide_service():
@@ -59,7 +63,7 @@ class TestApiContract:
         "scenario",
         [
             pytest.param(
-                OperationalError("SELECT 1", {}, Exception("database unavailable")),
+                True,
                 id="database-unavailable",
             )
         ],
@@ -113,6 +117,10 @@ class TestApiContract:
 
 class TestTypedRequestFailures:
     @pytest.fixture
+    def details(self, request):
+        return json.loads(request.param)
+
+    @pytest.fixture
     def client(self, service):
         application = create_app()
 
@@ -130,24 +138,25 @@ class TestTypedRequestFailures:
                 "/api/players/compare?ids=no,7&season=2025",
                 "INVALID_COMPARISON",
                 "Player IDs must be integers.",
-                {"ids": ["Use comma-separated integer IDs."]},
+                '{"ids":["Use comma-separated integer IDs."]}',
                 id="noninteger-comparison",
             ),
             pytest.param(
                 "/api/search?q=test&types=other",
                 "INVALID_SEARCH_TYPES",
                 "Search types must be player or team.",
-                {"types": ["Use player, team, or both."]},
+                '{"types":["Use player, team, or both."]}',
                 id="unknown-search-type",
             ),
             pytest.param(
                 "/api/search?q=test&types=",
                 "INVALID_SEARCH_TYPES",
                 "Search types must be player or team.",
-                {"types": ["Use player, team, or both."]},
+                '{"types":["Use player, team, or both."]}',
                 id="empty-search-types",
             ),
         ],
+        indirect=["details"],
     )
     def test_public_envelopes(self, client, url, code, message, details):
         response = client.get(url)

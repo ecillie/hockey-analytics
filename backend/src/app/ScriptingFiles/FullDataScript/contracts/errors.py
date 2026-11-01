@@ -11,6 +11,13 @@ class CapSpaceError(RuntimeError):
     pass
 
 
+class ContractOptionError(ValueError):
+    def __init__(self, *, option: str, requirement: str) -> None:
+        super().__init__(f"{option} {requirement}")
+        self.option = option
+        self.requirement = requirement
+
+
 class CapSpaceParseError(CapSpaceError):
     pass
 

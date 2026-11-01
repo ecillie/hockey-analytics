@@ -1,10 +1,9 @@
 """Immutable contract values with isolated source snapshots."""
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
 from datetime import date
 from enum import StrEnum, auto
-
-from app.ScriptingFiles.FullDataScript.contracts.util import decode_snapshot
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -22,7 +21,9 @@ class ContractSeason:
 
     @property
     def source_payload(self) -> dict[str, object] | None:
-        return decode_snapshot(self.source_snapshot)
+        return (
+            None if self.source_snapshot is None else json.loads(self.source_snapshot)
+        )
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -40,7 +41,9 @@ class ParsedContract:
 
     @property
     def source_payload(self) -> dict[str, object] | None:
-        return decode_snapshot(self.source_snapshot)
+        return (
+            None if self.source_snapshot is None else json.loads(self.source_snapshot)
+        )
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -209,3 +212,60 @@ class ActiveContractProfile:
 class ActiveContractSnapshot:
     profiles: tuple[ActiveContractProfile, ...]
     failed_slugs: tuple[str, ...]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ActiveSeasonWrite:
+    contract_id: int
+    external_id: str
+    owning_team_id: int | None
+    detail: ContractSeason
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ActiveContractWrite:
+    player_id: int
+    source_id: int
+    item: ActivePlayer
+    contract: ParsedContract
+    index: int
+    signing_team_id: int | None
+    owning_team_id: int | None
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class HistoricalContractLimits:
+    maximum_workers: int = 8
+    maximum_batch_size: int = 1000
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class HistoricalContractOptions:
+    first_season: int = 2008
+    last_season: int = 2025
+    limit: int | None = None
+    workers: int = 4
+    batch_size: int = 100
+    player_id: int | None = None
+    nhl_id: str | None = None
+    force: bool = False
+    limits: HistoricalContractLimits = field(default_factory=HistoricalContractLimits)
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ActiveContractOptions:
+    minimum_players: int = 500
+    minimum_profile_success_ratio: float = 0.98
+    workers: int = 10
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ProfileHttpOptions:
+    capspace_base_url: str = "https://cap-space.com"
+    capwages_base_url: str = "https://capwages.com"
+    timeout: float = 30.0
+    max_attempts: int = 4
+    maximum_backoff: float = 8.0
+    maximum_retry_after: float = 30.0
+    retryable_statuses: tuple[int, ...] = (429, 500, 502, 503, 504)
+    capwages_slug_suffixes: tuple[str, ...] = ("", "-1", "-2", "-3")

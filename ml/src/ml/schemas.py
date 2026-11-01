@@ -13,7 +13,7 @@ from pydantic import (
     StrictInt,
 )
 
-from ml.configuration import FeatureOptions
+from ml.domain import FeatureOptions
 from ml.domain import Metric, Split
 from ml.errors import (
     MinimumGamesError,

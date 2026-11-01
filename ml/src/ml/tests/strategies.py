@@ -2,6 +2,7 @@
 
 from hypothesis import strategies as st
 from ml.domain import Metric
+from ml.tests.fakes import MetricScenario
 
 
 def generate_identical_metric_inputs():
@@ -11,8 +12,8 @@ def generate_identical_metric_inputs():
 
 
 def build_identical_metric_inputs(value: float):
-    return (
-        dict.fromkeys(Metric, value),
-        dict.fromkeys(Metric, value),
-        dict.fromkeys(Metric, 0.0),
+    return MetricScenario(
+        current=dict.fromkeys(Metric, value),
+        baseline=dict.fromkeys(Metric, value),
+        tolerances=dict.fromkeys(Metric, 0.0),
     )

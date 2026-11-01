@@ -3,6 +3,7 @@
 from datetime import date
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from app.database import open_database_cursor
 from typing import Protocol, runtime_checkable
 from psycopg2.extensions import connection as PgConnection
 
@@ -47,7 +48,7 @@ class PostgresRosterRepository:
             GROUP BY p.id, p.first_name, p.last_name, p.birth_date, p.roster_status
             ORDER BY p.id
         """
-        with self.connection.cursor() as cursor:
+        with open_database_cursor(self.connection) as cursor:
             cursor.execute(query)
             return tuple(
                 StoredPlayer(
@@ -69,7 +70,7 @@ class PostgresRosterRepository:
             WHERE start_date <= %s
               AND (end_date IS NULL OR end_date >= %s)
         """
-        with self.connection.cursor() as cursor:
+        with open_database_cursor(self.connection) as cursor:
             cursor.execute(query, (as_of, as_of))
             return frozenset(row[0] for row in cursor.fetchall())
 
@@ -83,7 +84,7 @@ class PostgresRosterRepository:
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
         """
-        with self.connection.cursor() as cursor:
+        with open_database_cursor(self.connection) as cursor:
             cursor.executemany(
                 query,
                 [
@@ -116,6 +117,6 @@ class PostgresRosterRepository:
             WHERE ds.code = 'ahl'
             ON CONFLICT (source_id, external_id) DO NOTHING
         """
-        with self.connection.cursor() as cursor:
+        with open_database_cursor(self.connection) as cursor:
             cursor.execute(source_query)
             cursor.executemany(query, rows)

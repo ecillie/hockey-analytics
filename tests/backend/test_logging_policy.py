@@ -1,16 +1,20 @@
 """Settings and adversarial output behavior without global handler mutation."""
 
+import asyncio
 import json
 import logging
 import os
 import subprocess
 import sys
+from contextlib import ExitStack
 from io import StringIO
+from pathlib import Path
+import httpx
 
-from hypothesis import given, strategies as st
+from hypothesis import given
 import pytest
 
-from app.shared.observability import formatting
+from app.shared.observability import formatting, services
 from app.shared.observability.domain import (
     LogFormat,
     LogLevel,
@@ -21,15 +25,134 @@ from app.shared.observability.domain import (
 )
 from app.shared.observability.formatting import SafeFormatter
 from app.shared.observability.tests.fakes import (
+    EnvironmentLogObservation,
+    LogCaptureScenario,
     BrokenStream,
     HostileValue,
     build_exception_record,
     build_bounded_record,
     build_connection_error_record,
     build_http_error_record,
+    MetadataAccessError,
+    generate_formatting_scenarios,
 )
+from app.shared.observability.tests import verify_http, verify_logs
 from app.shared.observability.sinks import build_diagnostic_handler
 from app.shared.observability.policy import RecordLimitsError
+from pydantic import TypeAdapter, ValidationError
+
+
+class TestEnvironmentLogDelivery:
+    @pytest.fixture(
+        params=[
+            pytest.param(("dev", True), id="dev-enabled"),
+            pytest.param((" NONPROD ", False), id="nonprod-disabled"),
+            pytest.param((" PROD ", False), id="prod-disabled"),
+        ]
+    )
+    def environment_case(self, request):
+        return request.param
+
+    @pytest.fixture(params=[pytest.param(value, id=value.value) for value in LogFormat])
+    def log_format(self, request):
+        return request.param
+
+    @pytest.fixture
+    def observation(
+        self, environment_case, log_format, isolate_command_logging, monkeypatch
+    ):
+        environment, enabled = environment_case
+        with ExitStack() as cleanup:
+            application_output = cleanup.enter_context(StringIO())
+            host_output = cleanup.enter_context(StringIO())
+            native_handler = logging.StreamHandler(host_output)
+            cleanup.callback(native_handler.close)
+            host = logging.getLogger("uvicorn")
+            errors = logging.getLogger("uvicorn.error")
+            for target in (host, errors):
+                monkeypatch.setattr(target, "handlers", [])
+                monkeypatch.setattr(target, "filters", [])
+                monkeypatch.setattr(target, "level", logging.NOTSET)
+                monkeypatch.setattr(target, "propagate", False)
+            monkeypatch.setattr(host, "handlers", [native_handler])
+            monkeypatch.setattr(logging.getLogger("uvicorn.access"), "disabled", False)
+            settings = read_logging_settings(
+                {
+                    "ENV": environment,
+                    "LOG_LEVEL": "DEBUG",
+                    "LOG_FORMAT": log_format.value,
+                }
+            )
+            handler = services.configure_logging(settings, stream=application_output)
+            services.configure_api_host_logging(settings, handler)
+            services.configure_api_host_logging(settings, handler)
+            for level in LogLevel:
+                for target in (logging.getLogger("app.environment_probe"), errors):
+                    target.log(
+                        level, "Environment probe", extra={"event": "command.started"}
+                    )
+            return EnvironmentLogObservation(
+                enabled=enabled,
+                application=tuple(application_output.getvalue().splitlines()),
+                host=tuple(host_output.getvalue().splitlines()),
+            )
+
+    def test_application_and_existing_host_handlers_honor_environment(
+        self, observation
+    ):
+        expected = len(LogLevel) if observation.enabled else 0
+        assert len(observation.application) == expected
+        assert len(observation.host) == expected
+
+
+class TestImmutableDiagnosticSnapshots:
+    @pytest.fixture
+    def snapshot(self):
+        info = build_bounded_record().exc_info
+        assert isinstance(info, tuple) and info[1] is not None
+        return formatting.collect_exceptions(info[1], RecordLimits())
+
+    def test_exception_and_frame_snapshots_reject_mutation(self, snapshot):
+        with pytest.raises(ValidationError, match="frozen"):
+            snapshot.items[0].type = "Changed"
+        with pytest.raises(ValidationError, match="frozen"):
+            snapshot.items[0].frames[0].module = "Changed"
+
+    def test_serialized_mutation_cannot_change_retained_snapshot(self, snapshot):
+        payload = snapshot.items[0].model_dump()
+        payload["frames"][0]["module"] = "Changed"
+        assert snapshot.items[0].frames[0].module != "Changed"
+
+
+class TestHostileFailureMetadata:
+    @pytest.fixture
+    def formatter(self):
+        return SafeFormatter()
+
+    @pytest.fixture(
+        params=[
+            pytest.param(RuntimeError, id="metadata-error"),
+            pytest.param(asyncio.CancelledError, id="metadata-cancellation"),
+            pytest.param(KeyboardInterrupt, id="metadata-interrupt"),
+        ]
+    )
+    def record(self, request):
+        primary = MetadataAccessError(failure=request.param("metadata_secret"))
+        record = build_exception_record("payload_secret")
+        record.exc_info = (type(primary), primary, None)
+        return record
+
+    def test_metadata_fault_does_not_escape_diagnostic_rendering(
+        self, record, formatter
+    ):
+        try:
+            rendered = formatter.format(record)
+        except BaseException as failure:
+            assert False, f"metadata fault escaped: {type(failure).__name__}"
+        payload = json.loads(rendered)
+        assert payload["exceptions_truncated"] is True
+        assert payload["exceptions"][0]["type"] == "MetadataAccessError"
+        assert "secret" not in json.dumps(payload)
 
 
 class TestLoggingSettings:
@@ -46,25 +169,24 @@ class TestLoggingSettings:
     def selected_level(self, request):
         return request.param
 
-    def test_levels_are_normalized(self, selected_level):
-        assert (
-            read_logging_settings(
-                {"LOG_LEVEL": f" {selected_level.name.lower()} "}
-            ).level
-            is selected_level
-        )
+    @pytest.fixture
+    def selected_values(self, selected_level):
+        return {"LOG_LEVEL": f" {selected_level.name.lower()} "}
+
+    def test_levels_are_normalized(self, selected_level, selected_values):
+        assert read_logging_settings(selected_values).level is selected_level
 
     @pytest.fixture(
         params=[
-            pytest.param({"LOG_LEVEL": ""}, id="empty-level"),
-            pytest.param({"LOG_LEVEL": "warn"}, id="alias-rejected"),
-            pytest.param({"LOG_LEVEL": "secret\nvalue"}, id="unsafe-level"),
-            pytest.param({"LOG_FORMAT": ""}, id="empty-format"),
-            pytest.param({"LOG_FORMAT": "xml"}, id="unknown-format"),
+            pytest.param((("LOG_LEVEL", ""),), id="empty-level"),
+            pytest.param((("LOG_LEVEL", "warn"),), id="alias-rejected"),
+            pytest.param((("LOG_LEVEL", "secret\nvalue"),), id="unsafe-level"),
+            pytest.param((("LOG_FORMAT", ""),), id="empty-format"),
+            pytest.param((("LOG_FORMAT", "xml"),), id="unknown-format"),
         ]
     )
     def invalid_values(self, request):
-        return request.param
+        return dict(request.param)
 
     def test_invalid_values_do_not_echo_input(self, invalid_values):
         with pytest.raises(LoggingSettingsError) as raised:
@@ -108,13 +230,9 @@ class TestSafeFormatter:
         assert '"source":"unsupported"' in rendered
         assert '"duration_ms":4.5' in rendered
 
-    @given(secret=st.text(min_size=1), format=st.sampled_from(tuple(LogFormat)))
-    def test_messages_and_nested_exception_values_are_never_serialized(
-        self, secret, format
-    ):
-        rendered = SafeFormatter(settings=LoggingSettings(format=format)).format(
-            build_exception_record(secret)
-        )
+    @given(scenario=generate_formatting_scenarios())
+    def test_messages_and_nested_exception_values_are_never_serialized(self, scenario):
+        rendered = scenario.formatter.format(scenario.record)
         payload = json.loads(rendered.removeprefix("event "))
         assert payload["message"] == "job failed"
         assert payload["exceptions"] == [
@@ -479,3 +597,210 @@ class TestBoundaryExceptionRedaction:
         assert "password" not in rendered.lower()
         assert len(rendered.splitlines()) == 1
         assert failure_record.exc_info[1] is original_error
+
+
+class TestProbeHttpContract:
+    caller_id = "f" * 32
+    response_id = "1" * 32
+    valid_bodies = (
+        pytest.param((verify_http.ProbeKind.HEALTH, '{"status":"ok"}'), id="health"),
+        pytest.param(
+            (
+                verify_http.ProbeKind.SEASONS,
+                '{"currentSeason":2025,"availableSeasons":[{"startYear":2025,"endYear":2026,"label":"2025-26","salaryCapCents":null}]}',
+            ),
+            id="seasons",
+        ),
+        pytest.param(
+            (
+                verify_http.ProbeKind.INVALID,
+                '{"error":{"code":"INVALID_REQUEST","message":"The request parameters are invalid.","details":{"season":["Invalid integer."]}}}',
+            ),
+            id="invalid-request",
+        ),
+        pytest.param(
+            (verify_http.ProbeKind.MISSING, '{"detail":"Not Found"}'),
+            id="native-missing-route",
+        ),
+        pytest.param(
+            (
+                verify_http.ProbeKind.UNEXPECTED,
+                '{"error":{"code":"INTERNAL_ERROR","message":"The API could not complete this request."}}',
+            ),
+            id="unexpected-error",
+        ),
+    )
+    invalid_bodies = (
+        pytest.param(
+            (verify_http.ProbeKind.HEALTH, '{"status":"degraded"}'),
+            id="wrong-health-status",
+        ),
+        pytest.param(
+            (verify_http.ProbeKind.HEALTH, '{"status":"ok","payload":"unexpected"}'),
+            id="unknown-health-field",
+        ),
+        pytest.param(
+            (
+                verify_http.ProbeKind.SEASONS,
+                '{"currentSeason":2025,"availableSeasons":[]}',
+            ),
+            id="missing-seasons",
+        ),
+        pytest.param(
+            (
+                verify_http.ProbeKind.SEASONS,
+                '{"currentSeason":2024,"availableSeasons":[{"startYear":2025,"endYear":2026,"label":"2025-26","salaryCapCents":null}]}',
+            ),
+            id="current-season-not-listed",
+        ),
+        pytest.param(
+            (
+                verify_http.ProbeKind.INVALID,
+                '{"error":{"code":"INTERNAL_ERROR","message":"wrong","details":{"season":["Invalid"]}}}',
+            ),
+            id="wrong-validation-code",
+        ),
+        pytest.param(
+            (
+                verify_http.ProbeKind.INVALID,
+                '{"error":{"code":"INVALID_REQUEST","message":"The request parameters are invalid.","details":{"other":["Invalid"]}}}',
+            ),
+            id="wrong-validation-field",
+        ),
+        pytest.param(
+            (
+                verify_http.ProbeKind.INVALID,
+                '{"error":{"code":"INVALID_REQUEST","message":"wrong","details":{"season":["Invalid"]}}}',
+            ),
+            id="changed-validation-message",
+        ),
+        pytest.param(
+            (verify_http.ProbeKind.MISSING, '{"detail":"wrong"}'),
+            id="changed-native-missing-body",
+        ),
+        pytest.param(
+            (
+                verify_http.ProbeKind.UNEXPECTED,
+                '{"error":{"code":"INTERNAL_ERROR","message":"wrong"}}',
+            ),
+            id="changed-internal-error-message",
+        ),
+    )
+
+    def build_response(self, body, response_id):
+        return httpx.Response(
+            200,
+            json=json.loads(body),
+            headers={"X-Request-ID": response_id},
+            request=httpx.Request(
+                "GET", "http://probe.test", headers={"X-Request-ID": self.caller_id}
+            ),
+        )
+
+    @pytest.fixture(params=valid_bodies)
+    def valid(self, request):
+        kind, body = request.param
+        return kind, self.build_response(body, self.response_id)
+
+    @pytest.fixture(params=invalid_bodies)
+    def invalid(self, request):
+        kind, body = request.param
+        return kind, self.build_response(body, self.response_id)
+
+    def test_original_native_response_contracts_are_accepted(self, valid):
+        kind, response = valid
+        verify_http.verify_response_body(kind, response)
+        assert verify_http.read_request_id(response) == self.response_id
+
+    def test_changed_response_body_cannot_pass_acceptance(self, invalid):
+        kind, response = invalid
+        with pytest.raises((AssertionError, ValidationError)):
+            verify_http.verify_response_body(kind, response)
+
+    @pytest.fixture(
+        params=[
+            pytest.param("g" * 32, id="non-hex-id"),
+            pytest.param("A" * 32, id="uppercase-id"),
+            pytest.param("1" * 31, id="short-id"),
+            pytest.param("f" * 32, id="forwarded-caller-id"),
+        ]
+    )
+    def invalid_id(self, request):
+        return self.build_response('{"status":"ok"}', request.param)
+
+    def test_only_new_lowercase_hex_request_ids_are_accepted(self, invalid_id):
+        with pytest.raises((AssertionError, ValidationError)):
+            verify_http.read_request_id(invalid_id)
+
+
+class TestProbeCapturedLogs:
+    mutations = (
+        pytest.param(None, id="original-capture"),
+        pytest.param("error-severity", id="wrong-error-severity"),
+        pytest.param("summary-severity", id="wrong-summary-severity"),
+        pytest.param("startup-severity", id="wrong-ready-severity"),
+        pytest.param("malformed-id", id="invalid-request-id"),
+        pytest.param("orphan-error", id="uncorrelated-duplicate-error"),
+    )
+
+    @pytest.fixture(
+        params=[pytest.param(mode, id=mode.value) for mode in verify_logs.ProbeMode]
+    )
+    def mode(self, request):
+        return request.param
+
+    @pytest.fixture(params=mutations)
+    def mutation(self, request):
+        return request.param
+
+    @pytest.fixture
+    def scenario(self, tmp_path, mode, mutation):
+        source = Path(__file__).parent.joinpath("fixtures", "logging")
+        reports = json.loads(source.joinpath("probe-results.json").read_text())
+        index = 0 if mode is verify_logs.ProbeMode.INFO else 1
+        report = TypeAdapter(verify_http.ProbeReport).validate_python(
+            reports[index], strict=True
+        )
+        raw = source.joinpath(f"probe-{mode.value}.log").read_text()
+        events = [
+            json.loads(line.removeprefix("event "))
+            for line in raw.splitlines()
+            if line.startswith(("{", "event {"))
+        ]
+        error = next(item for item in events if item["event"] == "request.failed")
+        if mutation == "error-severity":
+            error["severity"] = "INFO"
+        if mutation == "summary-severity":
+            next(item for item in events if item["event"] == "request.finished")[
+                "severity"
+            ] = "ERROR"
+        if mutation == "startup-severity":
+            next(item for item in events if item["event"] == "service.ready")[
+                "severity"
+            ] = "ERROR"
+        if mutation == "malformed-id":
+            error["request_id"] = "g" * 32
+        if mutation == "orphan-error":
+            events.append({"event": "dependency.record", "severity": "ERROR"})
+        tmp_path.joinpath(f"tradevalue-logging02-{mode.value}.log").write_text(
+            "\n".join(json.dumps(event) for event in events) + "\n"
+        )
+        return LogCaptureScenario(
+            mode=mode,
+            report=report,
+            options=verify_logs.ProbeOptions(directory=tmp_path),
+        )
+
+    def test_real_captures_pass_and_corrupted_evidence_fails(self, scenario, mutation):
+        if mutation is not None:
+            with pytest.raises((AssertionError, ValidationError)):
+                verify_logs.verify_mode(
+                    scenario.mode, scenario.report, scenario.options
+                )
+            return
+        result = verify_logs.verify_mode(
+            scenario.mode, scenario.report, scenario.options
+        )
+        assert result["correlated_requests"] == (
+            5 if scenario.mode is verify_logs.ProbeMode.INFO else 6
+        )

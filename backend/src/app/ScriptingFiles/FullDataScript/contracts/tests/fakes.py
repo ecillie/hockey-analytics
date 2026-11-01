@@ -7,12 +7,20 @@ from dataclasses import dataclass, field
 from threading import Barrier, Lock
 from typing import Self
 from app.ScriptingFiles.FullDataScript.contracts.domain import Candidate, ProfileResult
+from app.ScriptingFiles.FullDataScript.contracts.domain import StoredContract
+from app.ScriptingFiles.FullDataScript.contracts.errors import ReconciliationFailure
 from app.ScriptingFiles.FullDataScript.contracts.options import (
     HistoricalContractOptions,
 )
 from app.ScriptingFiles.FullDataScript.contracts.repository import ContractRepository
 from app.ScriptingFiles.FullDataScript.contracts.tests.fixtures import SavedResponse
 from app.ScriptingFiles.FullDataScript.contracts.services import ProfileFetcher
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ReconciliationScenario:
+    matches: tuple[StoredContract, ...]
+    reason: ReconciliationFailure
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

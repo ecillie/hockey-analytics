@@ -5,7 +5,10 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from math import isfinite
 
-from app.ScriptingFiles.FullDataScript.source_ingestion.domain import DataQualityReport
+from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
+    DataQualityReport,
+    PlayerKind,
+)
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     IngestionValidationError,
     RowCountViolation,
@@ -155,11 +158,11 @@ def validate_rows(
 
 
 def find_stat_violation(
-    kind: str, row: Mapping[str, object], *, source: str
+    kind: PlayerKind, row: Mapping[str, object], *, source: str
 ) -> StatConsistencyViolation | None:
     fields = (
         ("points", "goals", "assists")
-        if kind == "skater"
+        if kind is PlayerKind.SKATER
         else ("shotsAgainst", "saves", "goalsAgainst")
     )
     total, first, second = (
@@ -173,7 +176,7 @@ def find_stat_violation(
     ):
         equation = (
             "points must equal goals plus assists"
-            if kind == "skater"
+            if kind is PlayerKind.SKATER
             else "shotsAgainst must equal saves plus goalsAgainst"
         )
         return StatConsistencyViolation(

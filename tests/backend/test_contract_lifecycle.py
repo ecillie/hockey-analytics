@@ -4,19 +4,31 @@ import json
 from dataclasses import replace
 from pathlib import Path
 from threading import Barrier, Lock
+import asyncio
 import pytest
+from app.config import AppEnvironment, DatabaseSettings
+from app.shared.tests.fakes import StageOutcome
+from app.shared.tests.resources import ResourceFailureScenario, ResourceProbe
+from app.ScriptingFiles.FullDataScript.contracts.tests import (
+    postgres as contract_postgres,
+)
+from app.ScriptingFiles.FullDataScript.contracts.tests.postgres import (
+    ContractDatabaseScenario,
+    HistoricalFixtureSession,
+    open_contract_scenario,
+)
 from app.ScriptingFiles.FullDataScript import capspace, ingestion, ingestion_tracking
 from app.ScriptingFiles.FullDataScript.contracts import repository as persistence
 from app.ScriptingFiles.FullDataScript.contracts import services as contract_services
-from app.ScriptingFiles.FullDataScript.contracts.active_repository import (
+from app.ScriptingFiles.FullDataScript.contracts.repository.active import (
     open_active_repository,
 )
-from app.ScriptingFiles.FullDataScript.contracts.active_services import (
+from app.ScriptingFiles.FullDataScript.contracts.services.active import (
     ActiveContractService,
 )
 from app.ScriptingFiles.FullDataScript.contracts.domain import Candidate, StoredContract
 from app.ScriptingFiles.FullDataScript.contracts.errors import ReconciliationFailure
-from app.ScriptingFiles.FullDataScript.contracts.http import (
+from app.ScriptingFiles.FullDataScript.contracts.repository.http import (
     BorrowedProfileSessionFactory,
     SynchronizedProfileSession,
     calculate_retry_delay,
@@ -25,6 +37,7 @@ from app.ScriptingFiles.FullDataScript.contracts.options import (
     ActiveContractOptions,
     ContractOptionError,
     HistoricalContractOptions,
+    HistoricalContractLimits,
     ProfileHttpOptions,
 )
 from app.ScriptingFiles.FullDataScript.contracts.policy import (
@@ -33,11 +46,15 @@ from app.ScriptingFiles.FullDataScript.contracts.policy import (
 from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
     parse_capspace_page,
 )
-from app.ScriptingFiles.FullDataScript.contracts.services import ProfileFetcher
+from app.ScriptingFiles.FullDataScript.contracts.services import (
+    HistoricalContractService,
+    ProfileFetcher,
+)
 from app.ScriptingFiles.FullDataScript.contracts.tests.fakes import (
     ActiveSessionProbe,
     FailedControlConnection,
     FailedTrackingScenario,
+    EmptyContractRepository,
     FailingCleanup,
     LockObservedSession,
     ProfileSessionProbe,
@@ -50,26 +67,27 @@ from app.ScriptingFiles.FullDataScript.tracking.repository import (
 )
 from app.ScriptingFiles.FullDataScript.contracts.tests.fakes import (
     ProfileOptionScenario,
+    ReconciliationScenario,
 )
 
 
 class TestContractOptionValidation:
     @pytest.fixture(
         params=[
-            pytest.param({"workers": 0}, id="no-workers"),
-            pytest.param({"workers": 9}, id="excess-workers"),
-            pytest.param({"batch_size": 0}, id="no-batch"),
-            pytest.param({"batch_size": 1001}, id="excess-batch"),
+            pytest.param((("workers", 0),), id="no-workers"),
+            pytest.param((("workers", 9),), id="excess-workers"),
+            pytest.param((("batch_size", 0),), id="no-batch"),
+            pytest.param((("batch_size", 1001),), id="excess-batch"),
             pytest.param(
-                {"first_season": 2026, "last_season": 2025}, id="reversed-range"
+                (("first_season", 2026), ("last_season", 2025)), id="reversed-range"
             ),
-            pytest.param({"limit": 0}, id="zero-limit"),
-            pytest.param({"limit": -1}, id="negative-limit"),
-            pytest.param({"player_id": 0}, id="zero-player"),
-            pytest.param({"nhl_id": ""}, id="empty-nhl-id"),
-            pytest.param({"nhl_id": "0"}, id="zero-nhl-id"),
-            pytest.param({"nhl_id": "12/3"}, id="malformed-nhl-id"),
-            pytest.param({"nhl_id": "١٢٣"}, id="non-ascii-nhl-id"),
+            pytest.param((("limit", 0),), id="zero-limit"),
+            pytest.param((("limit", -1),), id="negative-limit"),
+            pytest.param((("player_id", 0),), id="zero-player"),
+            pytest.param((("nhl_id", ""),), id="empty-nhl-id"),
+            pytest.param((("nhl_id", "0"),), id="zero-nhl-id"),
+            pytest.param((("nhl_id", "12/3"),), id="malformed-nhl-id"),
+            pytest.param((("nhl_id", "١٢٣"),), id="non-ascii-nhl-id"),
         ]
     )
     def invalid_options(self, request, monkeypatch):
@@ -80,7 +98,7 @@ class TestContractOptionValidation:
             persistence, "open_contract_repository", reject_resource_access
         )
         monkeypatch.setattr(capspace, "open_profile_session", reject_resource_access)
-        return request.param
+        return dict(request.param)
 
     def test_apply_rejects_before_tracking(self, invalid_options):
         with pytest.raises(ContractOptionError):
@@ -91,19 +109,56 @@ class TestContractOptionValidation:
             capspace.preview_historical_contracts(**invalid_options)
 
     @pytest.fixture
-    def defaults(self):
-        return HistoricalContractOptions()
+    def invalid_service_options(self, invalid_options):
+        return replace(HistoricalContractOptions(), **invalid_options)
 
-    def test_service_rejects_before_reading(self, invalid_options, defaults):
+    def test_service_rejects_before_reading(self, invalid_service_options):
         with pytest.raises(ContractOptionError):
             capspace.run_historical_contracts(
                 None,
-                options=replace(defaults, **invalid_options),
+                options=invalid_service_options,
                 dry_run=False,
             )
 
 
 class TestProfileSessionOwnership:
+    @pytest.fixture(
+        params=[
+            pytest.param(0, id="zero-workers"),
+            pytest.param(9, id="exceeds-default-limit"),
+        ]
+    )
+    def rejected_workers(self, request):
+        return request.param
+
+    def test_invalid_workers_open_no_sessions(
+        self, fetcher, candidates, probe, rejected_workers
+    ):
+        with pytest.raises(ContractOptionError):
+            fetcher.fetch_profiles(tuple(candidates), rejected_workers)
+        assert probe.opened == []
+
+    @pytest.fixture
+    def custom_options(self):
+        return HistoricalContractOptions(
+            workers=9, limits=HistoricalContractLimits(maximum_workers=9)
+        )
+
+    @pytest.fixture
+    def custom_service(self, candidates, fetcher):
+        repository = EmptyContractRepository(candidates=tuple(candidates))
+        return HistoricalContractService(
+            repository_factory=repository.open_repository, fetcher=fetcher
+        )
+
+    def test_service_uses_injected_worker_limit(
+        self, custom_service, custom_options, probe
+    ):
+        summary = custom_service.run(custom_options, dry_run=True)
+        assert summary["profiles_requested"] == 4
+        assert len(probe.opened) == 4
+        assert len(probe.closed) == 4
+
     @pytest.fixture
     def candidates(self):
         return [
@@ -192,10 +247,13 @@ class TestTrackingFailurePreservation:
             ),
         )
 
-    def test_reporting_failure_preserves_original_exception(self, scenario):
-        ingest = ingestion_tracking.tracked_ingestion("capspace")(scenario.ingest)
+    @pytest.fixture
+    def operation(self, scenario):
+        return ingestion_tracking.tracked_ingestion("capspace")(scenario.ingest)
+
+    def test_reporting_failure_preserves_original_exception(self, scenario, operation):
         with pytest.raises(RuntimeError) as raised:
-            ingest()
+            operation()
 
         assert raised.value is scenario.primary
         assert "run update failed" in raised.value.__notes__[0]
@@ -338,21 +396,27 @@ class TestContractReconciliationPolicy:
             total_value_cents=incoming.total_value_cents,
         )
         if request.param == "ambiguous":
-            return (
-                existing,
-                replace(existing, contract_id=2),
-            ), ReconciliationFailure.AMBIGUOUS
+            return ReconciliationScenario(
+                matches=(
+                    existing,
+                    replace(existing, contract_id=2),
+                ),
+                reason=ReconciliationFailure.AMBIGUOUS,
+            )
         if request.param == "foreign":
-            return (
-                replace(existing, player_id=43),
-            ), ReconciliationFailure.FOREIGN_PLAYER
+            return ReconciliationScenario(
+                matches=(replace(existing, player_id=43),),
+                reason=ReconciliationFailure.FOREIGN_PLAYER,
+            )
         if request.param == "value":
-            return (
-                replace(existing, total_value_cents=1),
-            ), ReconciliationFailure.INCOMPATIBLE
-        return (
-            replace(existing, signing_team_id=901),
-        ), ReconciliationFailure.INCOMPATIBLE
+            return ReconciliationScenario(
+                matches=(replace(existing, total_value_cents=1),),
+                reason=ReconciliationFailure.INCOMPATIBLE,
+            )
+        return ReconciliationScenario(
+            matches=(replace(existing, signing_team_id=901),),
+            reason=ReconciliationFailure.INCOMPATIBLE,
+        )
 
     @pytest.fixture
     def policy(self, incoming):
@@ -361,11 +425,10 @@ class TestContractReconciliationPolicy:
         )
 
     def test_conflicts_have_structured_reasons(self, conflict, policy):
-        matches, reason = conflict
-        violation = policy.find_violation(matches)
+        violation = policy.find_violation(conflict.matches)
 
         assert violation is not None
-        assert violation.reason is reason
+        assert violation.reason is conflict.reason
         assert violation.player_id == 42
 
 
@@ -418,17 +481,19 @@ class TestActiveProfileSessionOwnership:
 class TestActiveContractOptionValidation:
     @pytest.fixture(
         params=[
-            pytest.param({"minimum_players": 0}, id="no-players"),
-            pytest.param({"minimum_profile_success_ratio": -0.1}, id="negative-ratio"),
-            pytest.param({"minimum_profile_success_ratio": 1.1}, id="excess-ratio"),
+            pytest.param((("minimum_players", 0),), id="no-players"),
             pytest.param(
-                {"minimum_profile_success_ratio": float("nan")}, id="nan-ratio"
+                (("minimum_profile_success_ratio", -0.1),), id="negative-ratio"
+            ),
+            pytest.param((("minimum_profile_success_ratio", 1.1),), id="excess-ratio"),
+            pytest.param(
+                (("minimum_profile_success_ratio", float("nan")),), id="nan-ratio"
             ),
         ]
     )
     def invalid_options(self, request, monkeypatch):
         monkeypatch.setattr(ingestion, "track_active_contracts", reject_resource_access)
-        return request.param
+        return dict(request.param)
 
     def test_apply_rejects_before_tracking(self, invalid_options):
         with pytest.raises(ContractOptionError):
@@ -438,10 +503,12 @@ class TestActiveContractOptionValidation:
 class TestProfileOptionsBeforeOwnership:
     @pytest.fixture(
         params=[
-            pytest.param({"max_attempts": 0}, id="no-attempts"),
-            pytest.param({"timeout": 0}, id="no-timeout"),
-            pytest.param({"maximum_backoff": float("nan")}, id="nan-backoff"),
-            pytest.param({"maximum_retry_after": -1}, id="negative-retry-after-limit"),
+            pytest.param((("max_attempts", 0),), id="no-attempts"),
+            pytest.param((("timeout", 0),), id="no-timeout"),
+            pytest.param((("maximum_backoff", float("nan")),), id="nan-backoff"),
+            pytest.param(
+                (("maximum_retry_after", -1),), id="negative-retry-after-limit"
+            ),
         ]
     )
     def scenario(self, request):
@@ -451,7 +518,7 @@ class TestProfileOptionsBeforeOwnership:
         )
         fetcher = ProfileFetcher(
             session_factory=probe.open_session,
-            options=replace(ProfileHttpOptions(), **request.param),
+            options=replace(ProfileHttpOptions(), **dict(request.param)),
         )
         candidate = Candidate(
             player_id=1,
@@ -467,3 +534,91 @@ class TestProfileOptionsBeforeOwnership:
         with pytest.raises(ContractOptionError):
             fetcher.fetch_profiles((candidate,), workers=1)
         assert probe.opened == []
+
+
+class TestContractFixtureOwnership:
+    cases = (
+        pytest.param(("seed", "rollback"), id="setup-primary-rollback-failed"),
+        pytest.param(("seed", "remove"), id="setup-primary-trigger-removal-failed"),
+        pytest.param(("body", "close"), id="body-primary-close-failed"),
+        pytest.param(("cancelled", "remove"), id="cancellation-retained"),
+        pytest.param(("interrupted", "rollback"), id="interrupt-retained"),
+        pytest.param((None, "close"), id="close-only-failure"),
+    )
+
+    @pytest.fixture(params=cases)
+    def scenario(self, request, monkeypatch):
+        stage, cleanup = request.param
+        failures: dict[str, BaseException] = {cleanup: RuntimeError("cleanup failed")}
+        cause = ValueError("original cause")
+        primary = None
+        if stage == "cancelled":
+            primary = asyncio.CancelledError("cancelled")
+        if stage == "interrupted":
+            primary = KeyboardInterrupt("interrupted")
+        if stage in ("seed", "body"):
+            primary = RuntimeError("primary failed")
+        if primary is not None:
+            primary.__cause__ = cause
+        if stage == "seed" and primary is not None:
+            failures["seed"] = primary
+        probe = ResourceProbe(failures=failures)
+        monkeypatch.setattr(
+            contract_postgres, "connect_database", probe.create_resource
+        )
+        monkeypatch.setattr(
+            contract_postgres,
+            "seed_contract_batch",
+            StageOutcome(
+                result=None,
+                name="seed",
+                events=probe.events,
+                failure=failures.get("seed"),
+            ),
+        )
+        monkeypatch.setattr(
+            ContractDatabaseScenario,
+            "remove_batch_failure",
+            StageOutcome(
+                result=None,
+                name="remove",
+                events=probe.events,
+                failure=failures.get("remove"),
+            ),
+        )
+        return ResourceFailureScenario(
+            probe=probe,
+            primary=None if stage == "seed" else primary,
+            expected=primary if primary is not None else failures[cleanup],
+            cause=cause,
+            settings=DatabaseSettings(
+                environment=AppEnvironment.DEV,
+                database_url="postgresql://unused.invalid/tradevalue_test_fixture",
+            ),
+        )
+
+    @pytest.fixture
+    def observed(self, scenario):
+        observed = None
+        try:
+            with open_contract_scenario(
+                scenario.settings,
+                HistoricalFixtureSession(body=""),
+                cleanup_batch_failure=True,
+            ):
+                if scenario.primary is not None:
+                    raise scenario.primary
+        except BaseException as failure:
+            observed = failure
+        return observed
+
+    def test_cleanup_attempts_every_resource_and_retains_primary(
+        self, observed, scenario
+    ):
+        assert observed is scenario.expected
+        assert scenario.probe.events == ["seed", "rollback", "remove", "close"]
+        if observed is not scenario.probe.failures.get("close"):
+            assert observed.__cause__ is scenario.cause
+            assert observed.tradevalue_cleanup is next(
+                value for key, value in scenario.probe.failures.items() if key != "seed"
+            )

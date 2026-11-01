@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query, Request
 
 from app.api import schemas
-from app.api.domain import PlayerSort, SortOrder
+from app.api.domain import PlayerQuery, PlayerSort, SortOrder
 from app.api.errors import (
     DatabaseUnavailable,
     InvalidComparisonIds,
@@ -78,15 +78,17 @@ def create_router() -> APIRouter:
     ):
         selected = season if season is not None else service.current_season()
         return service.players(
-            selected,
-            team,
-            position.value if position else None,
-            rosterStatus.value if rosterStatus else None,
-            search,
-            sort,
-            order,
-            page,
-            pageSize,
+            PlayerQuery(
+                season=selected,
+                team=team,
+                position=position.value if position is not None else None,
+                roster_status=rosterStatus.value if rosterStatus is not None else None,
+                search=search,
+                sort=sort,
+                order=order,
+                page=page,
+                page_size=pageSize,
+            )
         )
 
     @router.get("/players/compare", response_model=schemas.CompareResponse)

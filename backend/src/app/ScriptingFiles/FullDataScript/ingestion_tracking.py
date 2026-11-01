@@ -22,7 +22,7 @@ from app.shared.observability.util import is_expected_cancellation
 from app.shared.cleanup import retain_cleanup_failure
 from app.ScriptingFiles.FullDataScript.tracking.repository import (
     open_ingestion_run,
-    PostgresIngestionRun,
+    IngestionRun,
 )
 
 
@@ -100,7 +100,7 @@ def tracked_ingestion[**P, R: Mapping[str, object]](
     return decorate
 
 
-def report_ingestion_failure(run: PostgresIngestionRun, primary: BaseException) -> None:
+def report_ingestion_failure(run: IngestionRun, primary: BaseException) -> None:
     try:
         run.fail(primary)
     except BaseException as reporting:

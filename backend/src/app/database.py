@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 import psycopg2
-from psycopg2.extensions import connection as PgConnection
+from psycopg2.extensions import connection as PgConnection, cursor as PgCursor
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -74,6 +74,19 @@ def connect_database(settings: DatabaseSettings | None = None) -> PgConnection:
     return psycopg2.connect(
         selected.database_url, connect_timeout=selected.connect_timeout_seconds
     )
+
+
+@contextmanager
+def open_database_cursor(connection: PgConnection) -> Generator[PgCursor]:
+    cursor = connection.cursor()
+    primary: BaseException | None = None
+    try:
+        yield cursor
+    except BaseException as failure:
+        primary = failure
+        raise
+    finally:
+        complete_cleanup((cursor.close,), primary)
 
 
 @contextmanager

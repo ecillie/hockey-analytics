@@ -1,7 +1,11 @@
 """ASGI probes for streaming delivery and request-local state ownership."""
 
 import asyncio
+import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from fastapi import FastAPI
+import httpx
 
 from starlette.requests import Request
 from starlette.responses import Response
@@ -13,6 +17,36 @@ from app.shared.observability.requests import (
     RequestLoggingMiddleware,
     get_request_context,
 )
+from app.shared.observability.policy import RequestFailureFilter, ReportedRequestFilter
+
+
+type CapturedRecords = tuple[logging.LogRecord, ...]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class HttpObservation:
+    response: httpx.Response
+    application: FastAPI
+    records: CapturedRecords
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class StreamingObservation:
+    failure: BaseException
+    records: CapturedRecords
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class HostObservation:
+    record: logging.LogRecord
+    records: CapturedRecords
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class HostFilters:
+    failure: RequestFailureFilter
+    reported: ReportedRequestFilter
+    next_reported: ReportedRequestFilter
 
 
 async def respond_to_probe(request: Request) -> Response:
@@ -85,6 +119,18 @@ class RequestScenario:
         asyncio.run(self.execute())
 
 
+type RequestScopes = tuple[Scope, ...]
+type RequestTransports = tuple[RecordingTransport, ...]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class ConcurrentRequestScenario:
+    application: RequestApplication
+    scopes: RequestScopes
+    transports: RequestTransports
+    shared_state: Mapping[str, object]
+
+
 def build_request_scope(*, path: str = "/api/probe/raw_secret") -> Scope:
     return {
         "type": "http",
@@ -98,8 +144,8 @@ def build_request_scope(*, path: str = "/api/probe/raw_secret") -> Scope:
 
 async def exercise_concurrent_requests(
     application: RequestApplication,
-    scopes: tuple[Scope, ...],
-    transports: tuple[RecordingTransport, ...],
+    scopes: RequestScopes,
+    transports: RequestTransports,
 ) -> None:
     middleware = RequestLoggingMiddleware(app=application)
     async with asyncio.timeout(5):
