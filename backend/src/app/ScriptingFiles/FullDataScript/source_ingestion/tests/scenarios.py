@@ -1,6 +1,8 @@
 """Frozen collaborator bundles for source-stage scenarios."""
 
 from dataclasses import dataclass
+from collections.abc import Callable
+import requests
 from sqlalchemy import Engine
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import MoneyPuckSummary
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import (
@@ -65,6 +67,22 @@ class PaginationScenario:
 class SessionScenario:
     session: ManagedSession
     failing: bool
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class SessionSetupScenario:
+    session: requests.Session
+    native_close: Callable[[], None]
+    primary: BaseException
+    cause: ValueError
+    cleanup: BaseException | None
+    closed: list[bool]
+
+    def close(self) -> None:
+        self.closed.append(True)
+        self.native_close()
+        if self.cleanup is not None:
+            raise self.cleanup
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)

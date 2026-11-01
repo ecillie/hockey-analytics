@@ -24,7 +24,9 @@ from app.ScriptingFiles.FullDataScript import capspace, ingestion, ingestion_tra
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.responses import (
     SessionLifecycle,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import SessionSourceClient
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
+    SessionSourceClient,
+)
 from app.ScriptingFiles.FullDataScript.source_ingestion.tests.fakes import (
     ManagedSession,
 )

@@ -1674,3 +1674,68 @@ judgments and precise framework/historical/native fault-double decisions remain,
 along with hosted NonProd correlation, final combined acceptance and release
 promotion. The approved API lifespan hook is unchanged. No acceptance PR or
 production promotion is made by this checkpoint.
+
+## Canonical shared-source transport and guarded setup checkpoint
+
+The shared persistence/file role grows into repository/ while retaining its
+qualified module and complete AST. Transport lives in repository/http.py; the
+unchanged frozen SourceHttpOptions lives in domain.py. Runtime callers use
+canonical owners. Ten previously defined compatibility objects retain exact
+identity. Native Retry, mount and header statements are copied unchanged; socket,
+retry and installed Retry-After defaults are preserved.
+
+The session factory now guards configuration after native construction. Setup
+failure closes the constructed Session once, preserves original error/cancellation/
+interruption identity and cause, and retains cleanup failure as secondary through
+complete_cleanup. Eighteen actual Session faults across retry construction,
+adapter installation and header installation all fail before the fix and pass
+afterward, including failing close. Native sessions and patch restoration belong
+to fixtures; fallback teardown also closes each test resource.
+
+NhlStatsOptionsPolicy owns the original option condition and returns the same
+typed violation; the service raises it before workers/clients. Four named invalid
+boundaries prove no client or persisted snapshot. All remaining NHL executable
+statements, six source consumer bodies and existing test bodies are unchanged
+apart from imports. Native report bodies, SQL and domain defaults are unchanged.
+
+Verification under Python 3.12.14:
+
+- Eighteen new setup cases fail before the guard; all pass afterward. Initial
+  source-focused checks pass **68**. Final source/contract/tracking focus passes
+  **249** in **0.62 seconds**.
+- Complete AST comparisons against `72fd3fe` prove nine moved/retained definitions,
+  shared repository, native session configuration, the NHL condition/error,
+  six source consumer bodies and two existing test module bodies unchanged
+  within the explicitly allowed setup/policy/import changes. Ten compatibility
+  objects have exact canonical identity.
+- Fresh migrated `tradevalue_test_logging05_source_roles`: **1,463 passed, zero
+  skips**, **91.28%** coverage in **132.27 seconds**, with **100%** API/calendar
+  coverage. Isolated units pass **1,413**, with 50 integrations deselected, in
+  **114.10 seconds**. The total adds 22 named regressions and one net existing
+  native import-discovery case for the new canonical modules.
+- Locked sync, Ruff lint/format, ty, structural scope, dependency exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke,
+  clean API/Vercel/ML artifact installs/exclusions and committed-model gates pass.
+  Fifteen dispositions were reviewed; all **242** source digests match the staged
+  source set. No added prohibited forms/comments were found. Public HTTP schema,
+  frontend and committed model inputs are unchanged. Final combined images,
+  browser and hosted acceptance remain required.
+
+The setup property has a precise limit. A separate actual native-session close
+probe exercises source-client, historical-profile and active-profile owners with
+RuntimeError, CancelledError and KeyboardInterrupt in the body. All **nine** paths
+replace the primary with close failure under native Session context teardown.
+That shared session-lifetime defect is explicitly unresolved; setup regressions
+and the broader green suite do not prove its absence. The probe restores patches
+before its fallback native Session cleanup, leaving no resource behind.
+
+Evidence uses `/private/tmp/tradevalue-logging05-source-roles-` prefixes:
+`before.txt`, `focus.txt`, `focus-final.txt`, `compare.py`/`compare.txt`,
+`checks.sh`/`checks.txt`, `pytest.txt`, `units.txt`, `schema.json`, `packages.txt`
+and `teardown-probe.py`/`teardown-probe.txt`.
+
+Remaining native session teardown, active write-context, source helper/entrypoint,
+exact framework/historical/fault-double decisions, hosted NonProd correlation,
+final combined acceptance and release promotion stay open. The approved API
+lifespan hook is unchanged. No acceptance PR or production promotion is made by
+this checkpoint.

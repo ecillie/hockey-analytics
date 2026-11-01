@@ -6,7 +6,7 @@ from threading import Barrier, Lock
 from _thread import LockType
 from typing import Self
 
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
     SourceClient,
     SourceResponse,
     SourceHttpOptions,

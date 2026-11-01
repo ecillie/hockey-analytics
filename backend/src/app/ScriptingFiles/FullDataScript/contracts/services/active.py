@@ -24,7 +24,7 @@ from app.ScriptingFiles.FullDataScript.contracts.errors import (
 from app.ScriptingFiles.FullDataScript.contracts.repository.http import (
     ActiveSessionFactory,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
     report_request_recovery,
 )
 from app.ScriptingFiles.FullDataScript.contracts.domain import ActiveContractOptions

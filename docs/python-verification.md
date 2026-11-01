@@ -1,5 +1,22 @@
 # Python verification
 
+The shared-source checkpoint moves transport adapters into the repository role,
+keeps their exact compatibility bindings, and gives unchanged HTTP options their
+domain owner. Session setup now closes its native resource on failure while
+preserving original error/cancellation/interruption identity and cause. All **18**
+new setup faults fail before the fix and pass afterward. A canonical NHL options
+policy retains the original condition/error and four named invalid boundaries
+prove no clients or writes. Final focused checks pass **249**. Fresh migrated
+`tradevalue_test_logging05_source_roles` passes **1,463 tests, zero skips**,
+**91.28%** coverage in **132.27 seconds**, with **100%** API/calendar coverage.
+Isolated units pass **1,413**, with 50 integrations deselected, in **114.10 seconds**.
+Static, clean package/export, migration/schema/API and ML gates pass. Fifteen
+dispositions were reviewed; all **242** source digests match. A separate native
+probe confirms nine source/profile body-teardown paths still replace the primary
+with close failure; that lifetime finding remains open with the other semantic,
+hosted and final combined acceptance/release work. Setup evidence does not accept
+that separate property.
+
 The contract-adapter layout checkpoint grows repository/services into canonical
 role directories. Active persistence/profile transport and active orchestration
 have canonical child modules; historical qualified module names and 33 exact

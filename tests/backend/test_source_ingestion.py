@@ -1,6 +1,9 @@
 """Typed ingestion stages validate before persistence and own their clients."""
 
 from dataclasses import replace
+import asyncio
+import requests
+from app.shared.tests.fakes import StageOutcome
 from copy import deepcopy
 from pydantic import TypeAdapter, ValidationError
 from app.ScriptingFiles.FullDataScript.source_ingestion.schemas import (
@@ -16,6 +19,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.tests.scenarios import (
     WorkerStage,
     PaginationScenario,
     SessionScenario,
+    SessionSetupScenario,
     ValidationBoundary,
 )
 from threading import Barrier, Lock
@@ -34,10 +38,13 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     IngestionValidationError,
     IntegerValueViolation,
     TeamAbbreviationViolation,
+    OptionsViolation,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion import util as source_utils
-from app.ScriptingFiles.FullDataScript.source_ingestion import http as source_http
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository import (
+    http as source_http,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
     SourceHttpOptions,
     SessionSourceClient,
     SynchronizedSourceClient,
@@ -233,6 +240,38 @@ class TestStatsPagination:
             )
 
 
+class TestNhlOptionsBeforeResources:
+    cases = (
+        pytest.param(("first_season", 2026), id="unordered-seasons"),
+        pytest.param(("workers", 0), id="zero-workers"),
+        pytest.param(("page_size", 0), id="zero-page-size"),
+        pytest.param(("maximum_pages", 0), id="zero-page-budget"),
+    )
+
+    @pytest.fixture(params=cases)
+    def stage(self, request):
+        field, value = request.param
+        options = replace(
+            NhlStatsOptions(first_season=2025, last_season=2025), **{field: value}
+        )
+        factory = OwnedClientFactory(client=MemorySourceClient(), barrier=Barrier(1))
+        repository = MemoryNhlStatsRepository()
+        return WorkerStage(
+            service=NhlStatsService(
+                client_factory=factory, repository=repository, options=options
+            ),
+            factory=factory,
+            repository=repository,
+            invalid=True,
+        )
+
+    def test_invalid_options_open_no_clients_and_write_no_snapshot(self, stage):
+        with pytest.raises(OptionsViolation):
+            stage.service.ingest()
+        assert stage.factory.state == {}
+        assert stage.repository.snapshots == []
+
+
 class TestNhlWorkerOwnership:
     @pytest.fixture(
         params=[
@@ -418,6 +457,73 @@ class TestOwnedHttpTransport:
             assert session.session.calls[-1][1] == 3
         assert session.session.calls[0][1] == 2
         assert session.session.opened == session.session.closed == [True]
+
+
+class TestSessionSetupCleanup:
+    @pytest.fixture(
+        params=[
+            pytest.param("retry", id="retry-construction"),
+            pytest.param("mount", id="adapter-installation"),
+            pytest.param("headers", id="header-installation"),
+        ]
+    )
+    def operation(self, request):
+        return request.param
+
+    @pytest.fixture(
+        params=[
+            pytest.param(RuntimeError, id="error"),
+            pytest.param(asyncio.CancelledError, id="cancelled"),
+            pytest.param(KeyboardInterrupt, id="interrupted"),
+        ]
+    )
+    def failure_kind(self, request):
+        return request.param
+
+    @pytest.fixture(
+        params=[
+            pytest.param(False, id="closed"),
+            pytest.param(True, id="close-failed"),
+        ]
+    )
+    def cleanup_fails(self, request):
+        return request.param
+
+    @pytest.fixture
+    def scenario(self, operation, failure_kind, cleanup_fails, monkeypatch):
+        with requests.Session() as session, monkeypatch.context() as patches:
+            cause = ValueError("session setup cause")
+            primary = failure_kind("session setup failed")
+            primary.__cause__ = cause
+            scenario = SessionSetupScenario(
+                session=session,
+                native_close=session.close,
+                primary=primary,
+                cause=cause,
+                cleanup=RuntimeError("session close failed") if cleanup_fails else None,
+                closed=[],
+            )
+            patches.setattr(
+                source_http.requests, "Session", StageOutcome(result=session)
+            )
+            patches.setattr(session, "close", scenario.close)
+            rejected = StageOutcome(result=None, failure=primary)
+            if operation == "retry":
+                patches.setattr(source_http, "Retry", rejected)
+            if operation == "mount":
+                patches.setattr(session, "mount", rejected)
+            if operation == "headers":
+                patches.setattr(session.headers, "update", rejected)
+            yield scenario
+
+    def test_setup_failure_closes_session_without_masking_primary(self, scenario):
+        with pytest.raises(type(scenario.primary)) as failure:
+            source_http.open_http_session()
+        assert failure.value is scenario.primary
+        assert failure.value.__cause__ is scenario.cause
+        assert scenario.closed == [True]
+        if scenario.cleanup is not None:
+            assert failure.value.__dict__["tradevalue_cleanup"] is scenario.cleanup
 
 
 class TestInvalidQualityOptions:

@@ -15,7 +15,9 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
     StatRow,
     StatLayout,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import SourceClient
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
+    SourceClient,
+)
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import select_stat_layout
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import (
     MoneyPuckOptions,

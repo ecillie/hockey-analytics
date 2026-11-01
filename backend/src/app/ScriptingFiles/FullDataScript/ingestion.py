@@ -59,7 +59,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.domain import (
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
     IngestionValidationError as IngestionValidationError,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
     SessionSourceClient,
     SourceClient,
     SourceSession,
@@ -67,7 +67,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
     open_source_client as open_source_client,
     ContextualSourceClientFactory,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
     open_http_session as http_session,
 )
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.domain import (

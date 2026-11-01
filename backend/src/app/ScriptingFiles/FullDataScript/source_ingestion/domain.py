@@ -387,3 +387,13 @@ def select_stat_layout(kind: PlayerKind, *, advanced: bool) -> StatLayout:
         if kind == PlayerKind.SKATER
         else build_nhl_goalie_layout()
     )
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class SourceHttpOptions:
+    json_timeout: float = 30.0
+    csv_timeout: float = 60.0
+    retry_total: int = 4
+    retry_backoff: float = 0.6
+    retry_statuses: tuple[int, ...] = (429, 500, 502, 503, 504)
+    user_agent: str = "TradeValue/1.0 (NHL analytics data ingestion)"

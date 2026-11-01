@@ -41,7 +41,7 @@ from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
 from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
     parse_contract_document as _parse_contract_document,
 )
-from app.ScriptingFiles.FullDataScript.source_ingestion.http import (
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository.http import (
     open_http_session,
     report_request_recovery,
 )
