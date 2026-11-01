@@ -38,6 +38,11 @@ export const apiRoutes = [
 
 export type ApiRoute = typeof apiRoutes[number]
 export type DeploymentEnvironment = typeof deploymentEnvironments[number]
+
+export function parseDeploymentEnvironment(value: string | undefined): DeploymentEnvironment | undefined {
+  const normalized = value?.trim().toLowerCase()
+  return deploymentEnvironments.find((environment) => environment === normalized)
+}
 export type Diagnostic = Readonly<{
   event: typeof browserEvents[number]
   severity: LogLevel

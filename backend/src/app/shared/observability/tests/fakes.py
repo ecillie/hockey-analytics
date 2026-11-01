@@ -22,6 +22,13 @@ class LogCaptureScenario:
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
+class EnvironmentLogObservation:
+    enabled: bool
+    application: tuple[str, ...]
+    host: tuple[str, ...]
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
 class FormattingScenario:
     formatter: SafeFormatter
     record: logging.LogRecord

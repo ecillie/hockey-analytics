@@ -12,6 +12,15 @@ function capture(options: LoggerOptions = {}) {
 afterEach(() => vi.restoreAllMocks())
 
 describe('safe browser diagnostics', () => {
+  it.each(['nonprod', 'prod'] as const)('disables all diagnostic delivery in %s', (environment) => {
+    const output = capture({ environment, level: 'DEBUG' })
+    logLevels.forEach((severity) => {
+      output.logger.emit({ ...entry, severity })
+      output.logger.report(new Error('private_secret'), { ...entry, severity })
+    })
+    expect(output.records).toEqual([])
+  })
+
   it.each(logLevels)('honors the %s threshold for all severities', (level) => {
     const output = capture({ level })
     logLevels.forEach((severity) => output.logger.emit({ ...entry, severity }))
@@ -30,12 +39,12 @@ describe('safe browser diagnostics', () => {
   })
 
   it('omits objects, messages, stack traces and unapproved fields', () => {
-    const output = capture({ environment: 'prod' })
+    const output = capture({ environment: 'dev' })
     const secret = { toJSON: vi.fn(() => 'private_secret'), toString: vi.fn(() => { throw new Error('private_secret') }) }
     output.logger.report(secret, { ...entry, route: '/api/search', requestId: 'a'.repeat(32), category: 'http', status: 503, durationMs: 12, message: secret, headers: secret } as Diagnostic)
     expect(secret.toJSON).not.toHaveBeenCalled()
     expect(secret.toString).not.toHaveBeenCalled()
-    expect(output.payloads()[0]).toMatchObject({ environment: 'prod', route: '/api/search', request_id: 'a'.repeat(32), category: 'http', status: 503, duration_ms: 12 })
+    expect(output.payloads()[0]).toMatchObject({ environment: 'dev', route: '/api/search', request_id: 'a'.repeat(32), category: 'http', status: 503, duration_ms: 12 })
     expect(output.records[0].text).not.toContain('private_secret')
     expect(output.records[0].text.length).toBeLessThan(8192)
   })

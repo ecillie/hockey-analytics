@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { logLevels, parseLogLevel, shouldLog } from './domain'
+import { logLevels, parseDeploymentEnvironment, parseLogLevel, shouldLog } from './domain'
 
 describe('browser diagnostic thresholds', () => {
+  it.each(['dev', 'nonprod', 'prod'] as const)('normalizes the %s application environment', (environment) => {
+    expect(parseDeploymentEnvironment(` ${environment.toUpperCase()} `)).toBe(environment)
+  })
+
+  it.each([undefined, '', 'private_secret'])('omits unrecognized application environments (%j)', (environment) => {
+    expect(parseDeploymentEnvironment(environment)).toBeUndefined()
+  })
+
   it('defaults to INFO without depending on environment or API mode', () => {
     expect(logLevels).toEqual(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'])
     expect(parseLogLevel(undefined)).toBe('INFO')

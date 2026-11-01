@@ -42,6 +42,7 @@ export function createBrowserLogger(options: LoggerOptions = {}): BrowserDiagnos
   }
 
   function deliver(entry: Diagnostic): boolean {
+    if (options.environment === 'nonprod' || options.environment === 'prod') return false
     const payload = buildPayload(entry)
     const severity = payload.severity as LogLevel
     if (!shouldLog(level, severity)) return false

@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import sys
+from contextlib import ExitStack
 from io import StringIO
 from pathlib import Path
 import httpx
@@ -13,7 +14,7 @@ import httpx
 from hypothesis import given
 import pytest
 
-from app.shared.observability import formatting
+from app.shared.observability import formatting, services
 from app.shared.observability.domain import (
     LogFormat,
     LogLevel,
@@ -24,6 +25,7 @@ from app.shared.observability.domain import (
 )
 from app.shared.observability.formatting import SafeFormatter
 from app.shared.observability.tests.fakes import (
+    EnvironmentLogObservation,
     LogCaptureScenario,
     BrokenStream,
     HostileValue,
@@ -38,6 +40,69 @@ from app.shared.observability.tests import verify_http, verify_logs
 from app.shared.observability.sinks import build_diagnostic_handler
 from app.shared.observability.policy import RecordLimitsError
 from pydantic import TypeAdapter, ValidationError
+
+
+class TestEnvironmentLogDelivery:
+    @pytest.fixture(
+        params=[
+            pytest.param(("dev", True), id="dev-enabled"),
+            pytest.param((" NONPROD ", False), id="nonprod-disabled"),
+            pytest.param((" PROD ", False), id="prod-disabled"),
+        ]
+    )
+    def environment_case(self, request):
+        return request.param
+
+    @pytest.fixture(params=[pytest.param(value, id=value.value) for value in LogFormat])
+    def log_format(self, request):
+        return request.param
+
+    @pytest.fixture
+    def observation(
+        self, environment_case, log_format, isolate_command_logging, monkeypatch
+    ):
+        environment, enabled = environment_case
+        with ExitStack() as cleanup:
+            application_output = cleanup.enter_context(StringIO())
+            host_output = cleanup.enter_context(StringIO())
+            native_handler = logging.StreamHandler(host_output)
+            cleanup.callback(native_handler.close)
+            host = logging.getLogger("uvicorn")
+            errors = logging.getLogger("uvicorn.error")
+            for target in (host, errors):
+                monkeypatch.setattr(target, "handlers", [])
+                monkeypatch.setattr(target, "filters", [])
+                monkeypatch.setattr(target, "level", logging.NOTSET)
+                monkeypatch.setattr(target, "propagate", False)
+            monkeypatch.setattr(host, "handlers", [native_handler])
+            monkeypatch.setattr(logging.getLogger("uvicorn.access"), "disabled", False)
+            settings = read_logging_settings(
+                {
+                    "ENV": environment,
+                    "LOG_LEVEL": "DEBUG",
+                    "LOG_FORMAT": log_format.value,
+                }
+            )
+            handler = services.configure_logging(settings, stream=application_output)
+            services.configure_api_host_logging(settings, handler)
+            services.configure_api_host_logging(settings, handler)
+            for level in LogLevel:
+                for target in (logging.getLogger("app.environment_probe"), errors):
+                    target.log(
+                        level, "Environment probe", extra={"event": "command.started"}
+                    )
+            return EnvironmentLogObservation(
+                enabled=enabled,
+                application=tuple(application_output.getvalue().splitlines()),
+                host=tuple(host_output.getvalue().splitlines()),
+            )
+
+    def test_application_and_existing_host_handlers_honor_environment(
+        self, observation
+    ):
+        expected = len(LogLevel) if observation.enabled else 0
+        assert len(observation.application) == expected
+        assert len(observation.host) == expected
 
 
 class TestImmutableDiagnosticSnapshots:

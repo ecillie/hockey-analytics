@@ -1956,10 +1956,80 @@ autoMergeRequest null; no phase-five PR exists.
 | Remaining requirement | Required dependency |
 | --- | --- |
 | Final Python semantic acceptance | Pending explicit F1/F2/T1 owner decisions and H1 applied-revision conflict resolution, scoped in the semantic audit. |
-| Hosted INFO/DEBUG behavior and frontend/backend correlation | Approved NonProd target and branch-scoped configuration; existing Production credentials are not a test target. |
+| Hosted INFO/DEBUG behavior and frontend/backend correlation | Superseded by the subsequent owner-directed environment gate below: nonprod/prod application delivery is disabled; no NonProd credential is needed to prove disabled local artifacts. |
 | Non-draft phase-five PR to Dev, hosted CI and normal promotion | Complete the preceding semantic/hosted gates first; automatic merge must not accept unfinished work. |
 | Final production approval | Preserve the normal owner/manual approval gate. |
 
 The API lifespan logging hook remains approved and unchanged. No additional
 exceptions have been inferred from passing checks or from the automatic goal
 continuations. The existing owner questions remain pending.
+
+## Owner-directed nonprod/prod output disablement
+
+The owner clarified: "rn if env =nonprod or prod just disable saving logs".
+This supersedes the earlier hosted NonProd diagnostic-emission requirement.
+An approved external NonProd database is no longer needed to verify disabled
+output. The separate F1/F2/T1/H1 Python owner decisions remain pending.
+
+LoggingSettings derives a delivery gate from normalized ENV. Application and
+installed Uvicorn handlers reject nonprod/prod records before formatting or
+writing, at every severity including ERROR/CRITICAL. The approved lifespan and
+main-owned command hooks remain in place. Dev keeps its selected INFO/DEBUG
+threshold and JSON/text format; existing unset-environment command defaults are
+unchanged. No log file, database persistence or browser collector was added.
+
+Frontend builds read ENV at build time and expose only a recognized environment
+name. Browser diagnostics discard nonprod/prod events and reports before
+serialization or sink delivery. API selection, UI errors/retry, response bodies
+and correlation headers remain unchanged. Rebuild the frontend after changing
+ENV. Native browser/platform telemetry is independently managed. The local
+Uvicorn image still prints its two native process/startup lines before the
+approved application hook runs; neither disabled mode emits application
+diagnostic records afterward.
+
+Verification:
+
+- The six named dev/nonprod/prod × JSON/text handler cases exercise all five
+  severities through actual application and pre-existing Uvicorn handlers,
+  including repeated setup. Against exact previous handler/owner definitions,
+  four disabled cases fail and two dev cases pass; all six pass after the gate.
+- Existing bootstrap tests initially failed in eight places because their old
+  production-emission expectations conflict with the new requirement. They now
+  cover all three environments while retaining repeated lifespan/resource
+  order, captured configuration, response IDs, host coexistence and cleanup.
+  The focused policy/API/bootstrap run passes **151 tests**.
+- New migrated `tradevalue_test_logging_dev_gate_4652155`: **1,587 passed**,
+  **zero skips**, **155.59 seconds**, **91.83%** aggregate and **100%**
+  API/calendar coverage. The separate no-database unit run passes **1,537**
+  tests with 50 integration cases deselected in **132.17 seconds**. Locked sync,
+  Ruff lint/format, ty, structural rules, dependency exports, OpenAPI,
+  migration history/preflight/catalog, API smoke and committed-model gates pass.
+  Clean API/Vercel/ML package installs and artifact exclusions pass. All **245**
+  tracked Python source digests match; seven dispositions were re-reviewed.
+- Rebuilt API image `tradevalue-dev-only:candidate` runs as UID **10001**.
+  Dev INFO/DEBUG probes retain **15/22 events**, **5/6 correlated requests**,
+  interrupted-stream behavior, clean shutdown and CRITICAL invalid-startup
+  reporting with exit **3**. Separate nonprod/prod instances use only the owned
+  disposable database and retain HTTP **200/500/404**, INTERNAL_ERROR, CORS and
+  32-character request IDs with **zero application diagnostic records** and
+  clean shutdown. Real nonprod/prod structural CLI invocations retain normal
+  stdout/exit 0 with **zero-byte diagnostic stderr**.
+- Frontend lint, contract, production build and **171 tests** pass at **100%**
+  statement/branch/function/line coverage. Fresh ENV-specific production
+  artifacts pass real headless Chrome probes: dev INFO/DEBUG retain **29/54
+  records**, correlation, retry, cancellation and bounded deduplication;
+  nonprod/prod emit **zero diagnostic records** through HTTP failures, synthetic
+  global failures and retry recovery. All four modes have zero page errors.
+
+Full check command/output uses `/private/tmp/tradevalue-dev-gate-final-checks.sh`
+and `.txt`; pytest/unit/schema evidence uses
+`/private/tmp/tradevalue-logging-dev-gate-final-`. Other focused, before/after,
+package, image, CLI and browser evidence uses `/private/tmp/tradevalue-dev-only-`.
+The original full attempt with eight outdated production assertions is retained
+under `/private/tmp/tradevalue-logging-dev-only-`; it is not the passing final
+suite. Native previous-definition comparison modifies only an isolated test
+process, never the worktree implementation.
+
+No hosted environment settings, credentials, retention or collection controls
+were changed. This checkpoint is pushed on the existing acceptance branch;
+it does not create a phase-five PR, manually merge or approve production.

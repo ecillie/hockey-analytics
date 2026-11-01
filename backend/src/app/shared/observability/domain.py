@@ -144,6 +144,10 @@ class LoggingSettings:
     release: str | None = None
     limits: RecordLimits = field(default_factory=RecordLimits)
 
+    @property
+    def enabled(self) -> bool:
+        return self.environment not in ("nonprod", "prod")
+
 
 def read_logging_settings(values: Mapping[str, str]) -> LoggingSettings:
     try:

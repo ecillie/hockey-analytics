@@ -131,8 +131,21 @@ class TestLoggingBootstrap:
     def format(self, request):
         return request.param
 
+    @pytest.fixture(
+        params=[pytest.param(value, id=value) for value in ("dev", "nonprod", "prod")]
+    )
+    def deployment_environment(self, request):
+        return request.param
+
     @pytest.fixture
-    def environment(self, level, format):
+    def configured_events(self, level, deployment_environment):
+        if deployment_environment != "dev":
+            return ()
+        prefix = ("probe.debug",) if level == "DEBUG" else ()
+        return prefix + ("probe.info", "dependency.record")
+
+    @pytest.fixture
+    def environment(self, level, format, deployment_environment):
         environment = dict(os.environ)
         for key in (
             "DATABASE_URL",
@@ -143,8 +156,8 @@ class TestLoggingBootstrap:
             environment.pop(key, None)
         return environment | {
             "TRADEVALUE_ENV_FILE": os.devnull,
-            "ENV": "prod",
-            "PROD_DATABASE_URL": "postgresql://unused.invalid/tradevalue_test_startup",
+            "ENV": deployment_environment,
+            f"{deployment_environment.upper()}_DATABASE_URL": "postgresql://unused.invalid/tradevalue_test_startup",
             "LOG_LEVEL": level,
             "LOG_FORMAT": format,
             "CORS_ORIGINS": "http://localhost:5173",
@@ -162,7 +175,7 @@ class TestLoggingBootstrap:
         )
 
     def test_repeated_setup_preserves_host_and_emits_one_stream(
-        self, configured, level
+        self, configured, configured_events, deployment_environment
     ):
         assert configured.returncode == 0, configured.stderr
         assert json.loads(configured.stdout) == {"host": "host preserved\n", "count": 1}
@@ -170,10 +183,8 @@ class TestLoggingBootstrap:
             json.loads(line.removeprefix("event "))
             for line in configured.stderr.splitlines()
         ]
-        assert [event["event"] for event in events] == (
-            ["probe.debug"] if level == "DEBUG" else []
-        ) + ["probe.info", "dependency.record"]
-        assert all(event["environment"] == "prod" for event in events)
+        assert tuple(event["event"] for event in events) == configured_events
+        assert all(event["environment"] == deployment_environment for event in events)
         assert "secret" not in configured.stderr
 
     @pytest.fixture
@@ -188,11 +199,11 @@ class TestLoggingBootstrap:
         )
 
     def test_vercel_export_and_repeated_lifespans_install_before_resources(
-        self, hosted, level
+        self, hosted, level, deployment_environment
     ):
         assert hosted.returncode == 0, hosted.stderr
         observed = json.loads(hosted.stdout)
-        assert observed["calls"] == ["prod", "prod"]
+        assert observed["calls"] == [deployment_environment, deployment_environment]
         assert observed["handlers"] == 1
         assert observed["database"] is None
         assert len(set(observed["responses"])) == 2
@@ -200,6 +211,10 @@ class TestLoggingBootstrap:
             json.loads(line.removeprefix("event "))
             for line in hosted.stderr.splitlines()
         ]
+        assert "secret" not in hosted.stderr
+        if deployment_environment != "dev":
+            assert events == []
+            return
         assert [event["event"] for event in events] == (
             ["probe.started"]
             + (["probe.debug", "request.started"] if level == "DEBUG" else [])
@@ -210,7 +225,6 @@ class TestLoggingBootstrap:
             for event in events
             if event["event"] == "request.failed"
         } == set(observed["responses"])
-        assert "secret" not in hosted.stderr
 
 
 class TestInvalidLoggingStartup:
