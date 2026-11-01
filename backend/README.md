@@ -232,7 +232,9 @@ loading for the session.
 
 The runtime entrypoint is `app.main:create_runtime_app` with Uvicorn's `--factory`
 flag. It loads a single environment snapshot, validates HTTP and database
-settings, and returns the application. FastAPI lifespan startup creates the
+settings, and returns the application. Logging settings are validated first,
+without requiring database configuration. FastAPI lifespan startup installs
+process logging before it creates the
 engine and session factory; shutdown disposes the engine. Each request owns
 and closes its SQLAlchemy session. Existing pooling, LIFO/pre-ping, recycling,
 and connection-timeout settings are retained.
@@ -241,6 +243,23 @@ and connection-timeout settings are retained.
 inspection or tests. It accepts explicit frozen settings and an injectable
 resource factory; it does not read dotenv files or create an engine. Database
 requests need runtime settings or an explicit service override.
+
+API diagnostics go to stderr as one JSON record per line. `LOG_LEVEL` defaults
+to `INFO` in every environment; use `DEBUG` for additional application diagnostics.
+The five accepted thresholds are `DEBUG`, `INFO`, `WARNING`, `ERROR` and
+`CRITICAL`, with case and surrounding whitespace normalized. `LOG_FORMAT`
+defaults to `json`; `text` adds a terminal-friendly prefix to the same escaped
+fields. Empty or unknown values fail startup before database configuration is
+resolved. Exported variables override dotenv, and neither setting changes `ENV`
+or database selection. Change settings by restarting or redeploying the process.
+
+The owner-approved API lifespan hook is the hosted exception to main-only
+logging configuration. Ordinary imports, OpenAPI generation and `create_app()`
+construction do not install handlers. The process-owned application handler is
+reused across repeated starts; conflicting settings require a restart. Root and
+Uvicorn handlers remain host-owned. SQL/HTTP dependency diagnostics remain at
+WARNING or above even in application DEBUG mode. Commands adopt the shared
+policy in logging phase 3; API request/lifecycle events follow in phase 2.
 
 `load_environment()` merges dotenv values with exported variables without
 changing the process environment, including interpolation precedence. Settings

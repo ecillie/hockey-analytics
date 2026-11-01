@@ -107,3 +107,70 @@ bootstrap acceptance must follow that decision before publication. No PR has
 been opened and no dependent phase has started. The dedicated disposable
 PostgreSQL container was removed after verification; unrelated containers were
 untouched. The local historical `plan.md` remains untracked and unchanged.
+
+## Phase 1 approved startup and local acceptance
+
+The owner resumed work with: "resume please follow python rules and use that
+hook." This explicitly approves the hosted exception described in the plan.
+`create_runtime_app()` resolves logging from the existing merged environment
+snapshot before HTTP/database settings. It passes immutable logging settings to
+`create_app()`; only that application's lifespan startup installs handlers,
+before database resource construction. Ordinary imports, OpenAPI generation,
+and application construction remain free of logging installation. Command
+`main()` functions will call the same shared configurator in phase 3.
+
+One named, process-owned stderr handler serves the application namespaces.
+Repeated startup with identical settings reuses it. Conflicting process settings
+require a restart; an unrelated handler using the reserved name is preserved
+and rejected rather than overwritten. Application propagation stops before the
+host root. Root and Uvicorn loggers/handlers remain untouched. SQLAlchemy and
+HTTP dependency namespaces use the safe sink at WARNING or the selected stricter
+threshold, so application DEBUG does not enable parameter/URL logging. No global
+mutable configuration store, background queue or forced root replacement was
+introduced. Initialization belongs to the synchronous main/startup boundary,
+before serving requests; this is not a per-request reconfiguration API.
+
+Fresh-process scenarios exercise the configuration service's silent imports,
+repeated configuration and Vercel-export lifespans, both thresholds/formats,
+resource-construction order, host preservation, reserved-name conflicts and
+changed-settings rejection. Invalid logging fails before database-setting
+resolution. Additional concrete HTTPError/SQLAlchemy OperationalError scenarios
+verify nested payload/parameter/header/URL exclusion and exception identity.
+The existing dotenv merger retains exported-value precedence without mutation.
+Environment templates and backend/deployment instructions document the contract.
+
+Final local gates on Python 3.12.14 and the newly provisioned disposable
+PostgreSQL 15 database `tradevalue_test_logging01_final`:
+
+- **833 passed, zero skips**, **91.71%** aggregate coverage, **40.27 seconds**.
+  The API/shared-calendar behavior gate remains **100%**.
+- Isolated units with database URLs absent and dotenv disabled: **783 passed**,
+  **50 integrations deselected**, **23.68 seconds**.
+- Ruff lint/format, ty, structural rules, locked all-group sync, OpenAPI parity,
+  dependency exports, ML gate, isolated API/ML installs and wheel/sdist boundaries
+  passed. New-source/diff scans found no forbidden constructs or added Python
+  comments. The approved startup exception is recorded explicitly, rather than
+  treated as a general rule waiver.
+- Frontend API contract, lint, **60 tests at 100% coverage**, and production
+  build passed. The first invocation used a nonexistent `check:api` script;
+  corrected to the repository's `api:contract` command. No frontend code changed.
+- Production image `tradevalue-logging01:verified` built and served health,
+  seasons and teams successfully in INFO and DEBUG as uid **10001**.
+  Separate real-image lifespan probes captured empty stdout and one INFO event
+  in normal mode, INFO plus DEBUG in debug mode, safe JSON on stderr, no raw
+  sensitive message, and one application handler. Local captures are at
+  `/private/tmp/tradevalue-logging01-{info,debug}-probe.{stdout,stderr}`.
+- Earlier bootstrap-test fixture errors (host propagation and unrelated
+  TestClient deprecation output) were corrected by matching host logger setup
+  and exercising ASGI lifespan directly. No production warning suppression or
+  weakened event assertions was added. Existing upstream dependency warnings
+  remain in the complete suite.
+
+Pulled current `origin/Dev` before publication; it remained `4d8fae3`. Phase 1's
+local deliverables and gates are complete. Hosted PR checks and publication
+follow; request/access/lifecycle instrumentation is phase 2. Vercel's documented
+lifespan support establishes the bootstrap design, but shutdown output is not
+retained in its dashboard and cleanup is limited to 500 ms. Hosted retention,
+access, sink limits and captured-mode acceptance remain phase-5 rollout gates.
+The earlier phase-7 semantic acceptance remains outstanding and is not waived.
+No production promotion or manual PR merge is part of this work.

@@ -22,6 +22,8 @@ from app.config import (
     load_environment,
 )
 from app.database import DatabaseResources, create_database_resources
+from app.shared.observability.domain import LoggingSettings, read_logging_settings
+from app.shared.observability.services import configure_logging
 
 
 logger = logging.getLogger(__name__)
@@ -60,6 +62,7 @@ def create_app(
     settings: ApiSettings | None = None,
     *,
     database_settings: DatabaseSettings | None = None,
+    logging_settings: LoggingSettings | None = None,
     resource_factory: Callable[
         [DatabaseSettings], DatabaseResources
     ] = create_database_resources,
@@ -68,6 +71,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncGenerator[None]:
+        if logging_settings is not None:
+            configure_logging(logging_settings)
         if database_settings is None:
             yield
             return
@@ -128,6 +133,9 @@ def create_app(
 
 def create_runtime_app() -> FastAPI:
     values = load_environment()
+    logging_settings = read_logging_settings(values)
     return create_app(
-        get_api_settings(values), database_settings=get_database_settings(values)
+        get_api_settings(values),
+        database_settings=get_database_settings(values),
+        logging_settings=logging_settings,
     )

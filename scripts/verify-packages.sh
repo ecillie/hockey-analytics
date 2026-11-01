@@ -12,7 +12,7 @@ tar -tzf "$package_scratch"/wheels/tradevalue_ml-*.tar.gz >> "$package_scratch/m
 if grep -E 'ScriptingFiles|(^|/)(tests|data|ml)/|\.csv$|\.joblib$|\.pyc$|/\.env' "$package_scratch/api-files"; then exit 1; fi
 if grep -E '(^|/)(tests|outputs)/|\.csv$|\.joblib$|\.pyc$|/\.env' "$package_scratch/ml-files"; then exit 1; fi
 grep -E '^app/main.py$' "$package_scratch/api-files"
-grep -E '^app/shared/observability/(domain|formatting|policy|sinks).py$' "$package_scratch/api-files"
+grep -E '^app/shared/observability/(domain|formatting|policy|services|sinks).py$' "$package_scratch/api-files"
 grep -E '^ml/resources/skater_value_model_metadata.json$' "$package_scratch/ml-files"
 uv venv --python 3.12 "$package_scratch/api-environment"
 uv venv --python 3.12 "$package_scratch/ml-environment"

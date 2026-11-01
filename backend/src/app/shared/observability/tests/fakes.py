@@ -1,6 +1,10 @@
 """Hostile values used to verify diagnostics never inspect payloads."""
 
 import logging
+from email.message import Message
+from urllib.error import HTTPError
+
+from sqlalchemy.exc import OperationalError
 
 
 class HostileValue:
@@ -53,4 +57,34 @@ def build_bounded_record() -> logging.LogRecord:
         current = previous
     record.exc_info = (type(current), current, current.__traceback__)
     record.request_id = "retained-request-id"
+    return record
+
+
+def build_connection_error_record() -> logging.LogRecord:
+    error = OperationalError(
+        "SELECT :secret",
+        {"password": "secret"},
+        ConnectionError("postgresql://user:secret@host/db"),
+    )
+    error.__cause__ = error.orig
+    record = build_exception_record("secret")
+    record.exc_info = (type(error), error, None)
+    record.payload = {"nested": {"authorization": HostileValue()}}
+    return record
+
+
+def build_http_error_record() -> logging.LogRecord:
+    headers = Message()
+    headers["Authorization"] = "secret"
+    error = HTTPError(
+        "https://feed.invalid?token=secret",
+        503,
+        "secret",
+        headers,
+        None,
+    )
+    error.__cause__ = ConnectionError("secret upstream failure")
+    record = build_exception_record("secret")
+    record.exc_info = (type(error), error, None)
+    record.payload = {"nested": {"authorization": HostileValue()}}
     return record

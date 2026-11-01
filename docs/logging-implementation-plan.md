@@ -68,13 +68,14 @@ The current global Python rule says: **"Only `main()` configures logging
 attach handlers."** Application commands can follow this directly, but the
 Uvicorn factory and Vercel ASGI export do not invoke an application CLI `main()`.
 
-Proposed owner decision: allow installation of the shared logging configuration
-once at the hosted API's explicit startup boundary, while ordinary imports and
-`create_app()` remain free of handler installation. Record the exact approved
-hook and its import/startup behavior before implementing that exception. If the
-rule must remain literal, choose a supported host-owned logging configuration
-for both Docker and Vercel and prove it works. Renaming a helper to `main()` is
-not a substitute for resolving ownership.
+Approved owner decision: the owner instructed, "resume please follow python
+rules and use that hook." The hosted API may install shared logging from the
+FastAPI lifespan startup hook in `app.main.create_app`, before database resource
+construction, when explicitly supplied runtime logging settings. Docker's
+`create_runtime_app` factory and Vercel's `backend/index.py` export supply those
+settings. Ordinary imports, OpenAPI generation and `create_app()` construction
+remain free of handler installation. This is the narrow hosted-startup exception
+to the main-only configuration rule; CLI configuration remains owned by `main()`.
 
 Shared code should construct frozen settings, formatters and configuration
 values. CLI `main()` functions install that configuration. Libraries only obtain

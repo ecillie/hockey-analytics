@@ -24,6 +24,8 @@ from app.shared.observability.tests.fakes import (
     HostileValue,
     build_exception_record,
     build_bounded_record,
+    build_connection_error_record,
+    build_http_error_record,
 )
 from app.shared.observability.sinks import build_diagnostic_handler
 from app.shared.observability.policy import RecordLimitsError
@@ -319,6 +321,7 @@ from app.shared.observability.domain import read_logging_settings
 from app.shared.observability.formatting import SafeFormatter
 from app.shared.observability.sinks import build_diagnostic_handler
 from app.shared.observability.policy import find_record_limits_violation
+from app.shared.observability.services import configure_logging
 
 assert read_logging_settings({}).level.name == "INFO"
 assert tuple(logging.getLogger().handlers) == before_handlers
@@ -385,3 +388,48 @@ class TestDependencyRecords:
         record.request_id = "123e4567-e89b-12d3-a456-426614174000"
         payload = json.loads(formatter.format(record))
         assert payload["request_id"] == record.request_id
+
+
+class TestBoundaryExceptionRedaction:
+    @pytest.fixture(
+        params=[
+            pytest.param(build_connection_error_record, id="connection"),
+            pytest.param(build_http_error_record, id="http"),
+        ]
+    )
+    def failure_record(self, request):
+        return request.param()
+
+    @pytest.fixture(
+        params=[
+            pytest.param(level, id=level.name)
+            for level in (LogLevel.INFO, LogLevel.DEBUG)
+        ]
+    )
+    def level(self, request):
+        return request.param
+
+    @pytest.fixture(
+        params=[pytest.param(format, id=format.value) for format in LogFormat]
+    )
+    def capture(self, request, level):
+        stream = StringIO()
+        return stream, build_diagnostic_handler(
+            LoggingSettings(format=request.param, level=level), stream
+        )
+
+    def test_connection_and_http_payloads_stay_out_of_diagnostics(
+        self, failure_record, capture
+    ):
+        stream, handler = capture
+        original_error = failure_record.exc_info[1]
+        handler.handle(failure_record)
+        rendered = stream.getvalue()
+        payload = json.loads(rendered.removeprefix("event "))
+        assert payload["event"] == "job.failed"
+        assert len(payload["exceptions"]) == 2
+        assert "secret" not in rendered
+        assert "authorization" not in rendered.lower()
+        assert "password" not in rendered.lower()
+        assert len(rendered.splitlines()) == 1
+        assert failure_record.exc_info[1] is original_error
