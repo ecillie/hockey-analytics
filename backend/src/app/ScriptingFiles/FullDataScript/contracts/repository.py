@@ -614,7 +614,7 @@ def count_contract_coverage(
         "total_player_seasons": total,
         "covered_player_seasons": covered,
         "missing_player_seasons": total - covered,
-        "coverage_pct": round(covered * 100 / total, 2) if total else None,
+        "coverage_pct": round(covered * 100 / total, 2) if total != 0 else None,
     }
 
 

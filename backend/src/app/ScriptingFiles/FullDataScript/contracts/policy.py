@@ -12,6 +12,7 @@ from app.ScriptingFiles.FullDataScript.contracts.errors import (
     CapSpaceParseError,
     ContractConflictError,
     ReconciliationFailure,
+    ContractOptionError,
 )
 from app.ScriptingFiles.FullDataScript.contracts.schemas import SourceDocument
 from app.ScriptingFiles.FullDataScript.contracts.schemas.documents import PageSnapshots
@@ -22,6 +23,19 @@ from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
 )
 from app.ScriptingFiles.FullDataScript.contracts.util import clean_text
 from app.ScriptingFiles.FullDataScript.source_ingestion.util import build_player_slug
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class WorkerLimitPolicy:
+    maximum_workers: int
+
+    def find_violation(self, workers: int) -> ContractOptionError | None:
+        if 1 <= workers <= self.maximum_workers:
+            return None
+        return ContractOptionError(
+            option="workers",
+            requirement=f"must be between 1 and {self.maximum_workers}",
+        )
 
 
 def matches_capwages_document(

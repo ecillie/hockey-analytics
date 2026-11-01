@@ -15,6 +15,16 @@ class HostileValue:
         raise AssertionError("diagnostics evaluated a payload")
 
 
+class MetadataAccessError(RuntimeError):
+    def __init__(self, *, failure: BaseException) -> None:
+        super().__init__("primary_secret")
+        self.failure = failure
+
+    @property
+    def __dict__(self) -> dict[str, object]:
+        raise self.failure
+
+
 def build_exception_record(secret: str) -> logging.LogRecord:
     error = RuntimeError(secret)
     error.add_note(secret)

@@ -1,23 +1,24 @@
 # Python semantic audit checkpoint
 
 This is an incomplete file-by-file review, not phase-7 acceptance. Scope is all
-237 tracked/new Python files in the acceptance worktree with source digests updated after `73c716e`. Source
-digests identify exactly what was inspected; changed files require re-review.
+237 tracked/new Python files in the acceptance worktree, with source digests
+updated after `7e45802`. Digests identify exactly what was inspected; changed
+files require re-review.
 Generated artifacts, environments and retired `.py.txt` loaders are not source
 entries. The structural gate separately checks all supported executable roots.
 
 Read `~/.codex/python-guidelines.md` before this review. Mechanical lint, format,
 type, structural, test and package results do not waive semantic decisions.
 18 empty files and 20 module-docstring-only package files have no executable
-behavior to assess. 94 other files have received the content review
+behavior to assess. 109 other files have received the content review
 recorded below; unresolved layout/boundary decisions are explicit. Every other
 nonempty file remains pending.
 
 Open release decisions include Vercel's exported ASGI application, Alembic's
 framework-executed bootstrap, intentional source-only failing test doubles,
-legacy contract role-file layout, and frozen historical migration compatibility. The previously
-approved API lifespan logging hook is the only recorded owner approval; this
-ledger creates no additional blanket exception.
+legacy contract role-file layout, and frozen historical migration compatibility.
+The previously approved API lifespan logging hook is the only recorded owner
+approval; this ledger creates no additional blanket exception.
 
 Review each nonempty file for state ownership and immutability, class/method
 placement, Protocol/framework inheritance, narrow types, guards/loop exits, typed
@@ -65,20 +66,33 @@ Record findings and fixes before assigning final acceptance.
   freezing only the model shell would not make those graphs immutable. Immutable
   domain rows/contracts and source snapshots remain the cross-layer boundary.
   This is a specific ownership disposition, not a general mutable-value waiver.
-- Contract coverage percentage still uses numeric truthiness; worker limits are
-  duplicated between options and fetcher guards. Resolve those together with the
-  remaining legacy role-file and broad SQL tuple/naming judgments.
+- Contract zero-coverage handling and shared injected worker bounds are resolved.
+  Remaining legacy role-file and broad SQL tuple/naming judgments stay open.
+- Newly inspected source ingestion retains mutable ScheduleDay raw-game dictionaries,
+  file I/O in util.read_csv, a broad stat-kind string and native Pydantic validator
+  ValueErrors. Tracking count_summary_records still accepts booleans. Resolve these
+  at their actual boundaries while preserving public compatibility and filter order.
 
-Further observability review found a frozen DiagnosticCollection containing mutable
-dictionary items. Resolve its actual snapshot contract rather than adding a
-frozen decoration. Add a targeted hostile exception-metadata regression across
-request annotation and lifecycle serialization before deciding whether their
-Exception-only guards preserve the primary failure. Ordinary application
-cancellation and sink interrupts must continue to propagate.
+## Diagnostic snapshot and worker findings resolved
+
+DiagnosticCollection now retains frozen frame/exception models and immutable
+nested tuples. Only explicit serialization creates mutable copies. Mutation and
+copy-isolation regressions protect this guarantee. Best-effort dictionary
+metadata guards cover BaseException at attribute access only; application work,
+native cancellation/interrupt and sink delivery retain their existing ownership.
+Request, host-filter, formatter and real lifespan regressions preserve the
+primary and bounded secret-free output when metadata itself raises an error,
+cancellation or interrupt. The native attribute-fault double is intentionally
+throwing source-only test support; a returned policy value cannot reproduce it.
+
+One WorkerLimitPolicy owns bounds at validation and execution. A custom limit
+accepted by HistoricalContractService now reaches ProfileFetcher; invalid direct
+worker counts open no sessions, and concurrent owned sessions all close. The
+existing public worker argument and default limit remain compatible.
 
 Required framework and historical-migration dispositions above remain open.
 Do not rewrite frozen history or introduce a global-state approximation.
-The 105 remaining nonempty files still require complete semantic review;
+The 90 remaining nonempty files still require complete semantic review;
 passing mechanical and behavior gates does not accept them implicitly.
 
 ## File ledger
@@ -107,18 +121,18 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/active_repository.py` | `d34803063d7f` | Reviewed content: consumer-complete runtime Protocol, frozen borrowed cursor adapter and transaction-owned factory. SQL values are bound; local mutable name indexes/counters belong to one save operation. Native Json values are created at the persistence edge. Write-context role/narrow-type decisions remain part of the final layout disposition. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/active_services.py` | `9a5c6bc667fd` | Reviewed: frozen injected factories/context; native session contexts bound each synchronous HTTP request. ThreadPoolExecutor joins all work before snapshot validation; only transport failures become failed profiles. Coverage policy runs before opening the write transaction, and progress emits bounded counts. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/domain.py` | `29a4813a9d8f` | Reviewed: frozen tuple-backed contract/profile outcomes and enum-derived status/coverage. Stored JSON strings isolate source snapshots; source_payload decodes a fresh mutable copy on each access. No resources or mutable application state at import. |
-| `backend/src/app/ScriptingFiles/FullDataScript/contracts/errors.py` | `f1256c2dcc7c` | Reviewed: marker exception hierarchy groups typed failure leaves; leaf constructors store typed context and build their messages. Pure enums identify parsing/reconciliation failures. Source details belong to persisted diagnostics, not emitted log fields. |
+| `backend/src/app/ScriptingFiles/FullDataScript/contracts/errors.py` | `427b82d3ef9b` | Reviewed/fixed: typed ContractOptionError now has its canonical errors role while options retains its public compatibility export. Marker exception hierarchy groups typed parsing/reconciliation leaves; persisted source details are never copied into runtime logs. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/http.py` | `13604ee9a789` | Reviewed: minimal runtime Protocols, bounded synchronous native requests/retries, context-owned sessions and explicit borrowed factories. Locks serialize borrowed-session calls; eager native responses release transport connections. Guarded slug traversal has explicit termination, identity-validated fallback and bounded progress fields. |
-| `backend/src/app/ScriptingFiles/FullDataScript/contracts/options.py` | `1a0520f94707` | Reviewed content: frozen injectable historical/active/HTTP options and typed option errors; validation functions return violations for callers to raise. Finite timeouts/backoffs and worker/batch bounds are enforced. Domain/policy role-file placement remains a final layout disposition. |
-| `backend/src/app/ScriptingFiles/FullDataScript/contracts/policy.py` | `27bbf289b080` | Reviewed: conservative identity matching and a frozen one-invariant reconciliation policy returning typed violations. Embedded identity conflicts fail closed; legacy matching requires name/slug and overlapping NHL seasons. No I/O or mutable module state. |
+| `backend/src/app/ScriptingFiles/FullDataScript/contracts/options.py` | `e202c922cf52` | Reviewed/fixed: frozen injectable options and typed validation returns. Worker bounds delegate to one WorkerLimitPolicy; the previous exception import remains compatible. Finite HTTP limits and ordered ranges remain enforced. Remaining domain/policy role placement is explicit. |
+| `backend/src/app/ScriptingFiles/FullDataScript/contracts/policy.py` | `fd5ff73f5bbb` | Reviewed/fixed: one WorkerLimitPolicy now owns the historical worker invariant used by validation and fetch execution. Conservative identity matching and reconciliation still return typed violations and fail closed on conflicting identity; no I/O. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/reporting.py` | `776416f2c542` | Reviewed content: fresh persisted profile snapshots, local source grouping and materialized one-pass metrics; no runtime log payload copies. Pure reporting helpers currently occupy a descriptive legacy role file; final layout disposition remains open. |
-| `backend/src/app/ScriptingFiles/FullDataScript/contracts/repository.py` | `956ccc559bd9` | Reviewed content: bound candidate/coverage/write SQL, immutable mapping-proxy context snapshots, conflict-preserving reconciliation and context-owned transaction/cursor. Batch counters and pending inserts are operation-local. Finding: coverage_pct still uses numeric truthiness; role-file/default compatibility and broad SQL tuple types need final disposition. |
+| `backend/src/app/ScriptingFiles/FullDataScript/contracts/repository.py` | `8dcd6fd0a10e` | Reviewed/fixed: coverage percentage explicitly distinguishes zero rows. Bound SQL, immutable mapping-proxy context snapshots, conflict-preserving reconciliation and context-owned transactions remain unchanged. Pending inserts/counters are local; broad heterogeneous SQL tuples and remaining role placement need final disposition. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/schemas/__init__.py` | `8c25f29beb35` | Reviewed: explicit public document imports and established tag helper aliases; dependencies now inspected. No I/O or mutable application state at import. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/schemas/active.py` | `da783f50d133` | Reviewed: source-boundary parsing validates index/profile shape and slug, minimum row coverage, native date conversion and contiguous seasons. Empty/duplicate seasons fail in parse_mapping_contract before min/index operations. Parsed contracts leave the boundary as frozen values. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/schemas/contracts.py` | `9c133d82d1a6` | Reviewed: boundary-only JSON/table parsing, explicit null/empty distinction, finite payload traversal and typed parse failures. Source identity and nonempty/unique season guards precede normalization; immutable domain snapshots isolate native parser mappings. No I/O/logging. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/schemas/documents.py` | `b8e438d701ac` | Reviewed content: Pydantic validates external JSON and native BeautifulSoup owns the parse tree. SourceDocument is a newly owned boundary buffer, not shared/frozen domain state; fresh page decoding and explicit text/attribute narrowing. Boundary mutability disposition applies. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/schemas/serialization.py` | `d48fc2cec40c` | Reviewed: asdict creates independent persistence snapshots, internal JSON-string fields are removed, decoded public payloads and season serialization preserve the stored compatibility shape. No I/O or leaked mutable domain state. |
-| `backend/src/app/ScriptingFiles/FullDataScript/contracts/services.py` | `43e196d6d0f5` | Reviewed content: frozen injected factories/fetcher; bounded joined executor work, validated options and fetch-before-write ownership. Each persisted batch commits independently; wrapped failures report only previously committed progress and retain the cause. Coverage read follows writes; worker-limit duplication/layout still needs final disposition. |
+| `backend/src/app/ScriptingFiles/FullDataScript/contracts/services.py` | `3eafb140feee` | Reviewed/fixed: fetch execution receives the same injected worker limits validated by the service, with default direct-call compatibility retained. Joined workers close owned sessions; invalid direct worker counts open none. Batch commit/progress/cause semantics remain unchanged; role placement remains open. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/tests/__init__.py` | `0e8f75076203` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/tests/fakes.py` | `62e5ed9001dc` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/tests/fixtures.py` | `652dc45a4982` | Pending semantic review. |
@@ -127,7 +141,7 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/tests/transport.py` | `3d51b48414a0` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/contracts/util.py` | `ad4626e15580` | Reviewed: pure money/season/text/date conversion with typed boundary failures and explicit missing values. Decimal rounding remains source-selected; nonfinite/negative/unrepresentable money is rejected. Snapshot decoding returns a fresh value; no resources or import-time I/O. |
 | `backend/src/app/ScriptingFiles/FullDataScript/ingestion.py` | `d7c587a7fa2b` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/ingestion_tracking.py` | `17f8a92976a5` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/ingestion_tracking.py` | `17f8a92976a5` | Reviewed content: runtime-checkable named callable Protocol preserves decorator signatures and native metadata; invocation-time run context owns resources, immutable run identity is passed to workers and translated failures are rethrown once. Failure-reporting errors attach best-effort to the primary; stored summaries remain distinct from safe log counts. Concrete run typing/compatibility role remains a final seam disposition. |
 | `backend/src/app/ScriptingFiles/FullDataScript/populate_roster_status.py` | `5c7d1f03acbf` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/roster_status/__init__.py` | `e0395eee5ae5` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/ScriptingFiles/FullDataScript/roster_status/ahl_roster_service.py` | `135c28d3585f` | Pending semantic review. |
@@ -145,9 +159,9 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `backend/src/app/ScriptingFiles/FullDataScript/roster_status/util.py` | `335e1bc4e70f` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/run_all.py` | `31f350e3526a` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/__init__.py` | `1f506475c98d` | Reviewed: module docstring only; no executable behavior. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/domain.py` | `d031d85bb39b` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/errors.py` | `58329739d390` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/http.py` | `792b4eee84ae` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/domain.py` | `d031d85bb39b` | Reviewed: frozen tuple-backed source rows, metric/layout values and typed summaries; layout factories create fresh immutable values, owned by each caller. Stable column/source-field ordering is explicit. Summary serialization creates a fresh compatibility report; final helper-role placement remains a naming/layout disposition. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/errors.py` | `58329739d390` | Reviewed: marker validation hierarchy and typed source/row/coverage/pagination/options failures. Raw player IDs are intentionally object-typed at the unvalidated external boundary; emitted diagnostics use only sanitized exception type/frames. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/http.py` | `792b4eee84ae` | Reviewed content: minimal runtime transport/client Protocols, frozen borrowed adapters and synchronized caller-owned clients. Context factories close native sessions; GET retries remain native and recovery emits counts only. Native Retry-After has an installed six-hour maximum (not the request socket timeout); no new sleep limit is assumed. Transport options/layout disposition remains explicit. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/moneypuck/__init__.py` | `92d48982cb80` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/moneypuck/domain.py` | `5cae66cc4ccf` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/moneypuck/repository.py` | `eefdd1931c74` | Pending semantic review. |
@@ -156,13 +170,13 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/domain.py` | `119e2b09304c` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/repository.py` | `dd3aa97acef7` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/nhl/services.py` | `197f95d02620` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/policy.py` | `3b201cbe5efe` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/policy.py` | `3b201cbe5efe` | Reviewed content: one-invariant count/duplicate policies return typed failures; row policy validates required/numeric/season fields before local deduplication, aggregate coverage and stat equations. Raw dictionaries are local validation buffers. Finding: find_stat_violation accepts broad str rather than PlayerKind; examine legacy caller compatibility before narrowing. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/repository.py` | `0f8974afd94a` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schedule/__init__.py` | `a935cb36a63d` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schedule/domain.py` | `b2439324edef` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schedule/repository.py` | `2ab1ac0c664a` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schedule/services.py` | `127956ea8b9a` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schemas.py` | `951eac4aa966` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schedule/services.py` | `127956ea8b9a` | Reviewed content: frozen injected client/repository/options; cursor dates must advance and terminate within the requested season range, data quality validates before persistence. Regular-season game dictionaries are filtered before strict validation and mapped to frozen domain rows. ScheduleDay raw-game snapshot finding must preserve that filter order. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/schemas.py` | `951eac4aa966` | Reviewed content: Pydantic boundary validation, named aliases, frozen scalar/tuple models and JSON-string stats snapshots with fresh decoded rows. Findings: ScheduleDay still retains mutable raw game dictionaries, and native validator ValueError leaves require a framework-specific disposition. Preserve filtering of non-regular-season rows before game validation. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/__init__.py` | `2e3fb5387200` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/fakes.py` | `75965991228f` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/fixtures.py` | `ece7fceed4ac` | Pending semantic review. |
@@ -170,16 +184,16 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/responses.py` | `015d5898a453` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/scenarios.py` | `142c5682179b` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/tests/strategies.py` | `b39f66564425` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/util.py` | `27e5a7886f23` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/source_ingestion/util.py` | `27e5a7886f23` | Reviewed content: pure normalization, finite Decimal conversion, stable row hashing and duplicate/malformed CSV guards; shared season calendar is reused. Finding: read_csv opens a file inside the pure utility role; move the I/O adapter with compatibility preserved. Existing numeric return union can be narrowed by overload if consumers need it. |
 | `backend/src/app/ScriptingFiles/FullDataScript/team_stints.py` | `a39bf2c13fcd` | Pending semantic review. |
 | `backend/src/app/ScriptingFiles/FullDataScript/tracking/__init__.py` | `9f4c5a1e1829` | Reviewed: module docstring only; no executable behavior. |
-| `backend/src/app/ScriptingFiles/FullDataScript/tracking/domain.py` | `f5573df5f967` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/tracking/errors.py` | `dffabfa0c590` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/tracking/repository.py` | `5286c263386e` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/tracking/services.py` | `8bd918e13f25` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/tracking/domain.py` | `f5573df5f967` | Reviewed: frozen invocation/stage/run identity and monotonic start time; fields returns a fresh mapping without mutating its parent invocation. No import-time resources or shared state. |
+| `backend/src/app/ScriptingFiles/FullDataScript/tracking/errors.py` | `dffabfa0c590` | Reviewed: typed job/source errors and batch failure with an independent mapping-proxy copy of committed progress. Cause ownership stays with the raising call site; persisted explanatory text does not enter runtime logs. |
+| `backend/src/app/ScriptingFiles/FullDataScript/tracking/repository.py` | `5286c263386e` | Reviewed content: bound SQL and scoped advisory lock ownership; durable run rows commit independently of data writes. Frozen adapter borrows connection/cursor; factory attempts unlock, cursor close and connection close while preserving primary failures. Finding: count_summary_records accepts bool through isinstance(int); assess strict count parity with count_ingested_records. Concrete adapter seam remains explicit. |
+| `backend/src/app/ScriptingFiles/FullDataScript/tracking/services.py` | `8bd918e13f25` | Reviewed: fresh immutable ingestion contexts derived from supplied invocation identity; no logging configuration or resource construction. Progress uses lazy fixed text and explicit fields, with final allowlist/bounds owned by the shared formatter. |
 | `backend/src/app/ScriptingFiles/FullDataScript/tracking/tests/__init__.py` | `512cd1b444a4` | Reviewed: module docstring only; no executable behavior. |
-| `backend/src/app/ScriptingFiles/FullDataScript/tracking/tests/fakes.py` | `7610a1574dfb` | Pending semantic review. |
-| `backend/src/app/ScriptingFiles/FullDataScript/tracking/util.py` | `51453fb01dc8` | Pending semantic review. |
+| `backend/src/app/ScriptingFiles/FullDataScript/tracking/tests/fakes.py` | `7610a1574dfb` | Reviewed: excluded source-only probes own mutable event/context observations for one fixture. Injected completion/reporting/work failures exercise cleanup and durable-run error ownership; the factory records closure in finally. They are resource probes rather than shared immutable domain values. |
+| `backend/src/app/ScriptingFiles/FullDataScript/tracking/util.py` | `51453fb01dc8` | Reviewed: pure explicit integer count projection, excludes booleans via exact type, and reports committed counts only when write count fields exist. No guessed writes or mutation of the supplied report. |
 | `backend/src/app/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
 | `backend/src/app/api/__init__.py` | `ac8dadf50d98` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/api/domain.py` | `dc0d36b232fe` | Reviewed/fixed: frozen PlayerQuery now crosses the route/service/repository boundary; SummarySelection owns immutable bindings and pagination/sort options. Database row snapshots remain frozen, and response mappings are newly owned per call. |
@@ -206,22 +220,22 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `backend/src/app/shared/observability/__init__.py` | `e3b0c44298fc` | Reviewed: empty package/placeholder; no executable behavior. |
 | `backend/src/app/shared/observability/domain.py` | `4be6daaf0f62` | Reviewed: frozen settings, invocation/request/failure values, narrow outcomes and fresh context mappings; monotonic durations derive from invocation-owned start time. Explicit numeric severities preserve the native logging protocol. Settings parsing reads supplied mappings only and exposes typed sanitized configuration failures. |
 | `backend/src/app/shared/observability/errors.py` | `a88b112c9f87` | Reviewed: one typed exception per settings/ownership/configuration/bounds failure; only exception classes define handwritten constructors, store context and build messages. No import resources or state. |
-| `backend/src/app/shared/observability/formatting.py` | `9bb646ab410b` | Reviewed content: bounded stack/cause traversal, cycle detection, strict primitive allowlists, secret-free fixed messages and byte-bounded output with fixed fallback. Findings: DiagnosticCollection contains mutable dictionary items despite a frozen shell, and hostile BaseException metadata access needs a targeted primary-error regression before final acceptance. |
-| `backend/src/app/shared/observability/lifecycle.py` | `7e68a9702da3` | Reviewed content: frozen ASGI adapter and invocation-local protocol state; sanitized lifecycle failures replace native raw failure text, delivery faults retain the primary and native ASGI awaits preserve framework lifetime. Re-review finding: serialization before delivery needs hostile-metadata primary-error regression; do not infer complete failure preservation from ordinary errors alone. |
-| `backend/src/app/shared/observability/policy.py` | `e323723f3171` | Reviewed content: explicit record-limit violation return; frozen native logging filters normalize host severity and suppress an already reported request exactly once. Record mutation is the native per-record boundary, not shared domain state. Hostile exception-metadata behavior remains a targeted regression item. |
-| `backend/src/app/shared/observability/requests.py` | `fd322cf1884c` | Reviewed content: frozen ASGI adapter, request-local closure state, native streaming send order, generated exact IDs and controlled route templates. Final summary preserves HTTP status/completion and cancellation outcomes; native ASGI awaits are framework delegation. Exception annotation currently catches Exception only; verify hostile metadata cannot replace a primary failure. |
+| `backend/src/app/shared/observability/formatting.py` | `a0e4f7f2af9a` | Reviewed/fixed: DiagnosticCollection now contains only frozen StackFrame/ExceptionSnapshot models with tuple nesting; mutable model_dump copies exist only at serialization. Bounded traversal, cycle detection, primitive allowlists and byte limits remain. Hostile dictionary metadata faults cannot escape rendering; source messages/values remain excluded. |
+| `backend/src/app/shared/observability/lifecycle.py` | `7e68a9702da3` | Re-reviewed: frozen ASGI adapter retains native protocol lifetime and primary exception identity. Immutable collected snapshots validate directly into the lifecycle report; hostile exception dictionary faults now produce a bounded truncated safe report. Delivery faults still attach only secondary metadata. |
+| `backend/src/app/shared/observability/policy.py` | `aebdde2475d4` | Reviewed/fixed: limit validation returns violations; frozen native record filters normalize severity and suppress reported duplicates. Best-effort exception metadata removal catches BaseException only at that boundary; native host tests retain safe output with hostile metadata. |
+| `backend/src/app/shared/observability/requests.py` | `969fca18a440` | Reviewed/fixed: frozen ASGI adapter retains request-local state, streaming order, exact generated IDs and controlled templates. Best-effort exception annotation cannot replace the primary when attribute access raises cancellation/interrupt. Original failures still propagate; native ASGI awaits retain framework lifetime. |
 | `backend/src/app/shared/observability/schemas.py` | `c2bd8d7e94cc` | Reviewed: frozen extra-forbidden Pydantic lifecycle graphs with tuple collections, bounded identifiers/frame lines/depth and finite input size. Host protocol payloads validate before severity/event promotion; invalid reports remain generic safe dependency events. |
 | `backend/src/app/shared/observability/services.py` | `b2a363ead406` | Reviewed: frozen command hook, fresh invocation fields, main/approved-lifespan-owned native handler and exception-hook configuration, no import-time installation. Idempotent named-handler ownership rejects incompatible settings; dependency noise remains bounded and propagated host errors reuse one safe path. |
 | `backend/src/app/shared/observability/sinks.py` | `d88c98db6900` | Reviewed: minimal runtime-checkable stream Protocol, frozen borrowed stream wrapper and one bounded fallback write on ordinary sink failure. No recursive logging/raw-record error report; cancellation/interrupt is not swallowed. Handler construction validates limits and remains owned by configured entrypoints. |
 | `backend/src/app/shared/observability/tests/__init__.py` | `0bd51b497d66` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/shared/observability/tests/app_probe.py` | `65720d0ca9e8` | Pending semantic review. |
-| `backend/src/app/shared/observability/tests/fakes.py` | `65f40f652aaa` | Pending semantic review. |
+| `backend/src/app/shared/observability/tests/fakes.py` | `b86dd91a0c02` | Reviewed: source-only factories create independent native records/errors, bounded cause chains and real HTTP/SQLAlchemy payload boundaries. MetadataAccessError intentionally raises an injected fault at native attribute access to reproduce annotation failures; returning a policy violation cannot simulate that contract. Fault doubles are excluded from production artifacts; no import-time resources. |
 | `backend/src/app/shared/observability/tests/fixtures.py` | `9acfed4652a5` | Pending semantic review. |
 | `backend/src/app/shared/observability/tests/lifecycle.py` | `747a33dcdd67` | Pending semantic review. |
 | `backend/src/app/shared/observability/tests/requests.py` | `5f8a1b294d3c` | Pending semantic review. |
 | `backend/src/app/shared/observability/tests/verify_http.py` | `9dbb5357811a` | Pending semantic review. |
 | `backend/src/app/shared/observability/tests/verify_logs.py` | `c4c01b8e8959` | Pending semantic review. |
-| `backend/src/app/shared/observability/util.py` | `a726d48b2cb7` | Reviewed content: request-local scope metadata, native route templates and typed cleanup/request failure extraction; cancellation distinguishes failed compensation. Metadata guards catch Exception only; hostile BaseException access needs targeted primary-error regression rather than a blanket broader catch. |
+| `backend/src/app/shared/observability/util.py` | `72ebc71f109f` | Reviewed/fixed: narrow metadata guards contain BaseException from untrusted attribute access only. Missing/unreadable metadata marks exception snapshots truncated; ordinary application cancellation/interrupt remains owned by the caller. Scope and native route extraction remain request-local. |
 | `backend/src/app/shared/smoke.py` | `6aca1c758286` | Reviewed: shared explicit payload predicates and typed operational exception fields; raw response/body values are failure data, not emitted diagnostic fields. No transport effects or state. |
 | `backend/src/app/shared/tests/__init__.py` | `bb3c948c925e` | Reviewed: module docstring only; no executable behavior. |
 | `backend/src/app/shared/tests/entrypoints.py` | `7fa794d77107` | Pending semantic review. |
@@ -289,7 +303,7 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `tests/backend/test_config.py` | `7624d1154587` | Pending semantic review. |
 | `tests/backend/test_container_smoke.py` | `02fdc5a44940` | Reviewed: native HTTPError/BytesIO fixtures cover handled status, invalid bytes, read/close failures, cancellation, interruption and successful/decode-failed responses; no real network. Readiness and contract specimens are read-only, observations are fixture-owned. |
 | `tests/backend/test_contract_domain.py` | `a992295230c4` | Pending semantic review. |
-| `tests/backend/test_contract_lifecycle.py` | `ff97b7834779` | Pending semantic review. |
+| `tests/backend/test_contract_lifecycle.py` | `b823831689bb` | Pending semantic review. |
 | `tests/backend/test_contract_lifecycle_postgres.py` | `820899fbe154` | Pending semantic review. |
 | `tests/backend/test_contract_parsing.py` | `3a3ca5de4c15` | Pending semantic review. |
 | `tests/backend/test_database_cleanup.py` | `6cd3fbacf88d` | Reviewed: fixture-scoped typed failures/probes and original-cause checks; hostile repr, overridden annotation and invalid native notes cannot mask primary or skip close. Both formats omit secrets and retain bounded secondary diagnostics. |
@@ -297,15 +311,15 @@ passing mechanical and behavior gates does not accept them implicitly.
 | `tests/backend/test_historical_options.py` | `6b5661805392` | Pending semantic review. |
 | `tests/backend/test_ingestion.py` | `f2c145032c20` | Pending semantic review. |
 | `tests/backend/test_ingestion_logging.py` | `56c6d291e880` | Pending semantic review. |
-| `tests/backend/test_lifecycle_logging.py` | `d633f2599aa3` | Pending semantic review. |
-| `tests/backend/test_logging_policy.py` | `6bccec5bccd4` | Pending semantic review. |
+| `tests/backend/test_lifecycle_logging.py` | `86fa51212d53` | Pending semantic review. |
+| `tests/backend/test_logging_policy.py` | `223faf441435` | Pending semantic review. |
 | `tests/backend/test_logging_startup.py` | `762d56384b27` | Pending semantic review. |
 | `tests/backend/test_migration_tooling.py` | `33e29174d135` | Pending semantic review. |
 | `tests/backend/test_openapi_contract.py` | `205f0a706841` | Pending semantic review. |
 | `tests/backend/test_operational_errors.py` | `001eb514484d` | Pending semantic review. |
 | `tests/backend/test_postgres_integration.py` | `189cc1a86e8d` | Pending complete semantic review; updated PlayerQuery scenarios are fixture-owned. |
 | `tests/backend/test_python_rules.py` | `e5fab98155b0` | Pending semantic review. |
-| `tests/backend/test_request_logging.py` | `ccb2eee7cab7` | Pending semantic review. |
+| `tests/backend/test_request_logging.py` | `1105df66f125` | Pending semantic review. |
 | `tests/backend/test_roster_status_service.py` | `f21e6de8469b` | Pending semantic review. |
 | `tests/backend/test_runtime_resources.py` | `2c135b804ce4` | Pending semantic review. |
 | `tests/backend/test_source_identity.py` | `fe3873e02c25` | Pending semantic review. |

@@ -25,6 +25,7 @@ from app.ScriptingFiles.FullDataScript.contracts.options import (
     ActiveContractOptions,
     ContractOptionError,
     HistoricalContractOptions,
+    HistoricalContractLimits,
     ProfileHttpOptions,
 )
 from app.ScriptingFiles.FullDataScript.contracts.policy import (
@@ -33,11 +34,15 @@ from app.ScriptingFiles.FullDataScript.contracts.policy import (
 from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
     parse_capspace_page,
 )
-from app.ScriptingFiles.FullDataScript.contracts.services import ProfileFetcher
+from app.ScriptingFiles.FullDataScript.contracts.services import (
+    HistoricalContractService,
+    ProfileFetcher,
+)
 from app.ScriptingFiles.FullDataScript.contracts.tests.fakes import (
     ActiveSessionProbe,
     FailedControlConnection,
     FailedTrackingScenario,
+    EmptyContractRepository,
     FailingCleanup,
     LockObservedSession,
     ProfileSessionProbe,
@@ -104,6 +109,43 @@ class TestContractOptionValidation:
 
 
 class TestProfileSessionOwnership:
+    @pytest.fixture(
+        params=[
+            pytest.param(0, id="zero-workers"),
+            pytest.param(9, id="exceeds-default-limit"),
+        ]
+    )
+    def rejected_workers(self, request):
+        return request.param
+
+    def test_invalid_workers_open_no_sessions(
+        self, fetcher, candidates, probe, rejected_workers
+    ):
+        with pytest.raises(ContractOptionError):
+            fetcher.fetch_profiles(tuple(candidates), rejected_workers)
+        assert probe.opened == []
+
+    @pytest.fixture
+    def custom_options(self):
+        return HistoricalContractOptions(
+            workers=9, limits=HistoricalContractLimits(maximum_workers=9)
+        )
+
+    @pytest.fixture
+    def custom_service(self, candidates, fetcher):
+        repository = EmptyContractRepository(candidates=tuple(candidates))
+        return HistoricalContractService(
+            repository_factory=repository.open_repository, fetcher=fetcher
+        )
+
+    def test_service_uses_injected_worker_limit(
+        self, custom_service, custom_options, probe
+    ):
+        summary = custom_service.run(custom_options, dry_run=True)
+        assert summary["profiles_requested"] == 4
+        assert len(probe.opened) == 4
+        assert len(probe.closed) == 4
+
     @pytest.fixture
     def candidates(self):
         return [

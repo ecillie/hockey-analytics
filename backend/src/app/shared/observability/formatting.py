@@ -17,7 +17,12 @@ from app.shared.observability.domain import (
     RecordLimits,
 )
 from app.shared.observability.policy import find_record_limits_violation
-from app.shared.observability.schemas import LifecycleReport, read_lifecycle_report
+from app.shared.observability.schemas import (
+    ExceptionSnapshot,
+    LifecycleReport,
+    StackFrame,
+    read_lifecycle_report,
+)
 from app.shared.observability.util import (
     has_truncated_cleanup,
     read_cleanup_failure,
@@ -30,8 +35,8 @@ type DiagnosticFailure = Literal["logging.format_failed", "logging.sink_failed"]
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
-class DiagnosticCollection:
-    items: tuple[DiagnosticFields, ...]
+class DiagnosticCollection[T: StackFrame | ExceptionSnapshot]:
+    items: tuple[T, ...]
     truncated: bool
 
 
@@ -47,16 +52,16 @@ def safe_identifier(value: object, limits: RecordLimits) -> str:
 
 def collect_stack(
     traceback: TracebackType | None, limits: RecordLimits
-) -> DiagnosticCollection:
-    frames: list[DiagnosticFields] = []
+) -> DiagnosticCollection[StackFrame]:
+    frames: list[StackFrame] = []
     while traceback is not None and len(frames) < limits.stack_frames:
         frame = traceback.tb_frame
         frames.append(
-            {
-                "module": safe_identifier(frame.f_globals.get("__name__"), limits),
-                "function": safe_identifier(frame.f_code.co_name, limits),
-                "line": traceback.tb_lineno,
-            }
+            StackFrame(
+                module=safe_identifier(frame.f_globals.get("__name__"), limits),
+                function=safe_identifier(frame.f_code.co_name, limits),
+                line=traceback.tb_lineno,
+            )
         )
         traceback = traceback.tb_next
     return DiagnosticCollection(items=tuple(frames), truncated=traceback is not None)
@@ -64,8 +69,8 @@ def collect_stack(
 
 def collect_exceptions(
     error: BaseException, limits: RecordLimits
-) -> DiagnosticCollection:
-    errors: list[DiagnosticFields] = []
+) -> DiagnosticCollection[ExceptionSnapshot]:
+    errors: list[ExceptionSnapshot] = []
     seen: set[int] = set()
     current: BaseException | None = error
     cleanup = read_cleanup_failure(error)
@@ -77,11 +82,11 @@ def collect_exceptions(
         seen.add(id(current))
         stack = collect_stack(current.__traceback__, limits)
         errors.append(
-            {
-                "type": safe_identifier(type(current).__name__, limits),
-                "frames": stack.items,
-                "frames_truncated": stack.truncated,
-            }
+            ExceptionSnapshot(
+                type=safe_identifier(type(current).__name__, limits),
+                frames=stack.items,
+                frames_truncated=stack.truncated,
+            )
         )
         following = current.__cause__
         if following is None and not current.__suppress_context__:
@@ -333,6 +338,8 @@ class SafeFormatter(logging.Formatter):
             payload.update(collect_context(record, limits))
         if isinstance(record.exc_info, tuple) and record.exc_info[1] is not None:
             exceptions = collect_exceptions(record.exc_info[1], limits)
-            payload["exceptions"] = exceptions.items
+            payload["exceptions"] = tuple(
+                item.model_dump() for item in exceptions.items
+            )
             payload["exceptions_truncated"] = exceptions.truncated
         return render_bounded_diagnostic(payload, self.settings)

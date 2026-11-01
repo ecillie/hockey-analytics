@@ -960,3 +960,69 @@ remain newly owned validation/serialization buffers, with immutable domain
 snapshots across layers. Framework/historical dispositions, hosted NonProd
 success/mode/correlation checks and final release acceptance remain open. No
 acceptance PR or production promotion is implied by this checkpoint.
+
+### Phase 5 immutable diagnostic snapshots and shared worker limits
+
+After `7e45802`, DiagnosticCollection retains the existing frozen StackFrame and
+ExceptionSnapshot models with tuple nesting. Dictionaries are created only by
+explicit serialization. Tests reject field mutation and show that modifying a
+serialized graph cannot alter the retained snapshot. Lifecycle reports consume
+those same models without changing their wire shape.
+
+Best-effort exception dictionary access and request annotation now contain faults
+from metadata itself, including cancellation/interrupt, while the original
+application failure propagates unchanged. These broader catches wrap only that
+metadata boundary; application work, native cancellation/interrupt and stream
+sink ownership remain unchanged. Request, lifespan, formatter and native host
+filter regressions verify bounded secret-free diagnostics. Unreadable optional
+metadata is discarded and marked truncated; a host record cannot recover the
+correlation fields that could not be attached, while the request summary still
+retains its request-local ID. The excluded MetadataAccessError test double must
+raise at native attribute access to reproduce the failure; returning a policy
+violation would not simulate that contract.
+
+One WorkerLimitPolicy now controls validation and fetch execution. The historical
+service passes its injected limits through to the fetcher. A regression exercises
+an accepted nondefault limit, all concurrent session closures, and rejected direct
+worker counts before session creation. ContractOptionError has its canonical
+errors module with the options import preserved. Zero-row coverage handling is
+explicit and keeps the previous None result.
+
+Verification under Python 3.12.14:
+
+- Before fixes, snapshot/metadata regressions produced **8 failures, 3 passes**;
+  the custom worker-limit regression separately failed after acceptance by the
+  service. Focused post-fix units passed **167** before five additional direct
+  worker/host-boundary cases were included in complete acceptance.
+- Fresh migrated `tradevalue_test_logging05_snapshots_final`: **1,253 passed,
+  zero skips**, **91.00%** aggregate coverage in **132.28 seconds**, and **100%**
+  API/calendar coverage. Isolated units passed **1,203**, with 50 integrations
+  deselected, in **111.06 seconds**.
+- Locked sync, Ruff lint/format, ty, structural scope, requirements exports,
+  OpenAPI parity, migration history/preflight/schema snapshot, API smoke, clean
+  API/Vercel/ML packages, wheel/sdist exclusions and committed-model gates pass.
+- Rebuilt `tradevalue-logging05-snapshots:verified` runs as UID 10001 against
+  fresh `tradevalue_test_logging05_snapshots_probe`. INFO/JSON and DEBUG/text each
+  pass six HTTP/streaming flows with exact ID/CORS/body/status checks, **15 / 22**
+  captured events and graceful exit **0**. Invalid startup produces CRITICAL
+  and exit **3**. HTTP probe containers are removed.
+- Diff whitespace and prohibited-form searches pass; no new comments,
+  suppressions, dependencies, public schemas, frontend or model artifacts changed.
+
+Transcripts use `/private/tmp/tradevalue-logging05-snapshots-` prefixes. Complete
+scripts are `tradevalue-logging05-snapshots-final-checks.sh` and
+`tradevalue-logging05-snapshots-image-checks.sh` under `/private/tmp`; image
+captures use `tradevalue-logging05-snapshots-capture` with phase-2 verifier
+basenames. Red regressions are `tradevalue-logging05-snapshots-red.txt` and
+`tradevalue-logging05-worker-red.txt`.
+
+The source ledger now records 237 files: 18 empty, 20 docstring-only, **109**
+other inspected and **90** nonempty files pending. Reviewed findings remain
+explicit: raw schedule-game dictionaries inside a frozen boundary model, CSV
+file I/O in a pure utility role, boolean count acceptance, stat-kind narrowing,
+legacy role placement and exact framework/historical dispositions. The installed
+native HTTP retry adapter also has its own six-hour Retry-After maximum; the
+socket timeout is not an overall retry deadline. No new transport timeout
+contract is assumed. Hosted NonProd success/mode/correlation evidence and final
+release acceptance remain open; this checkpoint opens no acceptance PR and
+performs no production promotion.

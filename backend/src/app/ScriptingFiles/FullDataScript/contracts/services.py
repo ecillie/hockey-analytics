@@ -12,12 +12,13 @@ from app.ScriptingFiles.FullDataScript.contracts.http import (
     fetch_profile_with_fallback,
 )
 from app.ScriptingFiles.FullDataScript.contracts.options import (
-    ContractOptionError,
     HistoricalContractOptions,
+    HistoricalContractLimits,
     ProfileHttpOptions,
     find_option_violation,
     find_profile_http_violation,
 )
+from app.ScriptingFiles.FullDataScript.contracts.policy import WorkerLimitPolicy
 from app.ScriptingFiles.FullDataScript.contracts.reporting import (
     calculate_profile_metrics,
     count_unprocessed_records,
@@ -49,12 +50,17 @@ class ProfileFetcher:
             )
 
     def fetch_profiles(
-        self, candidates: tuple[Candidate, ...], workers: int
+        self,
+        candidates: tuple[Candidate, ...],
+        workers: int,
+        *,
+        limits: HistoricalContractLimits | None = None,
     ) -> tuple[ProfileResult, ...]:
-        if not 1 <= workers <= 8:
-            raise ContractOptionError(
-                option="workers", requirement="must be between 1 and 8"
-            )
+        limits = HistoricalContractLimits() if limits is None else limits
+        if violation := WorkerLimitPolicy(
+            maximum_workers=limits.maximum_workers
+        ).find_violation(workers):
+            raise violation
         if violation := find_profile_http_violation(self.options):
             raise violation
         with ThreadPoolExecutor(
@@ -145,7 +151,9 @@ class HistoricalContractService:
                 level=LogLevel.DEBUG,
             )
             with report_batch_failure("fetch", committed, dry_run=dry_run):
-                results = self.fetcher.fetch_profiles(batch, options.workers)
+                results = self.fetcher.fetch_profiles(
+                    batch, options.workers, limits=options.limits
+                )
             profile_metrics = calculate_profile_metrics(results)
             if profile_metrics["capwages_fallbacks_attempted"] > 0:
                 report_ingestion_progress(

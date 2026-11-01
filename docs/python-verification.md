@@ -40,6 +40,18 @@ INFO/JSON + DEBUG/text image checks pass. The ledger now records **105**
 nonempty files pending and explicit findings from the inspected sources;
 hosted NonProd and final acceptance remain open.
 
+The diagnostic snapshot/worker checkpoint retains frozen frame and exception
+models with immutable nesting and copies them only for serialization. Native
+attribute-fault regressions preserve primary failures and bounded safe output;
+broader catches are limited to best-effort metadata access. One worker policy
+now applies the same injected limits at validation and execution. Fresh
+`tradevalue_test_logging05_snapshots_final` passed **1,253 tests, zero skips**,
+**91.00%** aggregate coverage and the **100%** API/calendar selection. Isolated
+units passed **1,203**, with 50 integrations deselected. Static, schema/API,
+package/export, ML and rebuilt two-mode image gates pass. The audit now records
+**90** nonempty files pending, plus explicit findings in inspected sources;
+these results do not complete phase 5 or phase 7.
+
 The supported runtime is Python 3.12. Install the root uv workspace with
 `uv sync --locked --all-groups`. Runtime, ingestion, ML, and development
 requirements are generated from the same lock. Run these checks at the root:

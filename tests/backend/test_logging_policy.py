@@ -1,5 +1,6 @@
 """Settings and adversarial output behavior without global handler mutation."""
 
+import asyncio
 import json
 import logging
 import os
@@ -27,9 +28,55 @@ from app.shared.observability.tests.fakes import (
     build_bounded_record,
     build_connection_error_record,
     build_http_error_record,
+    MetadataAccessError,
 )
 from app.shared.observability.sinks import build_diagnostic_handler
 from app.shared.observability.policy import RecordLimitsError
+from pydantic import ValidationError
+
+
+class TestImmutableDiagnosticSnapshots:
+    @pytest.fixture
+    def snapshot(self):
+        info = build_bounded_record().exc_info
+        assert isinstance(info, tuple) and info[1] is not None
+        return formatting.collect_exceptions(info[1], RecordLimits())
+
+    def test_exception_and_frame_snapshots_reject_mutation(self, snapshot):
+        with pytest.raises(ValidationError, match="frozen"):
+            snapshot.items[0].type = "Changed"
+        with pytest.raises(ValidationError, match="frozen"):
+            snapshot.items[0].frames[0].module = "Changed"
+
+    def test_serialized_mutation_cannot_change_retained_snapshot(self, snapshot):
+        payload = snapshot.items[0].model_dump()
+        payload["frames"][0]["module"] = "Changed"
+        assert snapshot.items[0].frames[0].module != "Changed"
+
+
+class TestHostileFailureMetadata:
+    @pytest.fixture(
+        params=[
+            pytest.param(RuntimeError, id="metadata-error"),
+            pytest.param(asyncio.CancelledError, id="metadata-cancellation"),
+            pytest.param(KeyboardInterrupt, id="metadata-interrupt"),
+        ]
+    )
+    def record(self, request):
+        primary = MetadataAccessError(failure=request.param("metadata_secret"))
+        record = build_exception_record("payload_secret")
+        record.exc_info = (type(primary), primary, None)
+        return record
+
+    def test_metadata_fault_does_not_escape_diagnostic_rendering(self, record):
+        try:
+            rendered = SafeFormatter().format(record)
+        except BaseException as failure:
+            assert False, f"metadata fault escaped: {type(failure).__name__}"
+        payload = json.loads(rendered)
+        assert payload["exceptions_truncated"] is True
+        assert payload["exceptions"][0]["type"] == "MetadataAccessError"
+        assert "secret" not in json.dumps(payload)
 
 
 class TestLoggingSettings:

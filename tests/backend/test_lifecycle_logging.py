@@ -19,6 +19,59 @@ from app.shared.observability.tests.lifecycle import (
     exercise_lifespan,
 )
 from app.shared.tests.resources import ResourceProbe
+from app.shared.observability.tests.fakes import MetadataAccessError
+
+
+class TestHostileLifecycleMetadata:
+    @pytest.fixture(
+        params=[
+            pytest.param(RuntimeError, id="metadata-error"),
+            pytest.param(asyncio.CancelledError, id="metadata-cancellation"),
+            pytest.param(KeyboardInterrupt, id="metadata-interrupt"),
+        ]
+    )
+    def primary(self, request):
+        return MetadataAccessError(failure=request.param("metadata_secret"))
+
+    @pytest.fixture
+    def scenario(self, primary):
+        resources = LifecycleResources(
+            engine=create_engine("sqlite://"),
+            probe=ResourceProbe(failures={"construct": primary}),
+        )
+        application = create_app(
+            database_settings=DatabaseSettings(
+                environment=AppEnvironment.DEV, database_url="sqlite://"
+            ),
+            resource_factory=resources.create_resources,
+        )
+        transport = LifecycleTransport(incoming=[{"type": "lifespan.startup"}])
+        try:
+            yield application, transport
+        finally:
+            resources.engine.dispose()
+
+    def test_serialization_fault_cannot_replace_primary(self, scenario, primary):
+        application, transport = scenario
+        with pytest.raises(BaseException) as raised:
+            asyncio.run(exercise_lifespan(application, transport))
+        assert raised.value is primary
+        assert len(transport.outgoing) == 1
+        report = read_lifecycle_report(
+            logging.LogRecord(
+                "uvicorn.error",
+                logging.ERROR,
+                "",
+                1,
+                transport.outgoing[0]["message"],
+                (),
+                None,
+            )
+        )
+        assert report is not None
+        assert report.event == "service.startup_failed"
+        assert report.exceptions_truncated is True
+        assert "secret" not in transport.outgoing[0]["message"]
 
 
 class TestLifespanFailures:

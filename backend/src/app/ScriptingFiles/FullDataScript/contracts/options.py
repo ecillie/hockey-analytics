@@ -2,6 +2,10 @@
 
 from dataclasses import dataclass, field
 import math
+from app.ScriptingFiles.FullDataScript.contracts.errors import (
+    ContractOptionError as ContractOptionError,
+)
+from app.ScriptingFiles.FullDataScript.contracts.policy import WorkerLimitPolicy
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -23,21 +27,13 @@ class HistoricalContractOptions:
     limits: HistoricalContractLimits = field(default_factory=HistoricalContractLimits)
 
 
-class ContractOptionError(ValueError):
-    def __init__(self, *, option: str, requirement: str) -> None:
-        super().__init__(f"{option} {requirement}")
-        self.option = option
-        self.requirement = requirement
-
-
 def find_option_violation(
     options: HistoricalContractOptions,
 ) -> ContractOptionError | None:
-    if not 1 <= options.workers <= options.limits.maximum_workers:
-        return ContractOptionError(
-            option="workers",
-            requirement=f"must be between 1 and {options.limits.maximum_workers}",
-        )
+    if violation := WorkerLimitPolicy(
+        maximum_workers=options.limits.maximum_workers
+    ).find_violation(options.workers):
+        return violation
     if not 1 <= options.batch_size <= options.limits.maximum_batch_size:
         return ContractOptionError(
             option="batch_size",

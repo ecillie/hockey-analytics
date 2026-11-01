@@ -17,6 +17,56 @@ from app.shared.observability.tests.requests import (
     build_request_scope,
     exercise_concurrent_requests,
 )
+from app.shared.observability.tests.fakes import MetadataAccessError
+
+
+class TestHostileRequestMetadata:
+    @pytest.fixture(
+        params=[
+            pytest.param(RuntimeError, id="metadata-error"),
+            pytest.param(asyncio.CancelledError, id="metadata-cancellation"),
+            pytest.param(KeyboardInterrupt, id="metadata-interrupt"),
+        ]
+    )
+    def primary(self, request):
+        return MetadataAccessError(failure=request.param("metadata_secret"))
+
+    @pytest.fixture
+    def scenario(self, primary, caplog):
+        caplog.set_level(logging.INFO, logger="app.shared.observability.requests")
+        return RequestScenario(
+            application=RequestApplication(
+                transport=RecordingTransport(), failure=primary
+            ),
+            scope=build_request_scope(),
+        )
+
+    def test_annotation_fault_cannot_replace_primary(self, scenario, primary, caplog):
+        with pytest.raises(BaseException) as raised:
+            scenario.run()
+        assert raised.value is primary
+        assert caplog.records[-1].outcome == "failed"
+        assert len(scenario.application.transport.messages) == 2
+
+    @pytest.fixture
+    def host_record(self, primary):
+        return logging.LogRecord(
+            "uvicorn.error",
+            logging.ERROR,
+            "",
+            1,
+            "Exception in ASGI application\n",
+            (),
+            (type(primary), primary, None),
+        )
+
+    def test_host_filters_and_formatter_remain_safe(self, host_record):
+        assert RequestFailureFilter().filter(host_record) is True
+        assert ReportedRequestFilter().filter(host_record) is True
+        payload = json.loads(SafeFormatter().format(host_record))
+        assert payload["severity"] == "ERROR"
+        assert payload["exceptions_truncated"] is True
+        assert "secret" not in json.dumps(payload)
 
 
 class TestRequestCorrelation:

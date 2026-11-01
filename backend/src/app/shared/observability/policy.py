@@ -38,7 +38,7 @@ class ReportedRequestFilter:
             return True
         try:
             record.exc_info[1].__dict__.pop("tradevalue_request", None)
-        except Exception:
+        except BaseException:
             return True
         return False
 

@@ -27,7 +27,7 @@ def build_request_fields(scope: Scope, context: RequestContext) -> dict[str, obj
 def read_cleanup_failure(error: BaseException) -> BaseException | None:
     try:
         cleanup = error.__dict__.get("tradevalue_cleanup")
-    except Exception:
+    except BaseException:
         return None
     return cleanup if isinstance(cleanup, BaseException) else None
 
@@ -35,7 +35,7 @@ def read_cleanup_failure(error: BaseException) -> BaseException | None:
 def has_truncated_cleanup(error: BaseException) -> bool:
     try:
         return error.__dict__.get("tradevalue_cleanup_truncated") is True
-    except Exception:
+    except BaseException:
         return True
 
 
@@ -45,7 +45,7 @@ def is_expected_cancellation(error: BaseException) -> bool:
     cleanup = read_cleanup_failure(error)
     try:
         failed = error.__dict__.get("tradevalue_cleanup_failed") is True
-    except Exception:
+    except BaseException:
         return False
     return (
         cleanup is None
@@ -67,6 +67,6 @@ def read_request_failure(
         return None
     try:
         failure = record.exc_info[1].__dict__.get("tradevalue_request")
-    except Exception:
+    except BaseException:
         return None
     return failure if isinstance(failure, RequestFailure) else None
