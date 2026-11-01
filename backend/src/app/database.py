@@ -10,6 +10,7 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.shared.cleanup import complete_cleanup
+from app.shared.errors import MissingDatabaseSchemaError
 from app.config import DatabaseSettings, get_database_settings
 
 
@@ -62,7 +63,7 @@ def init_db(settings: DatabaseSettings | None = None) -> None:
             text("SELECT to_regclass('public.players')")
         ).scalar_one()
     if players_table is None:
-        raise RuntimeError("Database schema is missing; run Alembic upgrade head first")
+        raise MissingDatabaseSchemaError(table="players")
 
 
 def connect_database(settings: DatabaseSettings | None = None) -> PgConnection:

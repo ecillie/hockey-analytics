@@ -215,3 +215,56 @@ Isolated units passed 657 tests with 49 integration tests deselected. Ruff,
 formatting, ty, model/OpenAPI/export gates, isolated wheel checks, Docker build,
 and health/seasons/teams HTTP smoke passed. Both verification containers were
 removed after acceptance.
+
+## Operational commands follow-up, phase 4
+
+This phase starts from `origin/Dev` at
+`8fe9fef` after persistence-context PR #155 merged. Feature PRs target `Dev`.
+
+Operational commands and Alembic share explicit database URL selection:
+`DATABASE_URL` takes precedence over `TEST_DATABASE_URL`; a missing or exactly
+empty primary falls back, and missing/empty values for both fail with structured
+configuration details. Whitespace is retained by these operational commands,
+matching their existing behavior. Runtime application settings retain their
+separate scoped URL and trimmed component/default rules. An explicitly supplied
+empty mapping is never replaced by the process environment. Alembic alone
+requires the PostgreSQL URL scheme.
+
+Health and base season-payload checks are shared between HTTP container and
+migration smoke commands. Migration smoke still requires a current season of
+at least 2005, no teams, and the exact seeded reference data. Container smoke
+still accepts populated teams and retries readiness within its configured
+budget. Readiness errors carry the last failure as their explicit cause; smoke
+response errors expose operation, path, status, and response body.
+
+Both ingestion entrypoints use one exception handler, retain their distinct
+incomplete-feed diagnostics and exit code 2, and log general failures once with
+exit code 1. Help and invalid options still exit before opening resources;
+success still emits one JSON document. Missing schemas, unavailable cached
+source snapshots, and reversed backfill season ranges now have dedicated errors
+with typed fields. Pydantic validator errors and frozen migration-revision
+failure behavior remain governed by their existing boundary contracts.
+
+Backfill rollback/close, plus preflight and snapshot engine disposal, use the
+shared cleanup helper. A repair or commit failure remains the identical raised
+exception with its original cause; secondary cleanup failures appear in notes,
+and close still runs. Cancellation and interruption also complete cleanup.
+Cleanup-only failures propagate. The schema catalog now has a named type alias.
+
+Local acceptance used Python 3.12.14 and a dedicated PostgreSQL 15 database
+`tradevalue_test_followup04`: **738 passed, zero skips**, **91.43%** aggregate
+coverage in **63.77 seconds**, with **100%** API/shared-calendar coverage.
+Seventeen new cases cover missing/empty/configured URL selection, intentional
+runtime empty defaults, primary exception identity/cause and cleanup ordering,
+readiness failure details, and caller-specific smoke policies. Existing CLI
+coverage verifies all supported help, invalid arguments, silent imports, output,
+and diagnostic contracts.
+
+Ruff lint/format, ty, OpenAPI parity, the committed ML gate, generated dependency
+exports, isolated API/ML wheel installation and wheel/sdist exclusions, the
+production Docker build, and health/seasons/teams HTTP smoke passed. No frontend
+or serialized API boundary changed. Existing upstream FastAPI/Starlette
+warnings remain. No hosted data or live upstream ingestion was used.
+
+With database URLs absent and dotenv disabled, isolated units passed **688**
+tests with **50** integration tests deselected in **30.42 seconds**.

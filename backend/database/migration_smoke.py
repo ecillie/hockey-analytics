@@ -7,6 +7,12 @@ from collections.abc import Sequence
 from app.config import get_database_settings
 from app.database import database_resources
 from app.main import create_runtime_app
+from app.shared.smoke import (
+    valid_health,
+    valid_seasons as valid_season_payload,
+    SmokeResponseError,
+    ReferenceDataError,
+)
 from app.shared.cli import ExitCode
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -23,10 +29,7 @@ def validate_reference_data(session) -> None:
         source_codes != ["capspace", "capwages", "moneypuck", "nhl"]
         or season_count != 22
     ):
-        raise RuntimeError(
-            "initial reference data is incomplete: "
-            f"sources={source_codes} seasons={season_count}"
-        )
+        raise ReferenceDataError(sources=list(source_codes), seasons=season_count)
 
 
 def smoke_checks(client) -> None:
@@ -42,23 +45,18 @@ def smoke_checks(client) -> None:
         except ValueError:
             body = None
         if response.status_code != 200 or not validate(body):
-            raise RuntimeError(
-                f"post-migration smoke check failed for {path}: "
-                f"status={response.status_code} body={response.text}"
+            raise SmokeResponseError(
+                operation="post-migration",
+                path=path,
+                status=response.status_code,
+                body=response.text,
             )
 
 
-def valid_health(body: object) -> bool:
-    return body == {"status": "ok"}
-
-
 def valid_seasons(body: object) -> bool:
-    return (
-        isinstance(body, dict)
-        and bool(body.get("availableSeasons"))
-        and isinstance(body.get("currentSeason"), int)
-        and body["currentSeason"] >= 2005
-    )
+    if not valid_season_payload(body) or not isinstance(body, dict):
+        return False
+    return body["currentSeason"] >= 2005
 
 
 def valid_teams(body: object) -> bool:

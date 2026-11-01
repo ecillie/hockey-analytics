@@ -1,6 +1,14 @@
 """Structured source validation failures."""
 
 
+class MissingSourceSnapshotError(RuntimeError):
+    def __init__(self, *, source: str) -> None:
+        super().__init__(
+            f"{source} is unavailable and no last-good database snapshot exists"
+        )
+        self.source = source
+
+
 class IngestionValidationError(ValueError):
     pass
 

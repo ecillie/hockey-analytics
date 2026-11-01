@@ -23,10 +23,10 @@ def validate(config_path: Path) -> list[str]:
         )
 
     revisions = list(scripts.walk_revisions(base="base", head="heads"))
-    if not revisions:
+    if len(revisions) == 0:
         errors.append("migration history is empty")
     for revision in revisions:
-        if not revision.doc:
+        if revision.doc is None or revision.doc == "":
             errors.append(f"migration {revision.revision} has no description")
         if revision.is_merge_point:
             errors.append(f"migration {revision.revision} is an unapproved merge point")
@@ -65,7 +65,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def execute_command(options: CommandOptions) -> int:
     errors = validate(options.config.resolve())
-    if errors:
+    if len(errors) > 0:
         for error in errors:
             logger.error("%s", error)
         return ExitCode.FAILURE

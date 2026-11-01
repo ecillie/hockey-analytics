@@ -11,19 +11,13 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import urlopen
 
+from app.shared.smoke import (
+    valid_health,
+    valid_seasons,
+    SmokeResponseError,
+    ContainerReadinessError,
+)
 from app.shared.cli import CommandOptionError, ExitCode
-
-
-def valid_health(body: object) -> bool:
-    return body == {"status": "ok"}
-
-
-def valid_seasons(body: object) -> bool:
-    return (
-        isinstance(body, dict)
-        and bool(body.get("availableSeasons"))
-        and isinstance(body.get("currentSeason"), int)
-    )
 
 
 def valid_teams(body: object) -> bool:
@@ -60,15 +54,15 @@ def validate(base_url: str, *, attempts: int, delay: float, timeout: float) -> N
         last_error = readiness_error(base_url, timeout)
         attempt += 1
     if last_error is not None:
-        raise RuntimeError(
-            f"container did not become healthy after {attempts} attempts: {last_error}"
-        )
+        raise ContainerReadinessError(
+            attempts=attempts, failure=last_error
+        ) from last_error
 
     for path, check in response_checks():
         status, body, text = request_json(f"{base_url}{path}", timeout)
         if status != 200 or not check(body):
-            raise RuntimeError(
-                f"container smoke check failed for {path}: status={status} body={text}"
+            raise SmokeResponseError(
+                operation="container", path=path, status=status, body=text
             )
         print(f"PASS {path}")
 
@@ -79,7 +73,9 @@ def readiness_error(base_url: str, timeout: float) -> Exception | None:
     except (URLError, OSError, json.JSONDecodeError) as exc:
         return exc
     if status != 200 or not valid_health(body):
-        return RuntimeError(f"health returned status={status} body={text}")
+        return SmokeResponseError(
+            operation="container", path="/api/health", status=status, body=text
+        )
     return None
 
 
