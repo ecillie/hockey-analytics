@@ -26,6 +26,7 @@ resource "azurerm_key_vault" "this" {
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = "standard"
   rbac_authorization_enabled = true
+  purge_protection_enabled   = var.environment == "prod"
   tags                       = var.tags
 }
 
@@ -36,6 +37,8 @@ resource "azurerm_role_assignment" "operator_secrets_officer" {
 }
 
 resource "azurerm_role_assignment" "deployer_secrets_officer" {
+  count = data.azurerm_client_config.current.object_id == var.operator_principal_id ? 0 : 1
+
   scope                = azurerm_key_vault.this.id
   role_definition_name = "Key Vault Secrets Officer"
   principal_id         = data.azurerm_client_config.current.object_id
