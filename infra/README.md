@@ -7,6 +7,11 @@ East US.
 | Directory | Purpose | Runs from |
 |---|---|---|
 | `bootstrap/` | One-time setup: resource groups, Terraform state storage, GitHub OIDC identities, cost budget. | A local machine, once. |
+| `modules/environment/` | Module for one environment: Key Vault, storage, observability, identity, Container App, Static Web App, alerts. | Called by `envs/nonprod` and `envs/prod`. |
+| `modules/shared/` | Module for the shared Postgres server, per-environment databases and roles, and the `database-url` Key Vault secrets. | Called by `envs/shared`. |
+| `envs/nonprod/` | Root for the nonprod environment (state container `tfstate-nonprod`). | GitHub Actions or a local machine. |
+| `envs/prod/` | Root for the prod environment (state container `tfstate-prod`). | GitHub Actions or a local machine. |
+| `envs/shared/` | Root for the shared Postgres server (state key `shared.tfstate` in container `tfstate`). | A local machine only. |
 
 ## Bootstrap
 
@@ -59,6 +64,10 @@ The provider registers every Azure resource provider 1.0.2 needs, because the
 GitHub identities are scoped to their resource groups and cannot register
 providers themselves. Add new namespaces to `providers.tf` here.
 
+Bootstrap also grants the operator Storage Blob Data Contributor on
+`tfstate-nonprod` and `tfstate-prod`, so the environment roots can be planned
+locally.
+
 ### Rebuilding from scratch
 
 `backend.tf` points at a storage account this configuration creates, so a
@@ -92,3 +101,35 @@ terraform output
 Environment configurations use the same storage account with
 `container_name` set to `nonprod_state_container_name` or
 `prod_state_container_name`.
+
+## Environments and shared Postgres
+
+Each root under `envs/` keeps its own state in the bootstrap storage account
+and reads a gitignored `terraform.tfvars`. Create it before `terraform init`.
+
+| Root | `terraform.tfvars` inputs |
+|---|---|
+| `envs/nonprod`, `envs/prod` | `subscription_id` (optional if `ARM_SUBSCRIPTION_ID` is set), `operator_principal_id` (object ID granted Key Vault Secrets Officer), `alert_email_addresses` (optional), `database_secret_ready` (default `false`). |
+| `envs/shared` | `subscription_id` (optional if `ARM_SUBSCRIPTION_ID` is set), `operator_ip` (your public IPv4, for example from `curl -s https://api.ipify.org`). |
+
+`envs/shared` is applied locally, never from CI. It needs a reachable Postgres
+server for the `postgresql` provider, and its firewall admits only
+`operator_ip`. It writes the `database-url` secret into
+`hockey-analytics-np-kv` and `hockey-analytics-prd-kv`, so those vaults must
+exist first.
+
+### Apply order
+
+1. Apply `envs/nonprod` and `envs/prod` with `database_secret_ready = false`.
+   This creates the Key Vaults without the resources that need the secret.
+2. Apply `envs/shared` from a local machine. It creates the server, databases
+   and roles, and writes `database-url` into each vault.
+3. Apply `envs/nonprod` and `envs/prod` again with
+   `database_secret_ready = true`.
+
+```sh
+cd infra/envs/<root>
+terraform init
+terraform plan -out <root>.tfplan
+terraform apply <root>.tfplan
+```
