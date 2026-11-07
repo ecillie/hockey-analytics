@@ -85,3 +85,14 @@ variable "ingestion_timeout_seconds" {
   description = "Replica timeout of the manual ingestion job in seconds."
   default     = 1800
 }
+
+variable "alert_email_addresses" {
+  type        = list(string)
+  description = "Email addresses notified by the alerting action group."
+  default     = []
+
+  validation {
+    condition     = alltrue([for address in var.alert_email_addresses : can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", address))])
+    error_message = "Each alert_email_addresses entry must look like an email address."
+  }
+}
