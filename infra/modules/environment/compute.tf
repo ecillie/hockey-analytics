@@ -12,6 +12,8 @@ resource "azurerm_container_app_environment" "this" {
 }
 
 resource "azurerm_container_app" "api" {
+  depends_on = [azurerm_role_assignment.app_secrets_user]
+
   name                         = "${var.name_prefix}-${var.environment}-api"
   resource_group_name          = var.resource_group_name
   container_app_environment_id = azurerm_container_app_environment.this.id
@@ -98,6 +100,8 @@ resource "azurerm_container_app" "api" {
 }
 
 resource "azurerm_container_app_job" "ingestion" {
+  depends_on = [azurerm_role_assignment.app_secrets_user]
+
   name                         = "${var.name_prefix}-${var.environment}-ingest"
   resource_group_name          = var.resource_group_name
   location                     = var.location
