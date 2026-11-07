@@ -54,13 +54,52 @@ run "key_vault" {
   }
 
   assert {
-    condition     = azurerm_role_assignment.deployer_secrets_officer.role_definition_name == "Key Vault Secrets Officer" && azurerm_role_assignment.deployer_secrets_officer.principal_id == "00000000-0000-0000-0000-000000000002"
+    condition     = length(azurerm_role_assignment.deployer_secrets_officer) == 1 && azurerm_role_assignment.deployer_secrets_officer[0].role_definition_name == "Key Vault Secrets Officer" && azurerm_role_assignment.deployer_secrets_officer[0].principal_id == "00000000-0000-0000-0000-000000000002"
     error_message = "Deploying identity must hold Key Vault Secrets Officer."
   }
 
   assert {
     condition     = azurerm_key_vault_secret.appinsights_connection_string.name == "applicationinsights-connection-string"
     error_message = "Connection string secret name is wrong."
+  }
+}
+
+run "key_vault_deployer_is_operator" {
+  command = plan
+
+  override_data {
+    target = data.azurerm_client_config.current
+    values = {
+      tenant_id = "00000000-0000-0000-0000-000000000001"
+      object_id = "00000000-0000-0000-0000-000000000003"
+    }
+  }
+
+  assert {
+    condition     = length(azurerm_role_assignment.deployer_secrets_officer) == 0 && azurerm_role_assignment.operator_secrets_officer.role_definition_name == "Key Vault Secrets Officer"
+    error_message = "When the deployer is the operator, exactly one Secrets Officer assignment must be planned."
+  }
+}
+
+run "purge_protection_prod" {
+  command = plan
+
+  variables {
+    environment = "prod"
+  }
+
+  assert {
+    condition     = azurerm_key_vault.this.purge_protection_enabled
+    error_message = "Prod Key Vault must have purge protection enabled."
+  }
+}
+
+run "purge_protection_nonprod" {
+  command = plan
+
+  assert {
+    condition     = !azurerm_key_vault.this.purge_protection_enabled
+    error_message = "Nonprod Key Vault must not have purge protection enabled."
   }
 }
 
