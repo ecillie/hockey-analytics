@@ -13,6 +13,7 @@ variables {
   key_vault_name        = "kv-test-nonprod"
   log_daily_quota_gb    = 2
   operator_principal_id = "00000000-0000-0000-0000-000000000003"
+  storage_account_name  = "sttestnonprod"
 }
 
 run "observability" {
