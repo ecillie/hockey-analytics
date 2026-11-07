@@ -76,3 +76,18 @@ resource "azurerm_role_assignment" "bootstrap_state" {
   role_definition_name = "Storage Blob Data Contributor"
   principal_id         = data.azurerm_client_config.current.object_id
 }
+
+# Let that identity read and write the nonprod and prod env state,
+# so local plans of the env roots do not return 403.
+
+resource "azurerm_role_assignment" "operator_nonprod_state" {
+  scope                = azurerm_storage_container.nonprod_state.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
+resource "azurerm_role_assignment" "operator_prod_state" {
+  scope                = azurerm_storage_container.prod_state.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
