@@ -76,7 +76,8 @@ Each item below is one or more feature branches into `Dev`, in this order.
    `hockey-analytics-shared`, the Terraform state storage account, the two OIDC
    identities with federated credentials for the `nonprod` and `prod` GitHub
    Environments, and the cost budget. It runs once from a local machine;
-   everything later runs from GitHub Actions. Terraform isn't installed locally
+   everything later runs from GitHub Actions, except `envs/shared`, which the
+   operator applies from a local machine. Terraform isn't installed locally
    yet.
 2. **Terraform: shared and environment modules.** Code lives under `infra/`.
    - The shared module creates the Postgres server, both databases, and their
@@ -131,7 +132,7 @@ Each item below is one or more feature branches into `Dev`, in this order.
 |---|---|
 | No Neon backup. The Azure databases are rebuilt from scratch by ingestion, so contract data is scraped again from capwages.com and Neon's ingestion history is lost. | Accepted: there are no users. Check row counts against Neon before deleting it. |
 | Postgres free year ends around November 2027. | Calendar reminder; decide then whether to pay about $12–15 a month or move. |
-| Terraform state contains database passwords. | Private storage account, versioning on, access limited to the two deploy identities. |
+| Terraform state contains database passwords. | Private storage account, versioning on. The shared state, which holds the Postgres admin and login passwords, is readable only by the operator who ran bootstrap. Each environment's state is also readable by its own deploy identity. |
 | A public image could leak secrets if one is baked in. | The Dockerfile copies only `src`, `requirements.txt`, `pyproject.toml`, and `database`. Secrets are supplied at runtime from Key Vault. |
 | Logging could exceed the free 5 GB. | Daily caps per workspace, plus the cost budget alert. |
 | Postgres firewall too open, or blocks GitHub runners. | Decide the access rule while building item 8. |

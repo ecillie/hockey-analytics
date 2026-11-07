@@ -12,9 +12,9 @@ mock_provider "postgresql" {}
 variables {
   server_name = "hockey-analytics-pg"
   operator_ip = "203.0.113.7"
-  key_vault_names = {
-    nonprod = "kv-nonprod"
-    prod    = "kv-prod"
+  key_vaults = {
+    nonprod = { name = "kv-nonprod", resource_group_name = "rg-test-nonprod" }
+    prod    = { name = "kv-prod", resource_group_name = "rg-test-prod" }
   }
 }
 
@@ -64,12 +64,12 @@ run "database_url_secrets" {
   command = plan
 
   assert {
-    condition     = azurerm_key_vault_secret.database_url["prod"].name == "database-url" && azurerm_key_vault_secret.database_url["prod"].key_vault_id == "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/hockey-analytics-prod/providers/Microsoft.KeyVault/vaults/kv-prod"
+    condition     = azurerm_key_vault_secret.database_url["prod"].name == "database-url" && azurerm_key_vault_secret.database_url["prod"].key_vault_id == "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-test-prod/providers/Microsoft.KeyVault/vaults/kv-prod"
     error_message = "Prod secret must target the prod vault ID."
   }
 
   assert {
-    condition     = azurerm_key_vault_secret.database_url["nonprod"].key_vault_id == "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/hockey-analytics-nonprod/providers/Microsoft.KeyVault/vaults/kv-nonprod"
+    condition     = azurerm_key_vault_secret.database_url["nonprod"].key_vault_id == "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-test-nonprod/providers/Microsoft.KeyVault/vaults/kv-nonprod"
     error_message = "Nonprod secret must target the nonprod vault ID."
   }
 }
