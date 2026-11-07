@@ -56,9 +56,9 @@ module "shared" {
 
   server_name = "hockey-analytics-pg"
   operator_ip = var.operator_ip
-  key_vault_names = {
-    nonprod = "hockey-analytics-np-kv"
-    prod    = "hockey-analytics-prd-kv"
+  key_vaults = {
+    nonprod = { name = "hockey-analytics-np-kv", resource_group_name = "hockey-analytics-nonprod" }
+    prod    = { name = "hockey-analytics-prd-kv", resource_group_name = "hockey-analytics-prod" }
   }
 }
 

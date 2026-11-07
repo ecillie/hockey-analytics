@@ -4,7 +4,7 @@ locals {
   environments   = toset(["nonprod", "prod"])
   administrator  = "pgadmin"
   subscription   = data.azurerm_client_config.current.subscription_id
-  vault_ids      = { for env in local.environments : env => "/subscriptions/${local.subscription}/resourceGroups/hockey-analytics-${env}/providers/Microsoft.KeyVault/vaults/${var.key_vault_names[env]}" }
+  vault_ids      = { for env in local.environments : env => "/subscriptions/${local.subscription}/resourceGroups/${var.key_vaults[env].resource_group_name}/providers/Microsoft.KeyVault/vaults/${var.key_vaults[env].name}" }
   database_names = { for env in local.environments : env => env }
 }
 
@@ -57,7 +57,7 @@ resource "postgresql_role" "login" {
   login    = true
   password = random_password.login[each.key].result
 
-  depends_on = [azurerm_postgresql_flexible_server_database.this]
+  depends_on = [azurerm_postgresql_flexible_server_database.this, azurerm_postgresql_flexible_server_firewall_rule.operator]
 }
 
 resource "postgresql_grant" "public_connect_revoke" {
@@ -67,6 +67,8 @@ resource "postgresql_grant" "public_connect_revoke" {
   role        = "public"
   object_type = "database"
   privileges  = []
+
+  depends_on = [azurerm_postgresql_flexible_server_firewall_rule.operator]
 }
 
 resource "postgresql_grant" "connect" {
@@ -76,6 +78,8 @@ resource "postgresql_grant" "connect" {
   role        = postgresql_role.login[each.key].name
   object_type = "database"
   privileges  = ["CONNECT"]
+
+  depends_on = [azurerm_postgresql_flexible_server_firewall_rule.operator]
 }
 
 resource "postgresql_grant" "schema" {
@@ -86,6 +90,8 @@ resource "postgresql_grant" "schema" {
   schema      = "public"
   object_type = "schema"
   privileges  = ["USAGE", "CREATE"]
+
+  depends_on = [azurerm_postgresql_flexible_server_firewall_rule.operator]
 }
 
 resource "azurerm_key_vault_secret" "database_url" {

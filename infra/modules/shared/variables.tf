@@ -25,13 +25,16 @@ variable "operator_ip" {
   }
 }
 
-variable "key_vault_names" {
-  description = "Key Vault name per environment, keyed nonprod and prod."
-  type        = map(string)
+variable "key_vaults" {
+  description = "Key Vault name and resource group per environment, keyed nonprod and prod."
+  type = map(object({
+    name                = string
+    resource_group_name = string
+  }))
 
   validation {
-    condition     = length(setsubtract(["nonprod", "prod"], keys(var.key_vault_names))) == 0 && length(setsubtract(keys(var.key_vault_names), ["nonprod", "prod"])) == 0
-    error_message = "key_vault_names must have exactly the keys nonprod and prod."
+    condition     = length(setsubtract(["nonprod", "prod"], keys(var.key_vaults))) == 0 && length(setsubtract(keys(var.key_vaults), ["nonprod", "prod"])) == 0
+    error_message = "key_vaults must have exactly the keys nonprod and prod."
   }
 }
 
