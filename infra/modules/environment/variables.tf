@@ -55,3 +55,33 @@ variable "storage_account_name" {
     error_message = "storage_account_name must be 3-24 lowercase letters and digits."
   }
 }
+
+variable "container_image" {
+  type        = string
+  description = "Initial container image for the API app and ingestion job. Later image changes are ignored by Terraform."
+  default     = "mcr.microsoft.com/k8se/quickstart:latest"
+}
+
+variable "database_secret_ready" {
+  type        = bool
+  description = "Set true once Key Vault secret database-url exists, to wire DATABASE_URL into the API app and job."
+  default     = false
+}
+
+variable "static_web_app_location" {
+  type        = string
+  description = "Azure region for the Static Web App, which is available in a limited set of regions."
+  default     = "eastus2"
+}
+
+variable "preview_environments_enabled" {
+  type        = bool
+  description = "Whether the Static Web App allows preview environments."
+  default     = false
+}
+
+variable "ingestion_timeout_seconds" {
+  type        = number
+  description = "Replica timeout of the manual ingestion job in seconds."
+  default     = 1800
+}
