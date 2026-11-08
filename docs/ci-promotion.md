@@ -107,8 +107,23 @@ On Dev and release pull requests, CI selects jobs by changed paths:
 `frontend/**` runs the frontend job, `backend/**` runs the backend job, and
 `ml/**` runs the ML job. Shared configuration, OpenAPI contract, and workflow
 changes run every affected job. Prod pull requests and pushes to Dev, release,
-hotfix, and Prod branches run all three jobs. Each selected job runs its full
-local suite because coverage thresholds apply to the whole area.
+hotfix, and Prod branches run all three jobs.
+
+Feature pull requests into Dev run only the tests their changes affect inside
+each selected job. The frontend job runs `vitest run --changed` against Dev.
+The backend job uses `pytest-testmon` with a baseline that the
+`Test-impact baseline` job records after every push to Dev. That job never
+blocks promotion, and a missing baseline runs every test. Coverage thresholds
+need the whole suite, so these runs skip the frontend coverage gate and the
+backend service-layer coverage gate. Lint, type checks, migrations, container
+smoke tests, the ML gate, and the frontend build still run in full.
+
+A feature PR runs the full suite instead when it changes anything dependency
+tracking cannot see: workflows, `scripts/`, Python or Node tooling and lock
+files, Alembic migrations, `conftest.py` or `fixtures/` files, non-Python files
+under `backend/`, `ml/`, or `tests/`, or frontend files outside `frontend/src/`
+or inside `frontend/src/test/`. Promotion PRs and every push run the full suite
+with all coverage gates, so nothing reaches a release branch or Prod unchecked.
 Frontend promotion requires 100% statement, branch, function, and line coverage
 for production runtime modules. CI publishes the HTML, JSON, LCOV, and Cobertura
 reports in the `frontend-coverage` artifact for release review and auditability.

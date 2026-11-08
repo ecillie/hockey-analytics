@@ -15,6 +15,7 @@ jobs:
       ml: ${{ steps.select.outputs.ml }}
       backend: ${{ steps.select.outputs.backend }}
       frontend: ${{ steps.select.outputs.frontend }}
+      selective: ${{ steps.select.outputs.selective }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,6 +33,7 @@ jobs:
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" != pull_request || "${GITHUB_BASE_REF:-}" == Prod ]]; then
             for area in ml backend frontend; do echo "$area=true" >> "$GITHUB_OUTPUT"; done
+            echo "selective=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -46,6 +48,27 @@ jobs:
             if [[ "$area" == ml ]] && grep -qx 'backend/requirements-dev.txt' <<< "$files"; then selected=true; fi
             echo "$area=$selected" >> "$GITHUB_OUTPUT"
           done
+
+          # Feature PRs into Dev run only the tests their changes affect. Inputs
+          # that dependency tracking cannot see force the full suite: tooling and
+          # dependencies, migrations, fixtures and conftest files, data and other
+          # non-Python files, and frontend files outside src/ or in src/test/.
+          selective=false
+          if [[ "$GITHUB_BASE_REF" == Dev ]]; then
+            selective=true
+            while IFS= read -r file; do
+              case "$file" in
+                .github/workflows/*|scripts/*|.python-version|.nvmrc|constraints.txt|pyproject.toml|uv.lock) selective=false ;;
+                conftest.py|*/conftest.py|*/fixtures/*|backend/migrations/*|backend/database/migrations/*) selective=false ;;
+                backend/*.py|ml/*.py|tests/*.py) ;;
+                backend/*|ml/*|tests/*) selective=false ;;
+                frontend/src/test/*) selective=false ;;
+                frontend/src/*) ;;
+                frontend/*) selective=false ;;
+              esac
+            done <<< "$files"
+          fi
+          echo "selective=$selective" >> "$GITHUB_OUTPUT"
 
   ml-gate:
     name: ML correctness and evaluation gate
@@ -91,6 +114,8 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/tradevalue_test
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/tradevalue_test
       PGPASSWORD: postgres
+      SELECTIVE: ${{ needs.changes.outputs.selective }}
+      TESTMON_DATAFILE: ${{ github.workspace }}/.testmondata
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -99,6 +124,14 @@ jobs:
           enable-cache: true
       - name: Install backend dependencies
         run: uv sync --locked --all-groups
+      # Without a baseline, testmon treats every test as affected.
+      - name: Restore test-impact baseline
+        if: ${{ needs.changes.outputs.selective == 'true' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: .testmondata
+          key: testmon-${{ github.event.pull_request.base.sha }}
+          restore-keys: testmon-
       - name: Check Python lint, formatting, and types
         run: |
           uv run ruff check
@@ -140,10 +173,18 @@ jobs:
       - name: Run deterministic ingestion and data-quality gate
         run: uv run pytest --no-cov -q tests/backend/test_ingestion.py
       - name: Run isolated Python unit tests
-        run: env -u DATABASE_URL -u DEV_DATABASE_URL -u TEST_DATABASE_URL ENV='' TRADEVALUE_ENV_FILE=/dev/null uv run pytest --no-cov -m unit -q
+        run: |
+          testmon=()
+          if [ "$SELECTIVE" = true ]; then testmon=(--testmon-forceselect --testmon-nocollect); fi
+          env -u DATABASE_URL -u DEV_DATABASE_URL -u TEST_DATABASE_URL ENV='' TRADEVALUE_ENV_FILE=/dev/null uv run pytest --no-cov -m unit -q "${testmon[@]}"
       - name: Run backend and ML tests with coverage
+        if: ${{ needs.changes.outputs.selective != 'true' }}
         run: uv run pytest -q
+      - name: Run affected backend and ML tests
+        if: ${{ needs.changes.outputs.selective == 'true' }}
+        run: uv run pytest --no-cov -q --testmon-nocollect
       - name: Enforce complete service-layer coverage
+        if: ${{ needs.changes.outputs.selective != 'true' }}
         run: uv run python -m coverage report --include='backend/src/app/api/service.py,backend/src/app/api/repository.py,backend/src/app/api/policy.py,backend/src/app/api/util.py,backend/src/app/api/errors.py,backend/src/app/shared/calendar.py' --fail-under=100
       - name: Build backend container artifact
         run: docker build --tag "tradevalue-api:${{ github.sha }}" backend
@@ -188,6 +229,55 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # Records which code each Python test runs, so feature PRs into Dev can run
+  # only affected tests. It is an optimization and never blocks promotion.
+  # testmon cannot run with branch coverage, so this is a separate run.
+  test-impact-baseline:
+    name: Test-impact baseline
+    needs: [changes]
+    if: ${{ github.event_name == 'push' && github.ref_name == 'Dev' }}
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: tradevalue_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tradevalue_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      ENV: dev
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/tradevalue_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/tradevalue_test
+      PGPASSWORD: postgres
+      TESTMON_DATAFILE: ${{ github.workspace }}/.testmondata
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.13.1"
+          enable-cache: true
+      - name: Install backend dependencies
+        run: uv sync --locked --all-groups
+      - name: Upgrade empty database to head
+        run: uv run python -m alembic -c backend/alembic.ini upgrade head
+      - name: Record test impact
+        run: uv run pytest --no-cov -q --testmon
+      - name: Save test-impact baseline
+        if: ${{ !cancelled() }}
+        uses: actions/cache/save@v4
+        with:
+          path: .testmondata
+          key: testmon-${{ github.sha }}
+
   frontend:
     name: Frontend tests and build
     needs: [changes]
@@ -211,7 +301,13 @@ jobs:
       - name: Lint frontend
         run: npm run lint
       - name: Run frontend tests with coverage
+        if: ${{ needs.changes.outputs.selective != 'true' }}
         run: npm run test:coverage
+      - name: Run affected frontend tests
+        if: ${{ needs.changes.outputs.selective == 'true' }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+          npx vitest run --changed "origin/$GITHUB_BASE_REF" --passWithNoTests
       - name: Upload frontend coverage reports
         if: ${{ always() }}
         uses: actions/upload-artifact@v4

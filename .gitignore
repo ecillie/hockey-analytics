@@ -40,3 +40,6 @@ frontend/*.tsbuildinfo
 *.tfplan
 crash.log
 *.tfvars
+
+# pytest-testmon test-impact data
+.testmondata*
