@@ -50,6 +50,15 @@ resource "azurerm_postgresql_flexible_server_firewall_rule" "operator" {
   end_ip_address   = var.operator_ip
 }
 
+# Consumption Container Apps have no fixed outbound IP. 0.0.0.0 is Azure's
+# "allow Azure services" rule; logins still need TLS and a per-env password.
+resource "azurerm_postgresql_flexible_server_firewall_rule" "azure_services" {
+  name             = "allow-azure-services"
+  server_id        = azurerm_postgresql_flexible_server.this.id
+  start_ip_address = "0.0.0.0"
+  end_ip_address   = "0.0.0.0"
+}
+
 resource "postgresql_role" "login" {
   for_each = local.environments
 
