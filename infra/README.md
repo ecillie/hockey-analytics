@@ -9,7 +9,7 @@ East US.
 | `bootstrap/` | One-time setup: resource groups, Terraform state storage, GitHub OIDC identities, cost budget. | A local machine, once. |
 | `modules/environment/` | Module for one environment: Key Vault, storage, observability, identity, Container App, Static Web App, alerts. | Called by `envs/nonprod` and `envs/prod`. |
 | `modules/shared/` | Module for the shared Postgres server, per-environment databases and roles, and the `database-url` Key Vault secrets. | Called by `envs/shared`. |
-| `envs/nonprod/` | Root for the nonprod environment (state container `tfstate-nonprod`). | GitHub Actions or a local machine. |
+| `envs/nonprod/` | Root for the nonprod environment (state container `tfstate-nonprod`). | GitHub Actions (see [Infrastructure workflow](#infrastructure-workflow)) or a local machine. |
 | `envs/prod/` | Root for the prod environment (state container `tfstate-prod`). | GitHub Actions or a local machine. |
 | `envs/shared/` | Root for the shared Postgres server (state key `shared.tfstate` in container `tfstate`). | A local machine only. |
 
@@ -24,7 +24,9 @@ Bootstrap creates:
   and `tfstate-prod`.
 - Two user-assigned identities, `hockey-analytics-github-nonprod` and
   `hockey-analytics-github-prod`, each federated with one GitHub Environment of
-  `ecillie/hockey-analytics`. Each identity gets Contributor and Role Based
+  `ecillie/hockey-analytics` and with its pull request runs, which plan without
+  an Environment. The subjects use the repository's immutable OIDC form,
+  `repo:ecillie@157654232/hockey-analytics@1105536195:...`. Each identity gets Contributor and Role Based
   Access Control Administrator on its own resource group and Storage Blob Data
   Contributor on its own state container.
 - A monthly subscription budget (default $1) that emails at 50% and 100% of
@@ -85,22 +87,43 @@ Resource groups that already exist must be imported first, for example
 
 The `nonprod` and `prod` GitHub Environments exist, with your approval required
 on `prod`. Their names must stay lowercase: the federated credentials match the
-OIDC subject exactly. Each Environment holds these secrets, taken from the
-outputs:
+OIDC subject exactly.
 
-```sh
-terraform output
-```
+The Infrastructure workflow reads repository-level settings, because pull
+request plans run outside any Environment. Take the IDs from
+`terraform output`:
 
-| Secret | `nonprod` | `prod` |
+| Setting | Kind | Value |
 |---|---|---|
-| `AZURE_CLIENT_ID` | `github_nonprod_client_id` | `github_prod_client_id` |
-| `AZURE_TENANT_ID` | `azure_tenant_id` | `azure_tenant_id` |
-| `AZURE_SUBSCRIPTION_ID` | `azure_subscription_id` | `azure_subscription_id` |
+| `AZURE_TENANT_ID` | variable | `azure_tenant_id` |
+| `AZURE_SUBSCRIPTION_ID` | variable | `azure_subscription_id` |
+| `AZURE_CLIENT_ID_NONPROD` | variable | `github_nonprod_client_id` |
+| `AZURE_CLIENT_ID_PROD` | variable | `github_prod_client_id` |
+| `TF_OPERATOR_PRINCIPAL_ID` | variable | `operator_principal_id` for both environment roots |
+| `DATABASE_SECRET_READY_NONPROD`, `DATABASE_SECRET_READY_PROD` | variable | `database_secret_ready` per root; unset means `false` |
+| `TF_ALERT_EMAIL_ADDRESSES` | secret | `alert_email_addresses` as a JSON list, for example `["you@example.com"]` |
+
+The Environments also hold `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and
+`AZURE_SUBSCRIPTION_ID` secrets for workflows that run inside an Environment.
 
 Environment configurations use the same storage account with
 `container_name` set to `nonprod_state_container_name` or
 `prod_state_container_name`.
+
+## Infrastructure workflow
+
+`.github/workflows/infrastructure.yml` runs when `infra/` or the workflow
+changes. It logs in to Azure through OIDC; no Azure credential is stored in
+GitHub.
+
+| Trigger | What runs |
+|---|---|
+| Pull request | `terraform plan` for `envs/nonprod` and `envs/prod`, shown in the run summary. Plans skip the state lock. |
+| Push to `Release-x.y.z` or `Hotfix-x.y.z` | Plan and apply `envs/nonprod` in the `nonprod` Environment. |
+| Push to `Prod` | Plan and apply `envs/prod` after approval in the `prod` Environment. Review the prod plan on the promotion pull request before approving. |
+| Manual run | The same as a push to the selected branch. |
+
+`envs/shared` and `bootstrap/` stay local.
 
 ## Environments and shared Postgres
 
@@ -109,7 +132,7 @@ and reads a gitignored `terraform.tfvars`. Create it before `terraform init`.
 
 | Root | `terraform.tfvars` inputs |
 |---|---|
-| `envs/nonprod`, `envs/prod` | `subscription_id` (optional if `ARM_SUBSCRIPTION_ID` is set), `operator_principal_id` (object ID granted Key Vault Secrets Officer), `alert_email_addresses` (optional), `database_secret_ready` (default `false`). |
+| `envs/nonprod`, `envs/prod` | `subscription_id` (optional if `ARM_SUBSCRIPTION_ID` is set), `operator_principal_id` (object ID granted Key Vault Secrets Officer), `alert_email_addresses` (optional, sensitive), `database_secret_ready` (default `false`). |
 | `envs/shared` | `subscription_id` (optional if `ARM_SUBSCRIPTION_ID` is set), `operator_ip` (your public IPv4, for example from `curl -s https://api.ipify.org`). |
 
 `envs/shared` is applied locally, never from CI. It needs a reachable Postgres
@@ -125,7 +148,9 @@ exist first.
 2. Apply `envs/shared` from a local machine. It creates the server, databases
    and roles, and writes `database-url` into each vault.
 3. Apply `envs/nonprod` and `envs/prod` again with
-   `database_secret_ready = true`.
+   `database_secret_ready = true`. In GitHub Actions, set
+   `DATABASE_SECRET_READY_NONPROD` or `DATABASE_SECRET_READY_PROD` to `true`
+   and rerun the workflow on the branch for that environment.
 
 ```sh
 cd infra/envs/<root>

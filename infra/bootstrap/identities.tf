@@ -10,12 +10,20 @@ resource "azurerm_user_assigned_identity" "github_prod" {
   location            = azurerm_resource_group.shared.location
 }
 
+# The repository uses GitHub's immutable OIDC subject, which embeds the owner
+# and repository IDs. Check it with:
+# gh api repos/ecillie/Hockey-Analytics/actions/oidc/customization/sub
+
+locals {
+  github_subject_prefix = "repo:ecillie@157654232/hockey-analytics@1105536195"
+}
+
 resource "azurerm_federated_identity_credential" "github_nonprod" {
   name                      = "github-nonprod"
   user_assigned_identity_id = azurerm_user_assigned_identity.github_nonprod.id
   issuer                    = "https://token.actions.githubusercontent.com"
   audience                  = ["api://AzureADTokenExchange"]
-  subject                   = "repo:ecillie/hockey-analytics:environment:nonprod"
+  subject                   = "${local.github_subject_prefix}:environment:nonprod"
 }
 
 resource "azurerm_federated_identity_credential" "github_prod" {
@@ -23,7 +31,27 @@ resource "azurerm_federated_identity_credential" "github_prod" {
   user_assigned_identity_id = azurerm_user_assigned_identity.github_prod.id
   issuer                    = "https://token.actions.githubusercontent.com"
   audience                  = ["api://AzureADTokenExchange"]
-  subject                   = "repo:ecillie/hockey-analytics:environment:prod"
+  subject                   = "${local.github_subject_prefix}:environment:prod"
+}
+
+# Pull request runs have no GitHub Environment, so their subject is
+# `pull_request`. They plan both environments without prod approval.
+# GitHub does not issue OIDC tokens to pull requests from forks.
+
+resource "azurerm_federated_identity_credential" "github_nonprod_pull_request" {
+  name                      = "github-nonprod-pull-request"
+  user_assigned_identity_id = azurerm_user_assigned_identity.github_nonprod.id
+  issuer                    = "https://token.actions.githubusercontent.com"
+  audience                  = ["api://AzureADTokenExchange"]
+  subject                   = "${local.github_subject_prefix}:pull_request"
+}
+
+resource "azurerm_federated_identity_credential" "github_prod_pull_request" {
+  name                      = "github-prod-pull-request"
+  user_assigned_identity_id = azurerm_user_assigned_identity.github_prod.id
+  issuer                    = "https://token.actions.githubusercontent.com"
+  audience                  = ["api://AzureADTokenExchange"]
+  subject                   = "${local.github_subject_prefix}:pull_request"
 }
 
 resource "azurerm_role_assignment" "github_nonprod_contributor" {
