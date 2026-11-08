@@ -39,6 +39,7 @@ variable "alert_email_addresses" {
   type        = list(string)
   description = "Email addresses notified by the alerting action group."
   default     = []
+  sensitive   = true
 }
 
 variable "database_secret_ready" {
