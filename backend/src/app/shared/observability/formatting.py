@@ -284,6 +284,9 @@ class SafeFormatter(logging.Formatter):
             )
 
     def render_record(self, record: logging.LogRecord) -> str:
+        return render_bounded_diagnostic(self.build_payload(record), self.settings)
+
+    def build_payload(self, record: logging.LogRecord) -> DiagnosticFields:
         limits = self.settings.limits
         if violation := find_record_limits_violation(limits):
             raise violation
@@ -342,4 +345,4 @@ class SafeFormatter(logging.Formatter):
                 item.model_dump() for item in exceptions.items
             )
             payload["exceptions_truncated"] = exceptions.truncated
-        return render_bounded_diagnostic(payload, self.settings)
+        return payload
