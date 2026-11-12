@@ -1,7 +1,7 @@
 # Logging event owners
 
 Python diagnostics use stderr; requested CLI reports and offline migration SQL
-retain their stdout contracts. Application log delivery is disabled for
+retain their stdout contracts. Application log delivery to stderr is disabled for
 `ENV=nonprod` and `ENV=prod`, including browser builds made with those values.
 Dev uses the configured log levels. Native platform telemetry has its own owners.
 
@@ -140,6 +140,33 @@ remain silent. Alembic commands preserve SQL stdout and exit behavior, including
 255 for framework command errors and 1 with `--raiseerr`. Programmatic callers
 retain their original exceptions and exception hook. The environment callback
 returns control on success; it cannot unconditionally exit the framework process.
+
+## Application Insights
+
+When `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, the API lifespan hook also
+installs an OpenTelemetry export to Application Insights through the Azure
+Monitor exporter. It runs in every environment, including nonprod and prod where
+stderr delivery stays disabled. Without the variable nothing is exported. The
+Container App reads the value from the environment's Key Vault.
+
+The export uses the same allowlisted fields as stderr, so the events above and
+their fields don't change:
+
+- Each application record becomes a trace with the event phrase as its message
+  and the allowlisted fields as custom properties. Dependency records are
+  exported only at WARNING or above.
+- A record with an exception becomes an exception item carrying the exception
+  type and safe frames (module, function, line). Exception values and messages
+  are not exported.
+- Each HTTP request becomes a request item named by method and route template,
+  with status, outcome, `severity` and `request_id`. URLs, query strings,
+  headers and bodies are not recorded. Logs written during the request share its
+  operation ID.
+- Requests whose `request.finished` severity is below `LOG_LEVEL`, such as
+  successful health probes at INFO, are not exported.
+
+There is no auto-instrumentation and no offline retry storage. Pending telemetry
+is flushed when the process exits.
 
 ## Bounds and failure delivery
 

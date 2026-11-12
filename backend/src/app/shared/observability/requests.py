@@ -15,6 +15,11 @@ from app.shared.observability.domain import (
     RequestFailure,
     RequestOutcome,
 )
+from app.shared.observability.telemetry import (
+    RequestTelemetry,
+    activate_request_span,
+    finish_request_span,
+)
 from app.shared.observability.util import (
     build_request_fields,
     get_request_context as get_request_context,
@@ -43,6 +48,7 @@ def choose_summary_level(
 @dataclass(slots=True, kw_only=True, frozen=True)
 class RequestLoggingMiddleware:
     app: ASGIApp
+    telemetry: RequestTelemetry | None = None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -53,10 +59,13 @@ class RequestLoggingMiddleware:
         status: int | None = None
         response_completed = False
         outcome = RequestOutcome.INCOMPLETE
-        logger.debug(
-            "Request started",
-            extra=build_request_fields(scope, context) | {"event": "request.started"},
-        )
+        span = None if self.telemetry is None else self.telemetry.start(scope)
+        with activate_request_span(span):
+            logger.debug(
+                "Request started",
+                extra=build_request_fields(scope, context)
+                | {"event": "request.started"},
+            )
 
         async def capture_send(message: Message) -> None:
             nonlocal status, response_completed
@@ -80,7 +89,8 @@ class RequestLoggingMiddleware:
                 response_completed = True
 
         try:
-            await self.app(scope, receive, capture_send)
+            with activate_request_span(span):
+                await self.app(scope, receive, capture_send)
             outcome = (
                 (
                     RequestOutcome.FAILED
@@ -119,8 +129,8 @@ class RequestLoggingMiddleware:
             }
             if status is not None:
                 fields["status"] = status
-            logger.log(
-                choose_summary_level(scope, status, outcome),
-                "Request finished",
-                extra=fields,
-            )
+            level = choose_summary_level(scope, status, outcome)
+            with activate_request_span(span):
+                logger.log(level, "Request finished", extra=fields)
+            if span is not None:
+                finish_request_span(span, scope, fields, level=level, outcome=outcome)
