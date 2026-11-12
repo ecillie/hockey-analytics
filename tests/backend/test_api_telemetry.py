@@ -74,7 +74,11 @@ def build_application(service, telemetry_settings, exporters=None):
         telemetry_exporters=exporters,
     )
     application.add_api_route("/numbers/{key}", parse_probe_number)
-    application.dependency_overrides[get_service] = lambda: service
+
+    def provide_service():
+        return service
+
+    application.dependency_overrides[get_service] = provide_service
     return application
 
 

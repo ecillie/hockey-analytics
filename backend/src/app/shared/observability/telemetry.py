@@ -238,53 +238,53 @@ class RequestTelemetry:
         )
         return span if isinstance(span, Span) else None
 
-    @staticmethod
-    def activate(span: Span | None) -> AbstractContextManager[object]:
-        if span is None:
-            return nullcontext()
-        return use_span(
-            span,
-            end_on_exit=False,
-            record_exception=False,
-            set_status_on_exception=False,
-        )
 
-    @staticmethod
-    def finish(
-        span: Span,
-        scope: Scope,
-        fields: Mapping[str, object],
-        *,
-        level: LogLevel,
-        outcome: RequestOutcome,
-    ) -> None:
-        try:
-            RequestTelemetry.describe(span, scope, fields, level=level, outcome=outcome)
-            span.end()
-        except Exception:
-            pass
+def activate_request_span(span: Span | None) -> AbstractContextManager[object]:
+    if span is None:
+        return nullcontext()
+    return use_span(
+        span,
+        end_on_exit=False,
+        record_exception=False,
+        set_status_on_exception=False,
+    )
 
-    @staticmethod
-    def describe(
-        span: Span,
-        scope: Scope,
-        fields: Mapping[str, object],
-        *,
-        level: LogLevel,
-        outcome: RequestOutcome,
-    ) -> None:
-        route = scope.get("route")
-        if isinstance(route, Route):
-            span.update_name(f"{scope.get('method', 'UNKNOWN')} {route.path}")
-            span.set_attribute("http.route", route.path)
-        status = fields.get("status")
-        if type(status) is int:
-            span.set_attribute("http.response.status_code", status)
-        span.set_attribute("request_id", str(fields["request_id"]))
-        span.set_attribute("outcome", outcome.value)
-        span.set_attribute("severity", level.name)
-        span.set_status(
-            Status(StatusCode.ERROR)
-            if outcome is RequestOutcome.FAILED
-            else Status(StatusCode.OK)
-        )
+
+def finish_request_span(
+    span: Span,
+    scope: Scope,
+    fields: Mapping[str, object],
+    *,
+    level: LogLevel,
+    outcome: RequestOutcome,
+) -> None:
+    try:
+        describe_request_span(span, scope, fields, level=level, outcome=outcome)
+        span.end()
+    except Exception:
+        pass
+
+
+def describe_request_span(
+    span: Span,
+    scope: Scope,
+    fields: Mapping[str, object],
+    *,
+    level: LogLevel,
+    outcome: RequestOutcome,
+) -> None:
+    route = scope.get("route")
+    if isinstance(route, Route):
+        span.update_name(f"{scope.get('method', 'UNKNOWN')} {route.path}")
+        span.set_attribute("http.route", route.path)
+    status = fields.get("status")
+    if type(status) is int:
+        span.set_attribute("http.response.status_code", status)
+    span.set_attribute("request_id", str(fields["request_id"]))
+    span.set_attribute("outcome", outcome.value)
+    span.set_attribute("severity", level.name)
+    span.set_status(
+        Status(StatusCode.ERROR)
+        if outcome is RequestOutcome.FAILED
+        else Status(StatusCode.OK)
+    )

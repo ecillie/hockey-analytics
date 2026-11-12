@@ -15,7 +15,11 @@ from app.shared.observability.domain import (
     RequestFailure,
     RequestOutcome,
 )
-from app.shared.observability.telemetry import RequestTelemetry
+from app.shared.observability.telemetry import (
+    RequestTelemetry,
+    activate_request_span,
+    finish_request_span,
+)
 from app.shared.observability.util import (
     build_request_fields,
     get_request_context as get_request_context,
@@ -56,7 +60,7 @@ class RequestLoggingMiddleware:
         response_completed = False
         outcome = RequestOutcome.INCOMPLETE
         span = None if self.telemetry is None else self.telemetry.start(scope)
-        with RequestTelemetry.activate(span):
+        with activate_request_span(span):
             logger.debug(
                 "Request started",
                 extra=build_request_fields(scope, context)
@@ -85,7 +89,7 @@ class RequestLoggingMiddleware:
                 response_completed = True
 
         try:
-            with RequestTelemetry.activate(span):
+            with activate_request_span(span):
                 await self.app(scope, receive, capture_send)
             outcome = (
                 (
@@ -126,9 +130,7 @@ class RequestLoggingMiddleware:
             if status is not None:
                 fields["status"] = status
             level = choose_summary_level(scope, status, outcome)
-            with RequestTelemetry.activate(span):
+            with activate_request_span(span):
                 logger.log(level, "Request finished", extra=fields)
             if span is not None:
-                RequestTelemetry.finish(
-                    span, scope, fields, level=level, outcome=outcome
-                )
+                finish_request_span(span, scope, fields, level=level, outcome=outcome)
