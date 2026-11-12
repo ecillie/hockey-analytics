@@ -24,7 +24,12 @@ from app.config import (
     load_environment,
 )
 from app.database import DatabaseResources, create_database_resources
-from app.shared.observability.domain import LoggingSettings, read_logging_settings
+from app.shared.observability.domain import (
+    LoggingSettings,
+    TelemetrySettings,
+    read_logging_settings,
+    read_telemetry_settings,
+)
 from app.shared.observability.services import (
     configure_api_host_logging,
     configure_logging,
@@ -33,6 +38,11 @@ from app.shared.observability.services import (
 )
 from app.shared.observability.requests import RequestLoggingMiddleware
 from app.shared.observability.lifecycle import LifecycleLoggingMiddleware
+from app.shared.observability.telemetry import (
+    RequestTelemetry,
+    TelemetryExporters,
+    configure_telemetry,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -60,6 +70,7 @@ class ContractFastAPI(FastAPI):
         return LifecycleLoggingMiddleware(
             settings=self.state.logging_settings,
             app=RequestLoggingMiddleware(
+                telemetry=self.state.request_telemetry,
                 app=CORSMiddleware(
                     app=super().build_middleware_stack(),
                     allow_origins=list(settings.cors_origins),
@@ -68,7 +79,7 @@ class ContractFastAPI(FastAPI):
                     allow_methods=["GET"],
                     allow_headers=["Accept", "Content-Type"],
                     expose_headers=["X-Request-ID"],
-                )
+                ),
             ),
         )
 
@@ -89,6 +100,8 @@ def create_app(
     *,
     database_settings: DatabaseSettings | DatabaseEnvironment | None = None,
     logging_settings: LoggingSettings | None = None,
+    telemetry_settings: TelemetrySettings | None = None,
+    telemetry_exporters: TelemetryExporters | None = None,
     resource_factory: Callable[
         [DatabaseSettings], DatabaseResources
     ] = create_database_resources,
@@ -100,6 +113,15 @@ def create_app(
         if logging_settings is not None:
             handler = configure_logging(logging_settings)
             configure_api_host_logging(logging_settings, handler)
+            telemetry = (
+                None
+                if telemetry_settings is None
+                else configure_telemetry(
+                    logging_settings, telemetry_settings, exporters=telemetry_exporters
+                )
+            )
+            if telemetry is not None:
+                application.state.request_telemetry.tracer = telemetry.tracer
         selected_database = (
             get_database_settings(dict(database_settings.values))
             if isinstance(database_settings, DatabaseEnvironment)
@@ -131,6 +153,7 @@ def create_app(
     )
 
     application.state.api_settings = settings
+    application.state.request_telemetry = RequestTelemetry()
     application.state.logging_settings = (
         LoggingSettings() if logging_settings is None else logging_settings
     )
@@ -177,4 +200,5 @@ def create_runtime_app() -> FastAPI:
         get_api_settings(values),
         database_settings=DatabaseEnvironment(values=tuple(values.items())),
         logging_settings=logging_settings,
+        telemetry_settings=read_telemetry_settings(values),
     )

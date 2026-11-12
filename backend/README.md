@@ -44,6 +44,12 @@ defaults to `INFO` and `LOG_FORMAT` to `json`; use `DEBUG` for more detail or
 `text` for terminal output. Restart after changing Python settings. See
 [logging configuration and events](../docs/logging-events.md).
 
+When `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, the API also exports its
+logs, request traces and exceptions to Application Insights, in every
+environment. On Azure the Container App reads it from the environment's Key
+Vault. Leave it unset locally and in tests; nothing is exported and startup is
+unchanged.
+
 ## Frontend connection
 
 Create `frontend/.env.local`:

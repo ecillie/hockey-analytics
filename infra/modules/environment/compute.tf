@@ -10,6 +10,13 @@ resource "azurerm_container_app_environment" "this" {
   logs_destination           = "log-analytics"
   log_analytics_workspace_id = azurerm_log_analytics_workspace.this.id
   tags                       = var.tags
+
+  # Azure adds this profile to every new environment; declaring it stops a
+  # perpetual diff.
+  workload_profile {
+    name                  = "Consumption"
+    workload_profile_type = "Consumption"
+  }
 }
 
 resource "azurerm_container_app" "api" {
@@ -19,6 +26,7 @@ resource "azurerm_container_app" "api" {
   resource_group_name          = var.resource_group_name
   container_app_environment_id = azurerm_container_app_environment.this.id
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
   tags                         = var.tags
 
   identity {
@@ -68,6 +76,11 @@ resource "azurerm_container_app" "api" {
       }
 
       env {
+        name  = "CORS_ORIGINS"
+        value = "https://${azurerm_static_web_app.this.default_host_name}"
+      }
+
+      env {
         name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
         secret_name = "appinsights-connection-string"
       }
@@ -108,6 +121,7 @@ resource "azurerm_container_app_job" "ingestion" {
   location                     = var.location
   container_app_environment_id = azurerm_container_app_environment.this.id
   replica_timeout_in_seconds   = var.ingestion_timeout_seconds
+  workload_profile_name        = "Consumption"
   tags                         = var.tags
 
   identity {

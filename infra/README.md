@@ -136,8 +136,10 @@ and reads a gitignored `terraform.tfvars`. Create it before `terraform init`.
 | `envs/shared` | `subscription_id` (optional if `ARM_SUBSCRIPTION_ID` is set), `operator_ip` (your public IPv4, for example from `curl -s https://api.ipify.org`). |
 
 `envs/shared` is applied locally, never from CI. It needs a reachable Postgres
-server for the `postgresql` provider, and its firewall admits only
-`operator_ip`. It writes the `database-url` secret into
+server for the `postgresql` provider. Its firewall admits `operator_ip` and,
+through Azure's `0.0.0.0` "allow Azure services" rule, the Container Apps, which
+have no fixed outbound IP. Logins still need TLS and a per-environment
+password. It writes the `database-url` secret into
 `hockey-analytics-np-kv` and `hockey-analytics-prd-kv`, so those vaults must
 exist first.
 
@@ -158,3 +160,44 @@ terraform init
 terraform plan -out <root>.tfplan
 terraform apply <root>.tfplan
 ```
+
+Before prod's first apply creates `hockey-analytics-prd-kv`, apply
+`envs/shared` for nonprod only:
+
+```sh
+cd infra/envs/shared
+terraform plan -out shared.tfplan \
+  -target='module.shared.azurerm_key_vault_secret.database_url["nonprod"]' \
+  -target='module.shared.postgresql_grant.connect["nonprod"]' \
+  -target='module.shared.postgresql_grant.public_connect_revoke["nonprod"]' \
+  -target='module.shared.postgresql_grant.schema["nonprod"]' \
+  -target='module.shared.azurerm_postgresql_flexible_server_firewall_rule.azure_services'
+terraform apply shared.tfplan
+```
+
+Run a full `envs/shared` apply after the prod vault exists.
+
+## API deploy workflow
+
+`.github/workflows/api-deploy.yml` runs when `backend/` or the workflow changes
+on a `Release-x.y.z`, `Hotfix-x.y.z`, or `Prod` push, or when run manually.
+
+1. It builds `backend/Dockerfile`, fails if the image contains a `.env` file,
+   and pushes `ghcr.io/ecillie/hockey-analytics-api:<commit SHA>`.
+2. It logs in through OIDC and points the environment's Container App at that
+   image: nonprod from a release or hotfix branch, prod from `Prod` after
+   approval in the `prod` Environment.
+3. It smoke-tests `/api/health` and `/api/seasons` on the app's URL.
+
+Deploys share a concurrency group with Terraform applies for the same
+environment, so they never run at the same time. Terraform ignores the image,
+so an apply does not roll a deploy back.
+
+The Container App pulls the image without registry credentials, so the package
+must be public. ghcr.io creates it as private on the first push; set it to
+Public once under the package's **Package settings → Danger Zone → Change
+visibility**.
+
+The API needs `DATABASE_URL`, so deploy only after `envs/shared` has written
+`database-url` and the environment has been applied with
+`database_secret_ready = true`.
