@@ -2,7 +2,8 @@
 
 Terraform for the Azure deployment described in
 [Release 1.0.2](../docs/Release-Planning/Release-1.0.2.md). Everything runs in
-East US.
+East US except the shared Postgres server, which is in Central US because Azure
+offers this subscription no Postgres Flexible Server versions in East US.
 
 | Directory | Purpose | Runs from |
 |---|---|---|
