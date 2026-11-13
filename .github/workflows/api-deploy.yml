@@ -34,11 +34,13 @@ jobs:
           )
           docker build "${labels[@]}" --tag "$IMAGE" backend
           docker build "${labels[@]}" --file backend/ingestion.Dockerfile --tag "$INGESTION_IMAGE" backend
+      # Scans as root: the images run as a non-root user that cannot read every
+      # directory, and find exits nonzero on unreadable directories.
       - name: Verify images contain no env files
         run: |
           for image in "$IMAGE" "$INGESTION_IMAGE"; do
-            found=$(docker run --rm --entrypoint sh "$image" -c \
-              'find / -xdev \( -name ".env" -o -name ".env.*" \) -print 2>/dev/null')
+            found=$(docker run --rm --user root --entrypoint find "$image" \
+              / -xdev \( -name ".env" -o -name ".env.*" \) -print)
             if [ -n "$found" ]; then
               echo "$image contains env files:"
               echo "$found"
