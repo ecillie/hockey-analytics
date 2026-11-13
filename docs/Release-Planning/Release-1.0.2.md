@@ -22,7 +22,7 @@ before relying on them.
 |---|---|
 | Subscription | Azure free account, so the 12-month offers apply. |
 | Scope | One release: build, cut over, and delete Vercel and Neon. |
-| Region | East US for every resource. |
+| Region | East US for every resource except the Postgres server, which is in Central US: Azure offers this subscription no Postgres Flexible Server versions in East US (decided 2026-11-12). |
 | Infrastructure | Terraform, so a later move to GCP, Oracle, or AWS stays possible. |
 | Database | Postgres Flexible Server B1ms. One server holds a `nonprod` and a `prod` database, each with its own login. |
 | Database after year one | Stay on Postgres. Set a reminder 11 months after the server is created. |

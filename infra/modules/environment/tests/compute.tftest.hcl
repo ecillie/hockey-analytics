@@ -32,6 +32,14 @@ mock_provider "azurerm" {
   }
 
   override_resource {
+    target          = azurerm_static_web_app.this
+    override_during = plan
+    values = {
+      default_host_name = "gentle-sky-0a1b2c3d4.4.azurestaticapps.net"
+    }
+  }
+
+  override_resource {
     target          = azurerm_storage_account.this
     override_during = plan
     values = {
@@ -131,7 +139,7 @@ run "compute_with_database_secret" {
   assert {
     condition = (
       length(azurerm_container_app.api.secret) == 2 &&
-      length(azurerm_container_app.api.template[0].container[0].env) == 4 &&
+      length(azurerm_container_app.api.template[0].container[0].env) == 5 &&
       length(azurerm_container_app_job.ingestion.secret) == 2 &&
       length(azurerm_container_app_job.ingestion.template[0].container[0].env) == 5
     )
@@ -141,5 +149,13 @@ run "compute_with_database_secret" {
   assert {
     condition     = azurerm_static_web_app.this.preview_environments_enabled == true
     error_message = "preview_environments_enabled must reach the Static Web App."
+  }
+
+  assert {
+    condition = anytrue([
+      for env in azurerm_container_app.api.template[0].container[0].env :
+      env.name == "CORS_ORIGIN_REGEX" && env.value == "^https://gentle-sky-0a1b2c3d4-[0-9]+\\.[a-z0-9]+(\\.[0-9]+)?\\.azurestaticapps\\.net$"
+    ])
+    error_message = "With previews on, the API must allow only this Static Web App's preview origins."
   }
 }

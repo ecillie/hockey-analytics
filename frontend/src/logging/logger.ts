@@ -1,10 +1,12 @@
 import { parseLogLevel, shouldLog, type BrowserDiagnostics, type DeploymentEnvironment, type Diagnostic, type DiagnosticSink, type LogLevel } from './domain'
 import { isExpectedAbort, normalizeDiagnostic } from './format'
+import type { TelemetrySink } from './telemetry'
 
 export type LoggerOptions = Readonly<{
   level?: LogLevel
   environment?: DeploymentEnvironment
   sink?: DiagnosticSink
+  telemetry?: TelemetrySink
   clock?: () => number
   timestamp?: () => string
   maximumRecords?: number
@@ -41,8 +43,11 @@ export function createBrowserLogger(options: LoggerOptions = {}): BrowserDiagnos
     }
   }
 
+  // Console delivery stays off in hosted environments; telemetry, when configured, is not.
+  const consoleEnabled = options.environment !== 'nonprod' && options.environment !== 'prod'
+
   function deliver(entry: Diagnostic): boolean {
-    if (options.environment === 'nonprod' || options.environment === 'prod') return false
+    if (!consoleEnabled && options.telemetry === undefined) return false
     const payload = buildPayload(entry)
     const severity = payload.severity as LogLevel
     if (!shouldLog(level, severity)) return false
@@ -58,13 +63,18 @@ export function createBrowserLogger(options: LoggerOptions = {}): BrowserDiagnos
       payload.event = 'logging.suppressed'
       payload.message = 'Repeated diagnostics suppressed'
     } else budget.count += 1
+    let delivered = false
+    if (options.telemetry !== undefined) {
+      try { options.telemetry.write(severity, payload); delivered = true } catch { delivered = false }
+    }
+    if (!consoleEnabled) return delivered
     let rendered: string
     let deliveredSeverity = severity
     try { rendered = JSON.stringify(payload) } catch {
       deliveredSeverity = shouldLog('ERROR', severity) ? severity : 'ERROR'
       rendered = `{"timestamp":"1970-01-01T00:00:00.000Z","timestamp_unavailable":true,"severity":"${deliveredSeverity}","event":"logging.format_failed","component":"logging","message":"Diagnostic formatting failed"}`
     }
-    try { sink.write(deliveredSeverity, rendered); return true } catch { return false }
+    try { sink.write(deliveredSeverity, rendered); return true } catch { return delivered }
   }
 
   function emit(entry: Diagnostic): void {
