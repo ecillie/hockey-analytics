@@ -2,6 +2,9 @@ locals {
   appinsights_secret_ref = "${azurerm_key_vault.this.vault_uri}secrets/${azurerm_key_vault_secret.appinsights_connection_string.name}"
   database_secret_ref    = "${azurerm_key_vault.this.vault_uri}secrets/database-url"
   ingestion_data_url     = "${azurerm_storage_account.this.primary_blob_endpoint}${azurerm_storage_container.ingestion_data.name}"
+  # Pull request previews are served from <subdomain>-<PR number>.<region>[.<partition>].azurestaticapps.net.
+  static_web_app_subdomain = split(".", azurerm_static_web_app.this.default_host_name)[0]
+  preview_origin_regex     = "^https://${local.static_web_app_subdomain}-[0-9]+\\.[a-z0-9]+(\\.[0-9]+)?\\.azurestaticapps\\.net$"
 }
 
 resource "azurerm_container_app_environment" "this" {
@@ -79,6 +82,15 @@ resource "azurerm_container_app" "api" {
       env {
         name  = "CORS_ORIGINS"
         value = "https://${azurerm_static_web_app.this.default_host_name}"
+      }
+
+      dynamic "env" {
+        for_each = var.preview_environments_enabled ? [1] : []
+
+        content {
+          name  = "CORS_ORIGIN_REGEX"
+          value = local.preview_origin_regex
+        }
       }
 
       env {

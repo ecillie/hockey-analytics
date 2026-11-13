@@ -28,7 +28,7 @@ generic fallback. Handled API failures retain the existing page retry behavior.
 five severity thresholds and case/whitespace normalization as Python. Browser
 output is one JSON string per console call, using debug/info/warn/error methods;
 CRITICAL uses console.error with its severity retained in the record. There is
-no browser text format or hosted collection. No deployment environment is inferred
+no browser text format. No deployment environment is inferred
 from Vite mode or mock selection; optional logger environment metadata accepts
 only explicit dev/nonprod/prod values.
 
@@ -50,6 +50,27 @@ do not replace API or render results, and a failed sink does not recursively log
 Global handlers prevent the default raw error console report while allowing
 other listeners to run. Browser-native network or extension diagnostics remain
 under browser ownership; this policy governs application records.
+
+### Browser Application Insights
+
+Builds made with `VITE_APPINSIGHTS_CONNECTION_STRING` also send records to
+Application Insights through its browser SDK. This works in nonprod and prod,
+where console output stays disabled. Without the variable, the SDK is never
+started. The deploy workflow reads the value from the environment's Application
+Insights resource.
+
+- Records pass the same threshold, rate limit and allowlist as console output.
+  The telemetry receives the normalized record, never the original error.
+- React and global error events become exception items whose name is the event
+  and whose message is the event phrase, with no stack. Other records, including
+  `api.request_failed` with its route template, status and category, become
+  traces with the allowlisted fields as properties.
+- Page views are sent on each router location change, named and addressed by
+  route pattern (`/players/{id}`; unmatched paths become `unknown`). Query
+  strings, raw paths and the referrer are not sent.
+- Cookies, session storage buffering and all automatic collection (fetch/XHR
+  dependencies, exceptions, unhandled rejections, route tracking, page visit
+  time, CORS correlation headers) are off.
 
 ## Configuration and correlation
 
@@ -141,7 +162,7 @@ remain silent. Alembic commands preserve SQL stdout and exit behavior, including
 retain their original exceptions and exception hook. The environment callback
 returns control on success; it cannot unconditionally exit the framework process.
 
-## Application Insights
+## API Application Insights
 
 When `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, the API lifespan hook also
 installs an OpenTelemetry export to Application Insights through the Azure
