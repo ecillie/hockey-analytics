@@ -131,6 +131,12 @@ The image runs as a non-root user and excludes ingestion code and local source
 data. Its database must be reachable from inside the container. CI smoke-tests
 health, seasons, and teams against a disposable PostgreSQL service.
 
+Ingestion has its own image, `backend/ingestion.Dockerfile`, with the ingestion
+code and dependencies but no data. On Azure it downloads the season CSVs from
+the blob container in `TRADEVALUE_DATA_BLOB_URL` before running `run_all`
+(see the [infrastructure guide](../infra/README.md#ingestion-job)). Running
+ingestion locally against `backend/data` is unchanged.
+
 For Vercel, use root directory `backend`; deploy the frontend as a separate
 project rooted at `frontend`. Use pooled Neon URLs for API requests and direct
 URLs for migrations and ingestion. Keep every database URL out of the frontend.

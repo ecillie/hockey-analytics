@@ -16,6 +16,7 @@ constraints = [
     { name = "azure-core", specifier = "==1.41.0" },
     { name = "azure-identity", specifier = "==1.27.0" },
     { name = "azure-monitor-opentelemetry-exporter", specifier = "==1.0.0b59" },
+    { name = "azure-storage-blob", specifier = "==12.31.1" },
     { name = "certifi", specifier = "==2026.7.22" },
     { name = "cffi", specifier = "==2.1.1" },
     { name = "charset-normalizer", specifier = "==3.5.1" },
@@ -162,6 +163,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/47/f1/14baca95c4b8a0fc4fb4e57644e9c37d6f2ed08f6d3e5f344750a2209b89/azure_monitor_opentelemetry_exporter-1.0.0b59.tar.gz", hash = "sha256:0dfaec6b1aada54a4c8f4572fd1e1da67609459caf418298b5d91b4c67c0282e", size = 369603, upload-time = "2026-11-05T20:51:56.639Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/d2/946debf3b9e536813e62420c3888e5b371341b07d9c6daf7965442b26855/azure_monitor_opentelemetry_exporter-1.0.0b59-py2.py3-none-any.whl", hash = "sha256:e831b74132fb899e640cddbb340f0fbfe11937f788715ce3f0acd120c8e91227", size = 259551, upload-time = "2026-11-05T20:51:58.42Z" },
+]
+
+[[package]]
+name = "azure-storage-blob"
+version = "12.31.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-core" },
+    { name = "cryptography" },
+    { name = "isodate" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6f/18/eb2ade6eede419d33493016ec3243ca9860f67d0bc71aa0461cda2cad0c4/azure_storage_blob-12.31.1.tar.gz", hash = "sha256:0d6e5b860a1357efc602db04cfa7c9950ac86126edcf7db89320cde281555fe5", size = 672417, upload-time = "2026-10-29T23:34:05.69Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1a/93/b9f0dc477827887aef64012946bdba65e9aad67084ad38044661a72fe47d/azure_storage_blob-12.31.1-py3-none-any.whl", hash = "sha256:9e012d5f4ab658b7cb8a4581329d7a7aa2bf5f39b4d63baeefaae7f9e90fe6f0", size = 455904, upload-time = "2026-10-29T23:34:07.459Z" },
 ]
 
 [[package]]
@@ -1021,6 +1037,8 @@ dev = [
     { name = "ty" },
 ]
 ingestion = [
+    { name = "azure-identity" },
+    { name = "azure-storage-blob" },
     { name = "beautifulsoup4" },
     { name = "pandas" },
     { name = "python-dateutil" },
@@ -1047,6 +1065,8 @@ dev = [
     { name = "ty", specifier = "==0.0.89" },
 ]
 ingestion = [
+    { name = "azure-identity", specifier = "==1.27.0" },
+    { name = "azure-storage-blob", specifier = "==12.31.1" },
     { name = "beautifulsoup4", specifier = ">=4.14,<5" },
     { name = "pandas", specifier = "==2.3.3" },
     { name = "python-dateutil", specifier = "==2.9.0.post0" },
