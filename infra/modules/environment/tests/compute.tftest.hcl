@@ -35,7 +35,8 @@ mock_provider "azurerm" {
     target          = azurerm_storage_account.this
     override_during = plan
     values = {
-      id = "/subscriptions/s/resourceGroups/rg-test/providers/Microsoft.Storage/storageAccounts/sttestnonprod"
+      id                    = "/subscriptions/s/resourceGroups/rg-test/providers/Microsoft.Storage/storageAccounts/sttestnonprod"
+      primary_blob_endpoint = "https://sttestnonprod.blob.core.windows.net/"
     }
   }
 }
@@ -73,13 +74,29 @@ run "compute_without_database_secret" {
   }
 
   assert {
-    condition     = length(azurerm_container_app.api.secret) == 1 && length(azurerm_container_app.api.template[0].container[0].env) == 2
-    error_message = "Without database_secret_ready only the App Insights secret and ENV/connection env vars are set."
+    condition     = length(azurerm_container_app.api.secret) == 1 && length(azurerm_container_app.api.template[0].container[0].env) == 3
+    error_message = "Without database_secret_ready only the App Insights secret and ENV/connection/CORS env vars are set."
   }
 
   assert {
-    condition     = length(azurerm_container_app_job.ingestion.secret) == 1 && length(azurerm_container_app_job.ingestion.template[0].container[0].env) == 2
+    condition     = length(azurerm_container_app_job.ingestion.secret) == 1 && length(azurerm_container_app_job.ingestion.template[0].container[0].env) == 4
     error_message = "Job must omit DATABASE_URL when database_secret_ready is false."
+  }
+
+  assert {
+    condition = anytrue([
+      for env in azurerm_container_app_job.ingestion.template[0].container[0].env :
+      env.name == "TRADEVALUE_DATA_BLOB_URL" && env.value == "https://sttestnonprod.blob.core.windows.net/ingestion-data"
+    ])
+    error_message = "Job must download season CSVs from the ingestion-data container."
+  }
+
+  assert {
+    condition = anytrue([
+      for env in azurerm_container_app_job.ingestion.template[0].container[0].env :
+      env.name == "AZURE_CLIENT_ID" && env.value == azurerm_user_assigned_identity.app.client_id
+    ])
+    error_message = "Job must authenticate to storage as the managed identity."
   }
 
   assert {
@@ -114,9 +131,9 @@ run "compute_with_database_secret" {
   assert {
     condition = (
       length(azurerm_container_app.api.secret) == 2 &&
-      length(azurerm_container_app.api.template[0].container[0].env) == 3 &&
+      length(azurerm_container_app.api.template[0].container[0].env) == 4 &&
       length(azurerm_container_app_job.ingestion.secret) == 2 &&
-      length(azurerm_container_app_job.ingestion.template[0].container[0].env) == 3
+      length(azurerm_container_app_job.ingestion.template[0].container[0].env) == 5
     )
     error_message = "DATABASE_URL secret and env must be added when database_secret_ready is true."
   }

@@ -58,6 +58,11 @@ run "storage" {
     condition     = azurerm_storage_account.this.min_tls_version == "TLS1_2"
     error_message = "Minimum TLS version must be TLS1_2."
   }
+
+  assert {
+    condition     = azurerm_storage_container.ingestion_data.name == "ingestion-data" && azurerm_storage_container.ingestion_data.container_access_type == "private"
+    error_message = "Season CSVs must live in the private ingestion-data container."
+  }
 }
 
 run "role_scopes" {

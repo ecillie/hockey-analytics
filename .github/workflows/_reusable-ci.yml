@@ -188,6 +188,13 @@ jobs:
         run: uv run python -m coverage report --include='backend/src/app/api/service.py,backend/src/app/api/repository.py,backend/src/app/api/policy.py,backend/src/app/api/util.py,backend/src/app/api/errors.py,backend/src/app/shared/calendar.py' --fail-under=100
       - name: Build backend container artifact
         run: docker build --tag "tradevalue-api:${{ github.sha }}" backend
+      - name: Build and check ingestion container artifact
+        run: |
+          docker build --file backend/ingestion.Dockerfile --tag "tradevalue-ingestion:${{ github.sha }}" backend
+          for command in fetch_data run_all; do
+            docker run --rm "tradevalue-ingestion:${{ github.sha }}" \
+              python -m "app.ScriptingFiles.FullDataScript.$command" --help > /dev/null
+          done
       - name: Start and smoke-test backend container artifact
         env:
           IMAGE_NAME: tradevalue-api:${{ github.sha }}
