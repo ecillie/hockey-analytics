@@ -32,3 +32,14 @@ frontend/*.tsbuildinfo
 
 /dist/
 **/*.egg-info/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+*.tfvars
+
+# pytest-testmon test-impact data
+.testmondata*
