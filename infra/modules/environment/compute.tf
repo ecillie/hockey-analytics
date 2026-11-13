@@ -1,6 +1,7 @@
 locals {
   appinsights_secret_ref = "${azurerm_key_vault.this.vault_uri}secrets/${azurerm_key_vault_secret.appinsights_connection_string.name}"
   database_secret_ref    = "${azurerm_key_vault.this.vault_uri}secrets/database-url"
+  ingestion_data_url     = "${azurerm_storage_account.this.primary_blob_endpoint}${azurerm_storage_container.ingestion_data.name}"
 }
 
 resource "azurerm_container_app_environment" "this" {
@@ -165,6 +166,17 @@ resource "azurerm_container_app_job" "ingestion" {
       env {
         name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
         secret_name = "appinsights-connection-string"
+      }
+
+      # The job reads blob storage as the user-assigned identity, so no storage keys.
+      env {
+        name  = "AZURE_CLIENT_ID"
+        value = azurerm_user_assigned_identity.app.client_id
+      }
+
+      env {
+        name  = "TRADEVALUE_DATA_BLOB_URL"
+        value = local.ingestion_data_url
       }
 
       dynamic "env" {

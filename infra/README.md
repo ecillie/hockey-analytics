@@ -182,22 +182,48 @@ Run a full `envs/shared` apply after the prod vault exists.
 `.github/workflows/api-deploy.yml` runs when `backend/` or the workflow changes
 on a `Release-x.y.z`, `Hotfix-x.y.z`, or `Prod` push, or when run manually.
 
-1. It builds `backend/Dockerfile`, fails if the image contains a `.env` file,
-   and pushes `ghcr.io/ecillie/hockey-analytics-api:<commit SHA>`.
-2. It logs in through OIDC and points the environment's Container App at that
-   image: nonprod from a release or hotfix branch, prod from `Prod` after
-   approval in the `prod` Environment.
+1. It builds `backend/Dockerfile` and `backend/ingestion.Dockerfile`, fails if
+   either image contains a `.env` file, and pushes
+   `ghcr.io/ecillie/hockey-analytics-api:<commit SHA>` and
+   `ghcr.io/ecillie/hockey-analytics-ingestion:<commit SHA>`.
+2. It logs in through OIDC and points the environment's Container App and
+   ingestion job at those images: nonprod from a release or hotfix branch, prod
+   from `Prod` after approval in the `prod` Environment. The job's image changes
+   but the job does not run.
 3. It smoke-tests `/api/health` and `/api/seasons` on the app's URL.
 
 Deploys share a concurrency group with Terraform applies for the same
 environment, so they never run at the same time. Terraform ignores the image,
 so an apply does not roll a deploy back.
 
-The Container App pulls the image without registry credentials, so the package
-must be public. ghcr.io creates it as private on the first push; set it to
-Public once under the package's **Package settings → Danger Zone → Change
-visibility**.
+The Container App and job pull their images without registry credentials, so
+both packages must be public. ghcr.io creates each as private on its first push;
+set each to Public once under the package's **Package settings → Danger Zone →
+Change visibility**.
 
 The API needs `DATABASE_URL`, so deploy only after `envs/shared` has written
 `database-url` and the environment has been applied with
 `database_secret_ready = true`.
+
+## Ingestion job
+
+The ingestion job runs only when started by hand:
+
+```bash
+az containerapp job start \
+  --name hockey-analytics-<env>-ingest \
+  --resource-group hockey-analytics-<env>
+```
+
+Each run downloads every blob in the environment's private `ingestion-data`
+container (the `backend/data` layout, for example
+`skater advanced/skaters_2008_to_2024.csv`) into a temporary folder, sets
+`TRADEVALUE_DATA_DIR` to it, and runs `run_all`. It reads storage as the
+environment's managed identity (`AZURE_CLIENT_ID`), which holds Storage Blob
+Data Reader; the account has shared keys disabled. `terraform output
+ingestion_data_container_url` gives the container URL.
+
+A run that exits nonzero, including a failed download or an empty container,
+fails the execution and fires the ingestion failure alert. The replica timeout
+is `ingestion_timeout_seconds` (30 minutes by default); adjust it after timing
+the first nonprod run.

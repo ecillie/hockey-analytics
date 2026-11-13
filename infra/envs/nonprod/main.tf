@@ -77,6 +77,11 @@ output "static_web_app_default_host_name" {
   value       = module.environment.static_web_app_default_host_name
 }
 
+output "ingestion_data_container_url" {
+  description = "Blob container URL that holds the ingestion season CSVs."
+  value       = module.environment.ingestion_data_container_url
+}
+
 output "managed_identity_client_id" {
   description = "User-assigned managed identity client ID."
   value       = module.environment.managed_identity_client_id

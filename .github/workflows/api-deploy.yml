@@ -13,10 +13,11 @@ permissions:
 
 env:
   IMAGE: ghcr.io/ecillie/hockey-analytics-api:${{ github.sha }}
+  INGESTION_IMAGE: ghcr.io/ecillie/hockey-analytics-ingestion:${{ github.sha }}
 
 jobs:
   build:
-    name: Build and push API image
+    name: Build and push API and ingestion images
     if: ${{ github.ref_name == 'Prod' || startsWith(github.ref_name, 'Release-') || startsWith(github.ref_name, 'Hotfix-') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -25,27 +26,32 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-      - name: Build image
+      - name: Build images
         run: |
-          docker build \
-            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
-            --label "org.opencontainers.image.revision=${{ github.sha }}" \
-            --tag "$IMAGE" backend
-      - name: Verify image contains no env files
+          labels=(
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}"
+            --label "org.opencontainers.image.revision=${{ github.sha }}"
+          )
+          docker build "${labels[@]}" --tag "$IMAGE" backend
+          docker build "${labels[@]}" --file backend/ingestion.Dockerfile --tag "$INGESTION_IMAGE" backend
+      - name: Verify images contain no env files
         run: |
-          found=$(docker run --rm --entrypoint sh "$IMAGE" -c \
-            'find / -xdev \( -name ".env" -o -name ".env.*" \) -print 2>/dev/null')
-          if [ -n "$found" ]; then
-            echo "Image contains env files:"
-            echo "$found"
-            exit 1
-          fi
-      - name: Push image
+          for image in "$IMAGE" "$INGESTION_IMAGE"; do
+            found=$(docker run --rm --entrypoint sh "$image" -c \
+              'find / -xdev \( -name ".env" -o -name ".env.*" \) -print 2>/dev/null')
+            if [ -n "$found" ]; then
+              echo "$image contains env files:"
+              echo "$found"
+              exit 1
+            fi
+          done
+      - name: Push images
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           echo "$GH_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
           docker push "$IMAGE"
+          docker push "$INGESTION_IMAGE"
 
   # Nonprod deploys from Release-x.y.z and Hotfix-x.y.z; prod deploys from Prod
   # after approval in the prod GitHub Environment. The concurrency group is the
@@ -83,6 +89,14 @@ jobs:
             --resource-group "hockey-analytics-$TARGET" \
             --image "$IMAGE" \
             --output none
+      # The job runs only when triggered manually; this only changes its image.
+      - name: Update ingestion job image
+        run: |
+          az containerapp job update \
+            --name "hockey-analytics-$TARGET-ingest" \
+            --resource-group "hockey-analytics-$TARGET" \
+            --image "$INGESTION_IMAGE" \
+            --output none
       - name: Smoke-test API
         run: |
           fqdn=$(az containerapp show \
@@ -97,5 +111,6 @@ jobs:
           {
             echo "## API deploy: $TARGET"
             echo "- Image: \`$IMAGE\`"
+            echo "- Ingestion image: \`$INGESTION_IMAGE\`"
             echo "- URL: https://$fqdn"
           } >> "$GITHUB_STEP_SUMMARY"
