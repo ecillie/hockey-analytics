@@ -206,6 +206,20 @@ The API needs `DATABASE_URL`, so deploy only after `envs/shared` has written
 `database-url` and the environment has been applied with
 `database_secret_ready = true`.
 
+## Data upload
+
+`scripts/upload-blob-data.sh <nonprod|prod>` uploads the local data files to the
+environment's storage account. Your az login needs Storage Blob Data
+Contributor there; Terraform grants it to `operator_principal_id`.
+
+| Container | Contents |
+|---|---|
+| `ingestion-data` | `backend/data/**/*.csv`, keeping its folders, for example `skater advanced/skaters_2008_to_2024.csv` |
+| `ml-artifacts` | `models/*.joblib` from `ml/models`, and `evaluation/outputs/*` from `ml/evaluation/outputs` |
+
+The joblib model is gitignored, so it must exist locally first. Rerunning the
+script overwrites blobs in place and doesn't delete blobs missing locally.
+
 ## Ingestion job
 
 The ingestion job runs only when started by hand:
