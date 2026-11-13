@@ -63,6 +63,16 @@ run "storage" {
     condition     = azurerm_storage_container.ingestion_data.name == "ingestion-data" && azurerm_storage_container.ingestion_data.container_access_type == "private"
     error_message = "Season CSVs must live in the private ingestion-data container."
   }
+
+  assert {
+    condition     = azurerm_storage_container.ml_artifacts.name == "ml-artifacts" && azurerm_storage_container.ml_artifacts.container_access_type == "private"
+    error_message = "ML artifacts must live in the private ml-artifacts container."
+  }
+
+  assert {
+    condition     = azurerm_role_assignment.operator_blob_contributor.role_definition_name == "Storage Blob Data Contributor" && azurerm_role_assignment.operator_blob_contributor.principal_id == var.operator_principal_id && azurerm_role_assignment.operator_blob_contributor.scope == azurerm_storage_account.this.id
+    error_message = "The operator must be able to upload blobs to this storage account only."
+  }
 }
 
 run "role_scopes" {
