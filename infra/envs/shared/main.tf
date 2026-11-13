@@ -55,6 +55,9 @@ module "shared" {
   source = "../../modules/shared"
 
   server_name = "hockey-analytics-pg"
+  # East US offers this subscription no Postgres Flexible Server versions; Central
+  # US is the nearest region that has the free B1ms tier.
+  location    = "centralus"
   operator_ip = var.operator_ip
   key_vaults = {
     nonprod = { name = "hockey-analytics-np-kv", resource_group_name = "hockey-analytics-nonprod" }
