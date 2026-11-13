@@ -227,3 +227,27 @@ A run that exits nonzero, including a failed download or an empty container,
 fails the execution and fires the ingestion failure alert. The replica timeout
 is `ingestion_timeout_seconds` (30 minutes by default); adjust it after timing
 the first nonprod run.
+
+## Frontend deploy workflow
+
+`.github/workflows/frontend-deploy.yml` deploys `frontend/` to the environment's
+Static Web App. `scripts/frontend-deploy-settings.sh` reads the settings each
+build needs from Azure: the API URL, the Static Web App host and deploy token,
+and the Application Insights connection string. No GitHub secret holds them.
+
+- A `Release-x.y.z` or `Hotfix-x.y.z` push deploys nonprod. A `Prod` push
+  deploys prod after approval in the `prod` Environment. Each build sets `ENV`,
+  `VITE_API_BASE_URL`, `VITE_USE_MOCK_API=false` and
+  `VITE_APPINSIGHTS_CONNECTION_STRING`, then the workflow checks that `/`,
+  `/players` and `/players/1` serve the app.
+- A pull request into `Dev` that changes the frontend gets a preview on the
+  nonprod Static Web App, built against the nonprod API, and the action
+  comments its URL on the pull request. Closing the pull request removes the
+  preview. The Free plan allows three previews at a time. Pull requests from
+  forks are skipped because they get no OIDC token.
+- With previews on, the nonprod API also sets `CORS_ORIGIN_REGEX` to accept
+  only this app's preview hosts (`<subdomain>-<number>.<region>…azurestaticapps.net`).
+
+`frontend/public/staticwebapp.config.json` rewrites client routes such as
+`/players/1` to `index.html`.
+
