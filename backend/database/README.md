@@ -90,15 +90,15 @@ not extend to other applied revisions or to schema/data changes.
 ## Adopting an existing database
 
 An existing database created from the original `schema.sql` has no
-`alembic_version` row. Back it up or create a Neon branch first, then verify that
+`alembic_version` row. Back it up first, then verify that
 its catalog exactly matches the baseline before stamping it:
 
 ```bash
-DATABASE_URL="$NEON_DIRECT_DATABASE_URL" \
+DATABASE_URL="$AZURE_DATABASE_URL" \
   uv run python backend/database/schema_snapshot.py
-DATABASE_URL="$NEON_DIRECT_DATABASE_URL" \
+DATABASE_URL="$AZURE_DATABASE_URL" \
   uv run python -m alembic -c backend/alembic.ini stamp 20260910_0001
-DATABASE_URL="$NEON_DIRECT_DATABASE_URL" \
+DATABASE_URL="$AZURE_DATABASE_URL" \
   uv run python -m alembic -c backend/alembic.ini current --check-heads
 ```
 
