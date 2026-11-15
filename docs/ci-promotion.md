@@ -275,10 +275,25 @@ available in GitHub's Run workflow interface.
 
 ## Database migration release gate
 
-Database changes are deliberately separate from Vercel application startup and
+Database changes are deliberately separate from application deployment and
 the automatic branch cascade. Create GitHub Environments named `nonprod` and
-`prod`, add a direct Neon connection as the `DATABASE_URL` secret in each, and
-configure required reviewers on `prod`.
+`prod`, add that environment's Azure Postgres connection as the `DATABASE_URL`
+secret in each, and configure required reviewers on `prod`. Copy the value from
+the `database-url` secret in the environment's Key Vault; it already sets
+`sslmode=require`:
+
+```sh
+az keyvault secret show --vault-name hockey-analytics-np-kv --name database-url \
+  --query value -o tsv | gh secret set DATABASE_URL --env nonprod
+az keyvault secret show --vault-name hockey-analytics-prd-kv --name database-url \
+  --query value -o tsv | gh secret set DATABASE_URL --env prod
+```
+
+GitHub-hosted runners reach the server through its `0.0.0.0` "allow Azure
+services" firewall rule, because they run on Azure IP addresses. The workflow
+checks that the port is reachable before it migrates. The server needs no
+per-run firewall rule, so the deploy identities need no access to the shared
+resource group.
 
 Before releasing schema-dependent code, manually dispatch the `Database
 migration` workflow against `nonprod` on the current `Release-x.y.z` branch (or
@@ -287,5 +302,5 @@ validate the application, and then
 dispatch it against `prod`. Per-environment concurrency prevents overlapping
 migration runs. The workflow records the starting and ending revision, applies
 `upgrade head`, verifies the exact schema contract, and smoke-tests health,
-seasons, and teams. Use pooled URLs only for the request-serving application;
-the migration workflow requires a direct Neon URL.
+seasons, and teams. The workflow refuses a `DATABASE_URL` that does not point at
+`*.postgres.database.azure.com` with `sslmode=require`.
