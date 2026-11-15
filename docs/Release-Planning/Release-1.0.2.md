@@ -135,7 +135,7 @@ Each item below is one or more feature branches into `Dev`, in this order.
 | Terraform state contains database passwords. | Private storage account, versioning on. The shared state, which holds the Postgres admin and login passwords, is readable only by the operator who ran bootstrap. Each environment's state is also readable by its own deploy identity. |
 | A public image could leak secrets if one is baked in. | The Dockerfile copies only `src`, `requirements.txt`, `pyproject.toml`, and `database`. Secrets are supplied at runtime from Key Vault. |
 | Logging could exceed the free 5 GB. | Daily caps per workspace, plus the cost budget alert. |
-| Postgres firewall too open, or blocks GitHub runners. | Decide the access rule while building item 8. |
+| Postgres firewall too open, or blocks GitHub runners. | Decided in item 8: no per-run rule. GitHub-hosted runners use Azure IPs and pass the existing `0.0.0.0` "allow Azure services" rule, so logins rely on TLS and per-environment passwords. The migration workflow checks reachability first. |
 
 ## Open items
 
