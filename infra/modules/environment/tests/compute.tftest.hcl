@@ -113,6 +113,11 @@ run "compute_without_database_secret" {
   }
 
   assert {
+    condition     = azurerm_container_app_job.ingestion.template[0].container[0].cpu == 2 && azurerm_container_app_job.ingestion.template[0].container[0].memory == "4Gi"
+    error_message = "Ingestion needs 2 vCPU / 4 GiB; the historical CSV load alone peaks near 1 GB."
+  }
+
+  assert {
     condition     = azurerm_container_app_environment.this.log_analytics_workspace_id == azurerm_log_analytics_workspace.this.id
     error_message = "Environment must log to the module workspace."
   }
