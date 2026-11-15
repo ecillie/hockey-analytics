@@ -80,6 +80,26 @@ variable "preview_environments_enabled" {
   default     = false
 }
 
+# Loading the historical MoneyPuck skater CSV alone peaks near 1 GB, so the
+# default 0.5 vCPU / 1 GiB container is killed. Consumption pairs memory with
+# CPU at 2 GiB per vCPU.
+variable "ingestion_cpu" {
+  type        = number
+  description = "vCPU for the ingestion job container."
+  default     = 2
+}
+
+variable "ingestion_memory" {
+  type        = string
+  description = "Memory for the ingestion job container; must be twice ingestion_cpu in GiB, for example 4Gi for 2 vCPU."
+  default     = "4Gi"
+
+  validation {
+    condition     = var.ingestion_memory == "${var.ingestion_cpu * 2}Gi"
+    error_message = "ingestion_memory must be twice ingestion_cpu in GiB, for example 4Gi for 2 vCPU."
+  }
+}
+
 variable "ingestion_timeout_seconds" {
   type        = number
   description = "Replica timeout of the manual ingestion job in seconds."
