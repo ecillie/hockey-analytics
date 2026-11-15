@@ -167,8 +167,8 @@ resource "azurerm_container_app_job" "ingestion" {
     container {
       name   = "ingestion"
       image  = var.container_image
-      cpu    = 0.5
-      memory = "1Gi"
+      cpu    = var.ingestion_cpu
+      memory = var.ingestion_memory
 
       env {
         name  = "ENV"
