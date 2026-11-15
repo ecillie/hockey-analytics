@@ -184,6 +184,7 @@ def configure_telemetry(
     telemetry_settings: TelemetrySettings,
     *,
     exporters: TelemetryExporters | None = None,
+    service_name: str = "tradevalue-api",
 ) -> TelemetryHandler | None:
     if not telemetry_settings.enabled:
         return None
@@ -193,7 +194,7 @@ def configure_telemetry(
     exporters = (
         build_azure_exporters(telemetry_settings) if exporters is None else exporters
     )
-    attributes: dict[str, str] = {"service.name": "tradevalue-api"}
+    attributes: dict[str, str] = {"service.name": service_name}
     if logging_settings.environment is not None:
         attributes["deployment.environment.name"] = logging_settings.environment
     if logging_settings.release is not None:

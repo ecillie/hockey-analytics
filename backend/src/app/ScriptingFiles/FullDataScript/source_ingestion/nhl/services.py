@@ -129,7 +129,16 @@ class NhlStatsService:
                 reason=f"are incomplete for {job.season}/{job.game_type}",
             )
         layout = select_stat_layout(job.kind, advanced=False)
-        rows = tuple(normalize_stat_row(row, job, layout) for row in raw)
+        consistent = tuple(
+            row for row in raw if not skip_inconsistent_row(row, job, context)
+        )
+        skipped = len(raw) - len(consistent)
+        if skipped == len(raw) or skipped > max(1, len(raw) // 100):
+            raise PayloadViolation(
+                source=f"NHL {job.kind} {job.season}/{job.game_type}",
+                reason=f"has {skipped} of {len(raw)} rows whose totals disagree",
+            )
+        rows = tuple(normalize_stat_row(row, job, layout) for row in consistent)
         report_ingestion_progress(
             context,
             event="ingestion.worker_finished",
@@ -143,6 +152,27 @@ class NhlStatsService:
             level=LogLevel.DEBUG,
         )
         return rows
+
+
+def skip_inconsistent_row(
+    row: dict[str, object], job: StatsJob, context: IngestionContext | None
+) -> bool:
+    """The NHL API occasionally publishes a row whose own totals disagree."""
+    source = f"NHL {job.kind} {job.season}/{job.game_type}"
+    if find_stat_violation(job.kind, row, source=source) is None:
+        return False
+    report_ingestion_progress(
+        context,
+        event="ingestion.row_skipped",
+        values={
+            "season": job.season,
+            "game_type": job.game_type,
+            "player_kind": job.kind.value,
+            "player_id": str(row.get("playerId")),
+        },
+        level=LogLevel.WARNING,
+    )
+    return True
 
 
 def fetch_stats_pages(

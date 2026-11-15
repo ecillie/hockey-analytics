@@ -128,6 +128,7 @@ access stream is disabled; unrelated host errors remain visible.
 | `ingestion.validated`, `ingestion.roster_completed` | Source/command orchestration, INFO; classification precedes transaction completion |
 | `ingestion.rows_read`, `ingestion.page_read`, `ingestion.profiles_fetched`, `ingestion.feed_received` | Aggregate source progress, DEBUG |
 | `ingestion.worker_started`, `ingestion.worker_finished` | NHL worker boundary, DEBUG; season, kind and game type only |
+| `ingestion.row_skipped` | NHL stats row whose own totals disagree (points vs goals plus assists, or shots against vs saves plus goals against), WARNING; season, kind, game type and NHL player ID. The run continues unless every row in the season and game type, or more than 1% of them (at least one row is always allowed), is skipped |
 | `ingestion.request_started`, `ingestion.retry_scheduled` | HTTP boundary, DEBUG; no URL, parameters or payload |
 | `ingestion.request_recovered` | Native adapter retry history, WARNING; attempt count only |
 | `ingestion.fallback_started`, `ingestion.fallback_finished` | Profile fallback boundary, DEBUG |
@@ -169,6 +170,11 @@ installs an OpenTelemetry export to Application Insights through the Azure
 Monitor exporter. It runs in every environment, including nonprod and prod where
 stderr delivery stays disabled. Without the variable nothing is exported. The
 Container App reads the value from the environment's Key Vault.
+
+The ingestion command (`run_all`) installs the same export with service name
+`tradevalue-ingestion`, and shuts it down before exiting so the final batch,
+including any `command.failed` record, is delivered. Without that export a
+nonprod or prod ingestion run leaves no logs anywhere.
 
 The export uses the same allowlisted fields as stderr, so the events above and
 their fields don't change:
