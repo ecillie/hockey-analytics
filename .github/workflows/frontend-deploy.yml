@@ -1,0 +1,146 @@
+name: Frontend deploy
+
+on:
+  push:
+    branches: ['Release-*.*.*', 'Hotfix-*.*.*', Prod]
+    paths:
+      - 'frontend/**'
+      - '.nvmrc'
+      - '.github/workflows/frontend-deploy.yml'
+  # Previews are for feature pull requests; promotion pull requests skip them so
+  # they don't use the Free plan's three preview slots.
+  pull_request:
+    branches: [Dev]
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - 'frontend/**'
+      - '.nvmrc'
+      - '.github/workflows/frontend-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Nonprod deploys from Release-x.y.z and Hotfix-x.y.z; prod deploys from Prod
+  # after approval in the prod GitHub Environment.
+  deploy:
+    name: Deploy ${{ github.ref_name == 'Prod' && 'prod' || 'nonprod' }}
+    if: ${{ github.event_name != 'pull_request' && (github.ref_name == 'Prod' || startsWith(github.ref_name, 'Release-') || startsWith(github.ref_name, 'Hotfix-')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ github.ref_name == 'Prod' && 'prod' || 'nonprod' }}
+    concurrency:
+      group: frontend-deploy-${{ github.ref_name == 'Prod' && 'prod' || 'nonprod' }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TARGET: ${{ github.ref_name == 'Prod' && 'prod' || 'nonprod' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ github.ref_name == 'Prod' && vars.AZURE_CLIENT_ID_PROD || vars.AZURE_CLIENT_ID_NONPROD }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Read environment settings
+        run: bash scripts/frontend-deploy-settings.sh "$TARGET"
+      - name: Build
+        working-directory: frontend
+        run: |
+          npm ci
+          ENV="$TARGET" VITE_USE_MOCK_API=false npm run build
+      - name: Deploy to Static Web App
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ env.SWA_DEPLOY_TOKEN }}
+          action: upload
+          app_location: frontend/dist
+          skip_app_build: true
+          skip_api_build: true
+      - name: Smoke-test frontend
+        run: |
+          for path in / /players /players/1; do
+            curl --fail --silent --show-error --retry 5 --retry-delay 10 --retry-all-errors \
+              --max-time 30 "https://$SWA_HOST$path" | grep -q '<div id="root">'
+            echo "$path OK"
+          done
+          {
+            echo "## Frontend deploy: $TARGET"
+            echo "- URL: https://$SWA_HOST"
+            echo "- API: $VITE_API_BASE_URL"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Pull request previews run on the nonprod Static Web App against the nonprod
+  # API. They log in through the pull_request federated credential, outside any
+  # GitHub Environment. Fork pull requests get no OIDC token and are skipped.
+  preview:
+    name: Preview
+    if: ${{ github.event_name == 'pull_request' && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: frontend-preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_NONPROD }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Read environment settings
+        run: bash scripts/frontend-deploy-settings.sh nonprod
+      - name: Build
+        working-directory: frontend
+        run: |
+          npm ci
+          ENV=nonprod VITE_USE_MOCK_API=false npm run build
+      - name: Deploy preview
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ env.SWA_DEPLOY_TOKEN }}
+          repo_token: ${{ github.token }}
+          action: upload
+          app_location: frontend/dist
+          skip_app_build: true
+          skip_api_build: true
+
+  close-preview:
+    name: Close preview
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_NONPROD }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Read environment settings
+        run: bash scripts/frontend-deploy-settings.sh nonprod
+      - name: Close preview
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ env.SWA_DEPLOY_TOKEN }}
+          action: close

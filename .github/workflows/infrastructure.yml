@@ -1,0 +1,137 @@
+name: Infrastructure
+
+on:
+  pull_request:
+    paths:
+      - 'infra/**'
+      - '.github/workflows/infrastructure.yml'
+  push:
+    branches: ['Release-*.*.*', 'Hotfix-*.*.*', Prod]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/infrastructure.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_IN_AUTOMATION: 'true'
+  TF_INPUT: 'false'
+  ARM_USE_OIDC: 'true'
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_operator_principal_id: ${{ vars.TF_OPERATOR_PRINCIPAL_ID }}
+  TF_VAR_alert_email_addresses: ${{ secrets.TF_ALERT_EMAIL_ADDRESSES || '[]' }}
+
+jobs:
+  format:
+    name: Terraform format
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.17.1
+          terraform_wrapper: false
+      - name: Check formatting
+        run: terraform fmt -check -recursive infra
+
+  # Pull request runs log in through the `pull_request` federated credential,
+  # so they need no GitHub Environment and never wait for prod approval.
+  # -lock=false keeps a plan from blocking a concurrent apply.
+  plan:
+    name: Plan ${{ matrix.environment }}
+    if: ${{ github.event_name == 'pull_request' }}
+    needs: format
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [nonprod, prod]
+    concurrency:
+      group: infrastructure-plan-${{ matrix.environment }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    env:
+      ARM_CLIENT_ID: ${{ matrix.environment == 'prod' && vars.AZURE_CLIENT_ID_PROD || vars.AZURE_CLIENT_ID_NONPROD }}
+      TF_VAR_database_secret_ready: ${{ (matrix.environment == 'prod' && vars.DATABASE_SECRET_READY_PROD || vars.DATABASE_SECRET_READY_NONPROD) || 'false' }}
+    defaults:
+      run:
+        working-directory: infra/envs/${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.17.1
+          terraform_wrapper: false
+      - name: Terraform init
+        run: terraform init
+      - name: Terraform validate
+        run: terraform validate -no-color
+      - name: Terraform plan
+        run: terraform plan -lock=false -no-color -out tfplan
+      - name: Write plan summary
+        run: |
+          terraform show -no-color tfplan > plan.txt
+          {
+            echo "## Terraform plan: ${{ matrix.environment }}"
+            echo
+            echo '```text'
+            head -c 900000 plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Nonprod applies from Release-x.y.z and Hotfix-x.y.z; prod applies from Prod
+  # after approval in the prod GitHub Environment. Review the prod plan on the
+  # promotion pull request before approving.
+  apply:
+    name: Apply ${{ github.ref_name == 'Prod' && 'prod' || 'nonprod' }}
+    if: >-
+      ${{ github.event_name != 'pull_request' && (github.ref_name == 'Prod'
+      || startsWith(github.ref_name, 'Release-') || startsWith(github.ref_name, 'Hotfix-')) }}
+    needs: format
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ github.ref_name == 'Prod' && 'prod' || 'nonprod' }}
+    concurrency:
+      group: infrastructure-apply-${{ github.ref_name == 'Prod' && 'prod' || 'nonprod' }}
+      cancel-in-progress: false
+    env:
+      TARGET: ${{ github.ref_name == 'Prod' && 'prod' || 'nonprod' }}
+      ARM_CLIENT_ID: ${{ github.ref_name == 'Prod' && vars.AZURE_CLIENT_ID_PROD || vars.AZURE_CLIENT_ID_NONPROD }}
+      TF_VAR_database_secret_ready: ${{ (github.ref_name == 'Prod' && vars.DATABASE_SECRET_READY_PROD || vars.DATABASE_SECRET_READY_NONPROD) || 'false' }}
+    defaults:
+      run:
+        working-directory: infra/envs/${{ github.ref_name == 'Prod' && 'prod' || 'nonprod' }}
+    steps:
+      - name: Verify environment branch
+        working-directory: .
+        run: |
+          if [ "$TARGET" = nonprod ] && [[ ! "$GITHUB_REF_NAME" =~ ^(Release|Hotfix)-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Nonprod applies only from a Release-x.y.z or Hotfix-x.y.z branch: $GITHUB_REF_NAME"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.17.1
+          terraform_wrapper: false
+      - name: Terraform init
+        run: terraform init
+      - name: Terraform plan
+        run: terraform plan -no-color -out tfplan
+      - name: Write plan summary
+        run: |
+          terraform show -no-color tfplan > plan.txt
+          {
+            echo "## Terraform apply: $TARGET"
+            echo
+            echo '```text'
+            head -c 900000 plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Terraform apply
+        run: terraform apply -no-color tfplan

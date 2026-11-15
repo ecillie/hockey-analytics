@@ -1,7 +1,7 @@
 # Logging event owners
 
 Python diagnostics use stderr; requested CLI reports and offline migration SQL
-retain their stdout contracts. Application log delivery is disabled for
+retain their stdout contracts. Application log delivery to stderr is disabled for
 `ENV=nonprod` and `ENV=prod`, including browser builds made with those values.
 Dev uses the configured log levels. Native platform telemetry has its own owners.
 
@@ -28,7 +28,7 @@ generic fallback. Handled API failures retain the existing page retry behavior.
 five severity thresholds and case/whitespace normalization as Python. Browser
 output is one JSON string per console call, using debug/info/warn/error methods;
 CRITICAL uses console.error with its severity retained in the record. There is
-no browser text format or hosted collection. No deployment environment is inferred
+no browser text format. No deployment environment is inferred
 from Vite mode or mock selection; optional logger environment metadata accepts
 only explicit dev/nonprod/prod values.
 
@@ -50,6 +50,27 @@ do not replace API or render results, and a failed sink does not recursively log
 Global handlers prevent the default raw error console report while allowing
 other listeners to run. Browser-native network or extension diagnostics remain
 under browser ownership; this policy governs application records.
+
+### Browser Application Insights
+
+Builds made with `VITE_APPINSIGHTS_CONNECTION_STRING` also send records to
+Application Insights through its browser SDK. This works in nonprod and prod,
+where console output stays disabled. Without the variable, the SDK is never
+started. The deploy workflow reads the value from the environment's Application
+Insights resource.
+
+- Records pass the same threshold, rate limit and allowlist as console output.
+  The telemetry receives the normalized record, never the original error.
+- React and global error events become exception items whose name is the event
+  and whose message is the event phrase, with no stack. Other records, including
+  `api.request_failed` with its route template, status and category, become
+  traces with the allowlisted fields as properties.
+- Page views are sent on each router location change, named and addressed by
+  route pattern (`/players/{id}`; unmatched paths become `unknown`). Query
+  strings, raw paths and the referrer are not sent.
+- Cookies, session storage buffering and all automatic collection (fetch/XHR
+  dependencies, exceptions, unhandled rejections, route tracking, page visit
+  time, CORS correlation headers) are off.
 
 ## Configuration and correlation
 
@@ -140,6 +161,33 @@ remain silent. Alembic commands preserve SQL stdout and exit behavior, including
 255 for framework command errors and 1 with `--raiseerr`. Programmatic callers
 retain their original exceptions and exception hook. The environment callback
 returns control on success; it cannot unconditionally exit the framework process.
+
+## API Application Insights
+
+When `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, the API lifespan hook also
+installs an OpenTelemetry export to Application Insights through the Azure
+Monitor exporter. It runs in every environment, including nonprod and prod where
+stderr delivery stays disabled. Without the variable nothing is exported. The
+Container App reads the value from the environment's Key Vault.
+
+The export uses the same allowlisted fields as stderr, so the events above and
+their fields don't change:
+
+- Each application record becomes a trace with the event phrase as its message
+  and the allowlisted fields as custom properties. Dependency records are
+  exported only at WARNING or above.
+- A record with an exception becomes an exception item carrying the exception
+  type and safe frames (module, function, line). Exception values and messages
+  are not exported.
+- Each HTTP request becomes a request item named by method and route template,
+  with status, outcome, `severity` and `request_id`. URLs, query strings,
+  headers and bodies are not recorded. Logs written during the request share its
+  operation ID.
+- Requests whose `request.finished` severity is below `LOG_LEVEL`, such as
+  successful health probes at INFO, are not exported.
+
+There is no auto-instrumentation and no offline retry storage. Pending telemetry
+is flushed when the process exits.
 
 ## Bounds and failure delivery
 

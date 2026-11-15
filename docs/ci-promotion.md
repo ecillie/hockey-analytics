@@ -107,8 +107,23 @@ On Dev and release pull requests, CI selects jobs by changed paths:
 `frontend/**` runs the frontend job, `backend/**` runs the backend job, and
 `ml/**` runs the ML job. Shared configuration, OpenAPI contract, and workflow
 changes run every affected job. Prod pull requests and pushes to Dev, release,
-hotfix, and Prod branches run all three jobs. Each selected job runs its full
-local suite because coverage thresholds apply to the whole area.
+hotfix, and Prod branches run all three jobs.
+
+Feature pull requests into Dev run only the tests their changes affect inside
+each selected job. The frontend job runs `vitest run --changed` against Dev.
+The backend job uses `pytest-testmon` with a baseline that the
+`Test-impact baseline` job records after every push to Dev. That job never
+blocks promotion, and a missing baseline runs every test. Coverage thresholds
+need the whole suite, so these runs skip the frontend coverage gate and the
+backend service-layer coverage gate. Lint, type checks, migrations, container
+smoke tests, the ML gate, and the frontend build still run in full.
+
+A feature PR runs the full suite instead when it changes anything dependency
+tracking cannot see: workflows, `scripts/`, Python or Node tooling and lock
+files, Alembic migrations, `conftest.py` or `fixtures/` files, non-Python files
+under `backend/`, `ml/`, or `tests/`, or frontend files outside `frontend/src/`
+or inside `frontend/src/test/`. Promotion PRs and every push run the full suite
+with all coverage gates, so nothing reaches a release branch or Prod unchecked.
 Frontend promotion requires 100% statement, branch, function, and line coverage
 for production runtime modules. CI publishes the HTML, JSON, LCOV, and Cobertura
 reports in the `frontend-coverage` artifact for release review and auditability.
@@ -260,10 +275,25 @@ available in GitHub's Run workflow interface.
 
 ## Database migration release gate
 
-Database changes are deliberately separate from Vercel application startup and
+Database changes are deliberately separate from application deployment and
 the automatic branch cascade. Create GitHub Environments named `nonprod` and
-`prod`, add a direct Neon connection as the `DATABASE_URL` secret in each, and
-configure required reviewers on `prod`.
+`prod`, add that environment's Azure Postgres connection as the `DATABASE_URL`
+secret in each, and configure required reviewers on `prod`. Copy the value from
+the `database-url` secret in the environment's Key Vault; it already sets
+`sslmode=require`:
+
+```sh
+az keyvault secret show --vault-name hockey-analytics-np-kv --name database-url \
+  --query value -o tsv | gh secret set DATABASE_URL --env nonprod
+az keyvault secret show --vault-name hockey-analytics-prd-kv --name database-url \
+  --query value -o tsv | gh secret set DATABASE_URL --env prod
+```
+
+GitHub-hosted runners reach the server through its `0.0.0.0` "allow Azure
+services" firewall rule, because they run on Azure IP addresses. The workflow
+checks that the port is reachable before it migrates. The server needs no
+per-run firewall rule, so the deploy identities need no access to the shared
+resource group.
 
 Before releasing schema-dependent code, manually dispatch the `Database
 migration` workflow against `nonprod` on the current `Release-x.y.z` branch (or
@@ -272,5 +302,5 @@ validate the application, and then
 dispatch it against `prod`. Per-environment concurrency prevents overlapping
 migration runs. The workflow records the starting and ending revision, applies
 `upgrade head`, verifies the exact schema contract, and smoke-tests health,
-seasons, and teams. Use pooled URLs only for the request-serving application;
-the migration workflow requires a direct Neon URL.
+seasons, and teams. The workflow refuses a `DATABASE_URL` that does not point at
+`*.postgres.database.azure.com` with `sslmode=require`.

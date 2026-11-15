@@ -15,6 +15,7 @@ supports `--help` and validates arguments before opening database or HTTP resour
 | `backend/database/container_smoke.py` | `--base-url URL`, `--attempts N`, `--delay SECONDS`, `--timeout SECONDS` |
 | `backend/database/backfill_team_stints.py` | `--apply`, `--first-season YEAR`, `--last-season YEAR` |
 | `-m app.ScriptingFiles.FullDataScript.run_all` | No options |
+| `-m app.ScriptingFiles.FullDataScript.fetch_data` | `--destination DIR` (required); reads `TRADEVALUE_DATA_BLOB_URL` |
 | `-m app.ScriptingFiles.FullDataScript.populate_roster_status` | No options |
 | `-m app.ScriptingFiles.FullDataScript.capspace` | `--dry-run`, `--apply`, `--coverage`, `--nhl-id ID`, `--player-id ID`, `--first-season YEAR`, `--last-season YEAR`, `--limit N`, `--workers N`, `--batch-size N`, `--force` |
 | `-m ml.pipelines.run_pipeline` | `--min-games N` |

@@ -5,7 +5,10 @@ from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum, auto
 from time import monotonic_ns
 from typing import Literal, Protocol, runtime_checkable
-from app.shared.observability.errors import LoggingSettingsError
+from app.shared.observability.errors import (
+    LoggingSettingsError,
+    TelemetrySettingsError,
+)
 
 
 class LogLevel(IntEnum):
@@ -147,6 +150,30 @@ class LoggingSettings:
     @property
     def enabled(self) -> bool:
         return self.environment not in ("nonprod", "prod")
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class TelemetrySettings:
+    connection_string: str | None = field(default=None, repr=False)
+
+    @property
+    def enabled(self) -> bool:
+        return self.connection_string is not None
+
+
+def read_telemetry_settings(values: Mapping[str, str]) -> TelemetrySettings:
+    name = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+    configured = values.get(name, "").strip()
+    if configured == "":
+        return TelemetrySettings()
+    keys = {
+        part.split("=", 1)[0].strip().lower()
+        for part in configured.split(";")
+        if "=" in part
+    }
+    if "instrumentationkey" not in keys:
+        raise TelemetrySettingsError(field=name)
+    return TelemetrySettings(connection_string=configured)
 
 
 def read_logging_settings(values: Mapping[str, str]) -> LoggingSettings:

@@ -44,6 +44,12 @@ defaults to `INFO` and `LOG_FORMAT` to `json`; use `DEBUG` for more detail or
 `text` for terminal output. Restart after changing Python settings. See
 [logging configuration and events](../docs/logging-events.md).
 
+When `APPLICATIONINSIGHTS_CONNECTION_STRING` is set, the API also exports its
+logs, request traces and exceptions to Application Insights, in every
+environment. On Azure the Container App reads it from the environment's Key
+Vault. Leave it unset locally and in tests; nothing is exported and startup is
+unchanged.
+
 ## Frontend connection
 
 Create `frontend/.env.local`:
@@ -124,6 +130,12 @@ docker run --rm -p 8000:8000 --env-file backend/.env tradevalue-api
 The image runs as a non-root user and excludes ingestion code and local source
 data. Its database must be reachable from inside the container. CI smoke-tests
 health, seasons, and teams against a disposable PostgreSQL service.
+
+Ingestion has its own image, `backend/ingestion.Dockerfile`, with the ingestion
+code and dependencies but no data. On Azure it downloads the season CSVs from
+the blob container in `TRADEVALUE_DATA_BLOB_URL` before running `run_all`
+(see the [infrastructure guide](../infra/README.md#ingestion-job)). Running
+ingestion locally against `backend/data` is unchanged.
 
 For Vercel, use root directory `backend`; deploy the frontend as a separate
 project rooted at `frontend`. Use pooled Neon URLs for API requests and direct

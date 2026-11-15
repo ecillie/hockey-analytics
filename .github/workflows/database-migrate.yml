@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: GitHub Environment containing the direct Neon DATABASE_URL
+        description: GitHub Environment containing the Azure Postgres DATABASE_URL
         required: true
         type: choice
         options:
@@ -29,7 +29,7 @@ jobs:
       ENV: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
-      - name: Verify environment branch and direct connection
+      - name: Verify environment branch and Azure connection
         run: |
           if [ "${{ inputs.environment }}" = "prod" ]; then
             test "$GITHUB_REF_NAME" = "Prod" || {
@@ -41,11 +41,28 @@ jobs:
             exit 1
           fi
           case "$DATABASE_URL" in
-            *-pooler*)
-              echo "DATABASE_URL must be a direct, non-pooled migration connection."
+            postgresql://*.postgres.database.azure.com:*|postgresql://*.postgres.database.azure.com/*) ;;
+            *)
+              echo "DATABASE_URL must point at the Azure Postgres Flexible Server."
               exit 1
               ;;
           esac
+          case "$DATABASE_URL" in
+            *sslmode=require*|*sslmode=verify-full*) ;;
+            *)
+              echo "DATABASE_URL must set sslmode=require."
+              exit 1
+              ;;
+          esac
+      # GitHub-hosted runners use Azure IPs, which the server's 0.0.0.0
+      # "allow Azure services" firewall rule admits. Fail fast if that changes.
+      - name: Check the runner can reach Postgres
+        run: |
+          host="$(python3 -c 'import os, urllib.parse; print(urllib.parse.urlsplit(os.environ["DATABASE_URL"]).hostname)')"
+          if ! timeout 10 bash -c "</dev/tcp/$host/5432"; then
+            echo "Cannot reach $host:5432. Check the Postgres firewall rules in infra/modules/shared."
+            exit 1
+          fi
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.13.1"

@@ -32,3 +32,16 @@ frontend/*.tsbuildinfo
 
 /dist/
 **/*.egg-info/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+# Reusable modules take their provider pins from the root configuration.
+infra/modules/**/.terraform.lock.hcl
+crash.log
+*.tfvars
+
+# pytest-testmon test-impact data
+.testmondata*

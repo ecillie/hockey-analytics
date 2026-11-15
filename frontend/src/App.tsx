@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/Layout/AppShell'
+import { PageViewReporter } from './components/common/PageViewReporter'
 import { SeasonProvider } from './context/SeasonContext'
 import { AboutPage } from './pages/AboutPage'
 import { ComparePage } from './pages/ComparePage'
@@ -12,5 +13,5 @@ import { TeamDetailPage } from './pages/TeamDetailPage'
 import { TeamsPage } from './pages/TeamsPage'
 
 export function App() {
-  return <BrowserRouter><SeasonProvider><Routes><Route element={<AppShell />}><Route index element={<OverviewPage />} /><Route path="players" element={<PlayersPage />} /><Route path="players/:id" element={<PlayerDetailPage />} /><Route path="teams" element={<TeamsPage />} /><Route path="teams/:id" element={<TeamDetailPage />} /><Route path="compare" element={<ComparePage />} /><Route path="about" element={<AboutPage />} /><Route path="future-plans" element={<FuturePlansPage />} /><Route path="*" element={<NotFoundPage />} /></Route></Routes></SeasonProvider></BrowserRouter>
+  return <BrowserRouter><PageViewReporter /><SeasonProvider><Routes><Route element={<AppShell />}><Route index element={<OverviewPage />} /><Route path="players" element={<PlayersPage />} /><Route path="players/:id" element={<PlayerDetailPage />} /><Route path="teams" element={<TeamsPage />} /><Route path="teams/:id" element={<TeamDetailPage />} /><Route path="compare" element={<ComparePage />} /><Route path="about" element={<AboutPage />} /><Route path="future-plans" element={<FuturePlansPage />} /><Route path="*" element={<NotFoundPage />} /></Route></Routes></SeasonProvider></BrowserRouter>
 }

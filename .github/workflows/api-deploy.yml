@@ -1,0 +1,118 @@
+name: API deploy
+
+on:
+  push:
+    branches: ['Release-*.*.*', 'Hotfix-*.*.*', Prod]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/api-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/ecillie/hockey-analytics-api:${{ github.sha }}
+  INGESTION_IMAGE: ghcr.io/ecillie/hockey-analytics-ingestion:${{ github.sha }}
+
+jobs:
+  build:
+    name: Build and push API and ingestion images
+    if: ${{ github.ref_name == 'Prod' || startsWith(github.ref_name, 'Release-') || startsWith(github.ref_name, 'Hotfix-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build images
+        run: |
+          labels=(
+            --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}"
+            --label "org.opencontainers.image.revision=${{ github.sha }}"
+          )
+          docker build "${labels[@]}" --tag "$IMAGE" backend
+          docker build "${labels[@]}" --file backend/ingestion.Dockerfile --tag "$INGESTION_IMAGE" backend
+      # Scans as root: the images run as a non-root user that cannot read every
+      # directory, and find exits nonzero on unreadable directories.
+      - name: Verify images contain no env files
+        run: |
+          for image in "$IMAGE" "$INGESTION_IMAGE"; do
+            found=$(docker run --rm --user root --entrypoint find "$image" \
+              / -xdev \( -name ".env" -o -name ".env.*" \) -print)
+            if [ -n "$found" ]; then
+              echo "$image contains env files:"
+              echo "$found"
+              exit 1
+            fi
+          done
+      - name: Push images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE"
+          docker push "$INGESTION_IMAGE"
+
+  # Nonprod deploys from Release-x.y.z and Hotfix-x.y.z; prod deploys from Prod
+  # after approval in the prod GitHub Environment. The concurrency group is the
+  # one Terraform applies use, so a deploy never races an infrastructure apply.
+  deploy:
+    name: Deploy ${{ github.ref_name == 'Prod' && 'prod' || 'nonprod' }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ github.ref_name == 'Prod' && 'prod' || 'nonprod' }}
+    concurrency:
+      group: infrastructure-apply-${{ github.ref_name == 'Prod' && 'prod' || 'nonprod' }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TARGET: ${{ github.ref_name == 'Prod' && 'prod' || 'nonprod' }}
+    steps:
+      - name: Verify environment branch
+        run: |
+          if [ "$TARGET" = nonprod ] && [[ ! "$GITHUB_REF_NAME" =~ ^(Release|Hotfix)-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Nonprod deploys only from a Release-x.y.z or Hotfix-x.y.z branch: $GITHUB_REF_NAME"
+            exit 1
+          fi
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ github.ref_name == 'Prod' && vars.AZURE_CLIENT_ID_PROD || vars.AZURE_CLIENT_ID_NONPROD }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Update Container App image
+        run: |
+          az containerapp update \
+            --name "hockey-analytics-$TARGET-api" \
+            --resource-group "hockey-analytics-$TARGET" \
+            --image "$IMAGE" \
+            --output none
+      # The job runs only when triggered manually; this only changes its image.
+      - name: Update ingestion job image
+        run: |
+          az containerapp job update \
+            --name "hockey-analytics-$TARGET-ingest" \
+            --resource-group "hockey-analytics-$TARGET" \
+            --image "$INGESTION_IMAGE" \
+            --output none
+      - name: Smoke-test API
+        run: |
+          fqdn=$(az containerapp show \
+            --name "hockey-analytics-$TARGET-api" \
+            --resource-group "hockey-analytics-$TARGET" \
+            --query properties.configuration.ingress.fqdn --output tsv)
+          for path in /api/health /api/seasons; do
+            curl --fail --silent --show-error --retry 10 --retry-delay 15 --retry-all-errors \
+              --max-time 30 "https://$fqdn$path" > /dev/null
+            echo "$path OK"
+          done
+          {
+            echo "## API deploy: $TARGET"
+            echo "- Image: \`$IMAGE\`"
+            echo "- Ingestion image: \`$INGESTION_IMAGE\`"
+            echo "- URL: https://$fqdn"
+          } >> "$GITHUB_STEP_SUMMARY"
