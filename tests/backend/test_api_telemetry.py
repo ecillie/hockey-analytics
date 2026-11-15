@@ -190,3 +190,48 @@ class TestTelemetryEnabled:
             assert client.get("/api/health").status_code == 200
         exported.flush()
         assert exported.spans.get_finished_spans() == ()
+
+
+@pytest.mark.usefixtures("isolate_host_logging")
+class TestIngestionTelemetry:
+    """stderr is off in prod, so a failed ingestion run must reach Application Insights."""
+
+    @pytest.fixture
+    def logs(self, monkeypatch) -> InMemoryLogRecordExporter:
+        from app.ScriptingFiles.FullDataScript import run_all
+
+        logs = InMemoryLogRecordExporter()
+        monkeypatch.setattr(
+            run_all,
+            "load_environment",
+            lambda: {
+                "ENV": "prod",
+                "APPLICATIONINSIGHTS_CONNECTION_STRING": CONNECTION_STRING,
+            },
+        )
+        monkeypatch.setattr(
+            "app.shared.observability.telemetry.build_azure_exporters",
+            lambda settings: TelemetryExporters(
+                spans=InMemorySpanExporter(), logs=logs
+            ),
+        )
+
+        def fail(*, context):
+            raise RuntimeError("ingestion_secret")
+
+        monkeypatch.setattr(run_all, "run_all", fail)
+        assert run_all.main([]) == 1
+        return logs
+
+    def test_failed_run_is_exported_and_flushed_before_exit(self, logs):
+        records = [item.log_record for item in logs.get_finished_logs()]
+        events = {record.attributes["event"] for record in records}
+        assert {"command.started", "command.failed"} <= events
+        assert {
+            item.resource.attributes["service.name"]
+            for item in logs.get_finished_logs()
+        } == {"tradevalue-ingestion"}
+        assert logging.getHandlerByName(TELEMETRY_HANDLER_NAME) is None
+        assert "ingestion_secret" not in json.dumps(
+            [item.to_json() for item in logs.get_finished_logs()]
+        )

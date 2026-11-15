@@ -37,6 +37,10 @@ from app.ScriptingFiles.FullDataScript.roster_status.domain import (
 )
 from app.ScriptingFiles.FullDataScript.roster_status.tests.fakes import FixedRosterFeed
 from app.ScriptingFiles.FullDataScript.source_ingestion import util as source_utils
+from app.ScriptingFiles.FullDataScript.source_ingestion.domain import PlayerKind
+from app.ScriptingFiles.FullDataScript.source_ingestion.policy import (
+    find_stat_violation,
+)
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.repository import (
     PostgresMoneyPuckRepository,
 )
@@ -321,7 +325,7 @@ def inconsistent_skater_row():
 
 @pytest.fixture
 def inconsistent_goalie_row():
-    return {"playerId": 2, "shotsAgainst": 20, "saves": 18, "goalsAgainst": 3}
+    return {"playerId": 2, "shotsAgainst": 20, "saves": 18, "goalsAgainst": 5}
 
 
 def test_cross_field_stat_invariants_reject_inconsistent_rows(
@@ -339,6 +343,27 @@ def test_cross_field_stat_invariants_reject_inconsistent_rows(
             inconsistent_goalie_row,
             source="fixture",
         )
+
+
+@pytest.mark.parametrize(
+    ("goals_against", "accepted"),
+    [
+        pytest.param(1, False, id="goals-short-of-shots"),
+        pytest.param(2, True, id="exact"),
+        pytest.param(3, True, id="one-goal-without-shot"),
+        pytest.param(4, True, id="two-goals-without-shot"),
+        pytest.param(5, False, id="three-goals-without-shot"),
+    ],
+)
+def test_goalie_totals_allow_goals_without_a_recorded_shot(goals_against, accepted):
+    row = {
+        "playerId": 2,
+        "shotsAgainst": 20,
+        "saves": 18,
+        "goalsAgainst": goals_against,
+    }
+    violation = find_stat_violation(PlayerKind.GOALIE, row, source="fixture")
+    assert (violation is None) is accepted
 
 
 class TestNhlApiParserRejectsSchemaDrift:

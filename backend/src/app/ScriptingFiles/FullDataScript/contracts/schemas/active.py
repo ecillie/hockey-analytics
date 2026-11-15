@@ -26,6 +26,7 @@ from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
     parse_mapping_contract,
     extract_mapping_rows,
     extract_page_player,
+    find_uncounted_season_years,
 )
 from app.ScriptingFiles.FullDataScript.contracts.util import (
     clean_text,
@@ -125,7 +126,10 @@ def parse_active_contract(raw: dict[str, object], *, slug: str) -> ParsedContrac
     except CapSpaceParseError as error:
         raise ActiveContractError(slug=slug, failure=error) from error
     years = tuple(row.season_start_year for row in contract.seasons)
-    unique = sorted(set(years))
-    if len(unique) != len(years) or unique != list(range(unique[0], unique[-1] + 1)):
+    # Tolled and bought-out years have no season row but still fill the sequence.
+    covered = sorted(set(years) | find_uncounted_season_years(raw))
+    if len(set(years)) != len(years) or covered != list(
+        range(covered[0], covered[-1] + 1)
+    ):
         raise ActiveSeasonSequenceError(slug=slug, years=years)
     return replace(contract, term_years=len(years))
