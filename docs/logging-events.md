@@ -133,6 +133,7 @@ access stream is disabled; unrelated host errors remain visible.
 | `ingestion.request_recovered` | Native adapter retry history, WARNING; attempt count only |
 | `ingestion.fallback_started`, `ingestion.fallback_finished` | Profile fallback boundary, DEBUG |
 | `ingestion.fallback_summary`, `ingestion.snapshot_retained` | Batch/pipeline recovery boundary, WARNING |
+| `ingestion.source_unavailable` | Pipeline, WARNING, before a contract source falls back to its last-good snapshot; exception types and HTTP `status` only |
 | `ingestion.batch_started` | Historical batch boundary, DEBUG |
 | `ingestion.batch_committed`, `ingestion.batch_previewed` | Historical service after repository scope exits, INFO; preview committed count is zero |
 | `transaction.started` | DB-API transaction owner, DEBUG |
