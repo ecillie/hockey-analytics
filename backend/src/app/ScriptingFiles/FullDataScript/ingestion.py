@@ -398,6 +398,25 @@ def ingest_schedule(
     )
 
 
+def log_source_unavailable(
+    exc: BaseException, context: IngestionContext | None
+) -> None:
+    """Record why a source refresh failed before falling back to its snapshot.
+
+    The fallback can itself fail when no snapshot exists, and that error would
+    otherwise replace this one as the only exception the command reports.
+    """
+    fields: dict[str, object] = {"event": "ingestion.source_unavailable"}
+    response = getattr(exc, "response", None)
+    if isinstance(exc, requests.HTTPError) and response is not None:
+        fields["status"] = response.status_code
+    LOGGER.warning(
+        "Source refresh unavailable",
+        exc_info=exc,
+        extra=({} if context is None else context.fields) | fields,
+    )
+
+
 def run_all(
     *, context: InvocationContext | None = None
 ) -> dict[str, Mapping[str, object]]:
@@ -433,6 +452,7 @@ def run_all(
             RuntimeError,
             IngestionValidationError,
         ) as exc:
+            log_source_unavailable(exc, active_context)
             results["capwages"] = load_capwages_summary()
             LOGGER.warning(
                 "CapWages refresh unavailable; retained last-good database snapshot: %s",
@@ -452,6 +472,7 @@ def run_all(
             RuntimeError,
             IngestionValidationError,
         ) as exc:
+            log_source_unavailable(exc, historical_context)
             results["historical_contracts"] = (
                 capspace.load_historical_contract_summary()
             )
