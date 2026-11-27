@@ -378,16 +378,14 @@ class TestRunnerCleanup:
         for name in (
             "ingest_nhl_rosters",
             "ingest_nhl_stats",
-            "ingest_capwages",
             "ingest_schedule",
         ):
             monkeypatch.setattr(ingestion, name, StageOutcome(result={}))
         monkeypatch.setattr(
             ingestion, "ingest_moneypuck", StageOutcome(result={}, failure=primary)
         )
-        monkeypatch.setattr(
-            capspace, "ingest_historical_contracts", StageOutcome(result={})
-        )
+        for name in ("ingest_current_contracts", "ingest_historical_contracts"):
+            monkeypatch.setattr(capspace, name, StageOutcome(result={}))
         return ingestion.run_all
 
     def test_cleanup_keeps_primary_failure_or_reports_its_own(

@@ -1,8 +1,8 @@
 # Hockey Analytics
 
 An NHL analytics app for exploring player performance, contracts, teams, and
-estimated salary-cap value. Data comes from the NHL, MoneyPuck, CapWages,
-CapSpace, and AHL HockeyTech/LeagueStat feeds.
+estimated salary-cap value. Data comes from the NHL, MoneyPuck, CapSpace,
+and AHL HockeyTech/LeagueStat feeds.
 
 The stack is React 19, TypeScript, Vite, FastAPI, PostgreSQL, and Python ML tools.
 Use Python 3.12, uv 0.13.1, and Node.js 24.
@@ -138,4 +138,4 @@ Further references: [API contract](docs/api-contract.md),
 Product plans are available on the app's Future Plans page.
 
 This independent project is not affiliated with the NHL, AHL, MoneyPuck,
-CapWages, or their organizations.
+CapSpace, CapWages, or their organizations.

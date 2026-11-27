@@ -100,21 +100,42 @@ Contract composition remains in `ingestion.py` and `capspace.py`. The
 `contracts/` package owns frozen values and options, parsing in `schemas/`,
 identity and reconciliation policies, bounded profile fetching in `http.py`,
 and injected services and transaction-owned repositories. `active_services.py`
-and `active_repository.py` handle the current CapWages snapshot; `services.py`
-and `repository.py` handle historical reconciliation. Durable run records and
+and `active_repository.py` hold the retired CapWages snapshot path, which
+`run_all` no longer calls; `services.py` and `repository.py` handle CapSpace
+reconciliation for both current and historical contracts. Durable run records and
 advisory-lock ownership live in the sibling `tracking/` package.
 No live upstream calls are needed for verification. Source fakes and fixture
 plugins live under `source_ingestion/tests/`, with executable unit and PostgreSQL
 tests under root `tests/backend/`. Test support is excluded from production
 coverage, and source ingestion remains outside the request-serving API wheel.
 
+# Current contracts
+
+`ingest_current_contracts` in `capspace.py` refreshes contracts for every player
+with a roster stint in the current season, for that season and the following
+eight. Players are selected from the roster, not from stats, so a player with no
+games yet still gets a contract, and every run re-requests each rostered player
+so signings and extensions are picked up. The stage reuses the historical
+reconciliation path below, so a re-run matches existing contracts and seasons
+instead of duplicating them, and a different cap hit for an existing season is
+recorded as a reconciliation conflict instead of overwriting it. Future season
+rows are created as needed; the API never lists a season that has not started.
+
+The stage fails when more than 2% of requested CapSpace profiles fail. `run_all`
+then keeps the stored current contracts if any exist, and fails otherwise.
+
+capwages.com returns 403 to the ingestion client, so CapWages is no longer a
+contract source. `ProfileHttpOptions.capwages_fallback` re-enables the
+historical fallback described below; it is off by default.
+
 # Historical contract gap filling
 
 The supported historical contract stage is `capspace.py`. It selects NHL
 regular-season player-seasons with no `contract_seasons` coverage and resolves
-the player's NHL external ID. CapSpace is queried first by NHL ID. When it has
-no contract covering the missing seasons, the stage tries a bounded CapWages
-profile fallback. Newer CapWages profiles must carry the same NHL ID; legacy
+the player's NHL external ID. CapSpace is queried by NHL ID. When the CapWages
+fallback is enabled and CapSpace has no contract covering the missing seasons,
+the stage tries a bounded CapWages profile. Newer CapWages profiles must carry
+the same NHL ID; legacy
 profiles without that field must match the canonical name and slug and have an
 NHL stats season overlapping the missing-season target. Each source keeps its
 own provenance. Auxiliary buyout, termination-fee, and cap-recapture table
@@ -140,7 +161,6 @@ remains caller-owned and its requests are guarded against concurrent access.
 Historical fetching retains four application attempts layered over the shared
 adapter's four GET retries, with the existing retry statuses and backoff.
 Malformed, negative, or non-finite `Retry-After` headers use normal backoff.
-The active CapWages snapshot retains its ten-worker limit and adapter retries.
 Invalid options fail before tracking, database, or session resources open.
 
 Run tracking uses a separate control connection from committed work batches.
@@ -160,6 +180,6 @@ residual gaps can represent missing NHL IDs, profiles absent from both sources,
 absent source seasons, or a reconciliation conflict. Neither source is claimed
 to provide complete historical coverage.
 
-The normal `run_all` order is current/recent contract ingestion, historical
-two-source gap filling, then downstream schedule loading. The legacy contract
+The normal `run_all` order is current CapSpace contracts, historical CapSpace
+gap filling, then downstream schedule loading. The legacy contract
 scripts are recovery references and are not part of this pipeline.

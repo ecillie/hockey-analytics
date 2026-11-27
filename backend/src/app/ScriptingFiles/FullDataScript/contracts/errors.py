@@ -22,6 +22,17 @@ class CapSpaceParseError(CapSpaceError):
     pass
 
 
+class ProfileFailureRatioError(CapSpaceError):
+    def __init__(self, *, failed: int, requested: int, maximum_ratio: float) -> None:
+        super().__init__(
+            f"{failed} of {requested} CapSpace profiles failed; "
+            f"at most {maximum_ratio:.0%} may fail"
+        )
+        self.failed = failed
+        self.requested = requested
+        self.maximum_ratio = maximum_ratio
+
+
 class MoneyFailure(StrEnum):
     MALFORMED = auto()
     NEGATIVE = auto()

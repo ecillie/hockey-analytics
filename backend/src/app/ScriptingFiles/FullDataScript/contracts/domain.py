@@ -233,6 +233,15 @@ class ActiveContractWrite:
     owning_team_id: int | None
 
 
+class CandidateSelection(StrEnum):
+    """Which players a CapSpace contract run asks for, and for which seasons."""
+
+    STAT_GAPS = auto()
+    """Played seasons in the range that have no contract season yet."""
+    CURRENT_ROSTER = auto()
+    """Players on a roster in ``first_season``, for every season in the range."""
+
+
 @dataclass(slots=True, kw_only=True, frozen=True)
 class HistoricalContractLimits:
     maximum_workers: int = 8
@@ -249,7 +258,19 @@ class HistoricalContractOptions:
     player_id: int | None = None
     nhl_id: str | None = None
     force: bool = False
+    selection: CandidateSelection = CandidateSelection.STAT_GAPS
     limits: HistoricalContractLimits = field(default_factory=HistoricalContractLimits)
+
+
+@dataclass(slots=True, kw_only=True, frozen=True)
+class CurrentContractOptions:
+    """Refresh of current and future contract seasons for rostered players."""
+
+    season: int
+    horizon_years: int = 8
+    workers: int = 4
+    batch_size: int = 100
+    maximum_profile_failure_ratio: float = 0.02
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
@@ -269,3 +290,6 @@ class ProfileHttpOptions:
     maximum_retry_after: float = 30.0
     retryable_statuses: tuple[int, ...] = (429, 500, 502, 503, 504)
     capwages_slug_suffixes: tuple[str, ...] = ("", "-1", "-2", "-3")
+    capwages_fallback: bool = False
+    """CapWages returns 403 to the ingestion client, so CapSpace is the only
+    contract source unless this is turned back on."""
