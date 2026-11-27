@@ -32,6 +32,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.tests.fakes import (
 )
 from app.shared.tests.fakes import StageOutcome
 from app.ScriptingFiles.FullDataScript.source_ingestion.domain import PlayerKind
+from app.ScriptingFiles.FullDataScript.source_ingestion.errors import PayloadViolation
 from app.ScriptingFiles.FullDataScript.source_ingestion.nhl.domain import (
     NhlStatsOptions,
 )
@@ -300,6 +301,55 @@ class TestConcurrentWorkerContext:
         assert all(
             len(line.encode()) < 8192 for line in capture.getvalue().splitlines()
         )
+
+
+class TestInconsistentStatRows:
+    """One bad NHL row is skipped with a warning; more than that fails the job."""
+
+    @pytest.fixture
+    def stage(self, request, source_stat_row):
+        rows = [dict(source_stat_row, playerId=8478000 + index) for index in range(30)]
+        for row in rows[: request.param]:
+            row["points"] = 99
+            row["shotsAgainst"] = 50
+        pages = {
+            (f"https://api.nhle.com/stats/rest/en/{kind}/summary", 0): {"data": rows}
+            for kind in PlayerKind
+        }
+        repository = MemoryNhlStatsRepository()
+        service = NhlStatsService(
+            client_factory=OwnedClientFactory(
+                client=MemorySourceClient(pages=pages), barrier=Barrier(1)
+            ),
+            repository=repository,
+            options=NhlStatsOptions(first_season=2025, last_season=2025, workers=1),
+            context=IngestionContext(
+                invocation=InvocationContext(
+                    invocation_id="invocation", source="command", started_ns=0
+                ),
+                source="nhl",
+                stage="stats",
+                run_id=1,
+            ),
+        )
+        return service, repository
+
+    @pytest.mark.parametrize("stage", [1], indirect=True)
+    def test_single_inconsistent_row_is_skipped_with_a_warning(self, stage, capture):
+        service, repository = stage
+        assert service.ingest().counts.records_read == 4 * 29
+        (snapshot,) = repository.snapshots
+        assert "8478000" not in {row.external_id for row in snapshot.rows}
+        output = capture.getvalue()
+        assert output.count("ingestion.row_skipped") == 4
+        assert "8478000" in output
+
+    @pytest.mark.parametrize("stage", [2], indirect=True)
+    def test_more_inconsistent_rows_fail_the_job(self, stage, capture):
+        service, repository = stage
+        with pytest.raises(PayloadViolation, match="2 of 30 rows"):
+            service.ingest()
+        assert repository.snapshots == []
 
 
 class TestRunnerCleanup:

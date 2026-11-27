@@ -157,6 +157,12 @@ def validate_rows(
     )
 
 
+# Since 2022-23 the NHL counts up to two goals against per goalie season that
+# have no recorded shot on goal, so saves plus goalsAgainst can exceed
+# shotsAgainst by that much. It never falls short.
+GOALS_WITHOUT_SHOT_LIMIT = 2
+
+
 def find_stat_violation(
     kind: PlayerKind, row: Mapping[str, object], *, source: str
 ) -> StatConsistencyViolation | None:
@@ -172,12 +178,15 @@ def find_stat_violation(
         total is not None
         and first is not None
         and second is not None
-        and total != first + second
+        and not 0
+        <= first + second - total
+        <= (0 if kind is PlayerKind.SKATER else GOALS_WITHOUT_SHOT_LIMIT)
     ):
         equation = (
             "points must equal goals plus assists"
             if kind is PlayerKind.SKATER
-            else "shotsAgainst must equal saves plus goalsAgainst"
+            else "shotsAgainst must equal saves plus goalsAgainst, "
+            f"less at most {GOALS_WITHOUT_SHOT_LIMIT} goals without a shot"
         )
         return StatConsistencyViolation(
             source=source, player_id=row.get("playerId"), equation=equation
