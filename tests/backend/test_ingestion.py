@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 from pathlib import Path
 from app.shared.tests.fakes import StageOutcome
@@ -11,6 +12,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.tests.responses import (
     NhlRosterSession,
 )
 import pytest
+import requests
 from app.config import AppEnvironment, DatabaseSettings
 from app.database import open_database_cursor, open_database_transaction
 from psycopg2.errors import lookup
@@ -25,6 +27,7 @@ from app.ScriptingFiles.FullDataScript import (
 from app.ScriptingFiles.FullDataScript.contracts.domain import ActivePlayer
 from app.ScriptingFiles.FullDataScript.contracts.errors import MoneyParseError
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
+    MissingSourceSnapshotError,
     PlayerKindViolation,
 )
 from app.ScriptingFiles.FullDataScript.contracts.schemas.active import (
@@ -507,6 +510,51 @@ class TestRetainedSnapshots:
             assert "active-cache" in stages.events
         if stages.failed_stage == "historical":
             assert "historical-cache" in stages.events
+
+
+class TestUnavailableSourceWithoutSnapshot:
+    """A blocked source with nothing to fall back to must still say why it failed."""
+
+    @pytest.fixture
+    def blocked(self, monkeypatch):
+        response = requests.Response()
+        response.status_code = 403
+        for name, stage in (
+            ("init_db", StageOutcome(result=None)),
+            ("http_session", StageOutcome(result=SessionLifecycle())),
+            ("ingest_moneypuck", StageOutcome(result={})),
+            ("ingest_nhl_rosters", StageOutcome(result={})),
+            ("ingest_nhl_stats", StageOutcome(result={})),
+            (
+                "ingest_capwages",
+                StageOutcome(
+                    result={},
+                    failure=requests.HTTPError("403 Forbidden", response=response),
+                ),
+            ),
+            (
+                "load_capwages_summary",
+                StageOutcome(
+                    result={},
+                    failure=MissingSourceSnapshotError(source="CapWages"),
+                ),
+            ),
+        ):
+            monkeypatch.setattr(ingestion, name, stage)
+
+    def test_logs_the_http_status_before_the_snapshot_error(self, blocked, caplog):
+        caplog.set_level(logging.WARNING, logger=ingestion.LOGGER.name)
+        with pytest.raises(MissingSourceSnapshotError):
+            ingestion.run_all()
+        (record,) = [
+            record
+            for record in caplog.records
+            if getattr(record, "event", None) == "ingestion.source_unavailable"
+        ]
+        assert record.levelno == logging.WARNING
+        assert record.status == 403
+        assert record.exc_info is not None
+        assert record.exc_info[0] is requests.HTTPError
 
 
 @pytest.mark.usefixtures("isolate_command_logging")
