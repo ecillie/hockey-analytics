@@ -103,7 +103,7 @@ variable "ingestion_memory" {
 variable "ingestion_timeout_seconds" {
   type        = number
   description = "Replica timeout of the manual ingestion job in seconds."
-  default     = 1800
+  default     = 3600
 }
 
 variable "alert_email_addresses" {
