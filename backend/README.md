@@ -111,7 +111,7 @@ contract batches retain earlier commits if a later batch fails.
 
 The default source checks expect MoneyPuck seasons 2008–2025, at least 30 NHL
 teams, 500 active NHL players, 100 regular-season schedule games, and a 98%
-CapWages profile success rate. Tests lower volume requirements for small fixtures.
+CapSpace profile success rate for current contracts. Tests lower volume requirements for small fixtures.
 Review local contract coverage and dry-run results before a production load.
 
 Historical CSVs live in `backend/data/`; `TRADEVALUE_DATA_DIR` overrides that

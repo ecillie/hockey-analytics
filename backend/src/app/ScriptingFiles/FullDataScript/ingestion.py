@@ -442,22 +442,24 @@ def run_all(
                 context, source="nhl", stage="ingest_nhl_stats"
             )
         )
-        active_context = build_ingestion_context(
-            context, source="capwages", stage="ingest_capwages"
+        current_context = build_ingestion_context(
+            context, source="capspace", stage="ingest_current_contracts"
         )
         try:
-            results["capwages"] = ingest_capwages(context=active_context)
+            results["current_contracts"] = capspace.ingest_current_contracts(
+                context=current_context
+            )
         except (
             requests.RequestException,
             RuntimeError,
             IngestionValidationError,
         ) as exc:
-            log_source_unavailable(exc, active_context)
-            results["capwages"] = load_capwages_summary()
+            log_source_unavailable(exc, current_context)
+            results["current_contracts"] = capspace.load_current_contract_summary()
             LOGGER.warning(
-                "CapWages refresh unavailable; retained last-good database snapshot: %s",
+                "Current contract refresh unavailable; retained last-good database snapshot: %s",
                 exc,
-                extra=({} if active_context is None else active_context.fields)
+                extra=({} if current_context is None else current_context.fields)
                 | {"event": "ingestion.snapshot_retained"},
             )
         historical_context = build_ingestion_context(

@@ -259,3 +259,87 @@ class TestAmbiguousContractMatches:
         assert result["reconciliation_conflicts"] == 1
         assert result.get("contracts_created", 0) == 0
         assert count_contract_rows(database)[:2] == scenario.before[:2] == (2, 0)
+
+
+class TestCurrentContractsComeFromTheRosterNotStats:
+    """Current contracts are refreshed for rostered players, with or without stats."""
+
+    @pytest.fixture
+    def scenario(self, database):
+        seed_player(database, 8101)
+        with database.begin() as connection:
+            connection.execute(text("DELETE FROM skater_season_stats"))
+            connection.execute(
+                text(
+                    """INSERT INTO player_team_stints
+                           (player_id,season_start_year,team_id,roster_status)
+                       VALUES (8101,2008,900,'ACTIVE')"""
+                )
+            )
+            connection.execute(
+                text(
+                    """INSERT INTO players (id,first_name,last_name,primary_position)
+                       VALUES (8102,'Not','Rostered','C')"""
+                )
+            )
+            connection.execute(
+                text(
+                    """INSERT INTO player_external_ids (player_id,source_id,external_id)
+                       SELECT 8102,id,'8400000' FROM data_sources WHERE code='nhl'"""
+                )
+            )
+        return FixtureSession(body=FIXTURE.read_text(encoding="utf-8"))
+
+    @pytest.mark.integration
+    def test_rostered_player_is_refreshed_each_run_without_duplicates(
+        self, scenario, database
+    ):
+        with pytest.raises(capspace.MissingSourceSnapshotError):
+            capspace.load_current_contract_summary(season=2008)
+
+        first = capspace.ingest_current_contracts(
+            scenario, season=2008, horizon_years=3, workers=1
+        )
+        first_counts = count_contract_rows(database)
+        second = capspace.ingest_current_contracts(
+            scenario, season=2008, horizon_years=3, workers=1
+        )
+
+        assert scenario.requests == ["https://cap-space.com/person/nhl:8467514"] * 2
+        assert first["candidate_players"] == 1
+        assert first["contracts_created"] == 1
+        assert first["contract_seasons_created"] == 2
+        assert second.get("contracts_created", 0) == 0
+        assert second.get("contract_seasons_created", 0) == 0
+        assert second["contracts_matched"] == 1
+        assert count_contract_rows(database) == first_counts
+        assert capspace.load_current_contract_summary(season=2008)["contracts"] == 1
+        with database.connect() as connection:
+            seasons = connection.execute(
+                text(
+                    "SELECT count(*) FROM seasons WHERE start_year BETWEEN 2008 AND 2011"
+                )
+            ).scalar_one()
+        assert seasons == 4
+
+
+class TestCurrentContractsFailWhenTooManyProfilesFail:
+    @pytest.fixture
+    def scenario(self, database):
+        seed_player(database, 8103)
+        with database.begin() as connection:
+            connection.execute(
+                text(
+                    """INSERT INTO player_team_stints
+                           (player_id,season_start_year,team_id,roster_status)
+                       VALUES (8103,2008,900,'ACTIVE')"""
+                )
+            )
+        return FixtureSession(body="<html>not a CapSpace profile</html>")
+
+    @pytest.mark.integration
+    def test_unparseable_profiles_fail_the_stage(self, scenario, database):
+        with pytest.raises(capspace.ProfileFailureRatioError):
+            capspace.ingest_current_contracts(
+                scenario, season=2008, horizon_years=1, workers=1
+            )

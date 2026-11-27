@@ -408,7 +408,7 @@ class TestRetainedSnapshots:
 
     @pytest.fixture(
         params=[
-            pytest.param("capwages", id="retain-active-contracts"),
+            pytest.param("current", id="retain-current-contracts"),
             pytest.param("historical", id="retain-historical-contracts"),
             pytest.param("moneypuck", id="reject-stats-failure"),
         ]
@@ -449,20 +449,20 @@ class TestRetainedSnapshots:
                 StageOutcome(result={}, name="stats", events=events),
             ),
             (
-                ingestion,
-                "ingest_capwages",
+                capspace,
+                "ingest_current_contracts",
                 StageOutcome(
                     result={},
                     failure=RuntimeError("partial feed")
-                    if request.param == "capwages"
+                    if request.param == "current"
                     else None,
-                    name="capwages",
+                    name="current",
                     events=events,
                 ),
             ),
             (
-                ingestion,
-                "load_capwages_summary",
+                capspace,
+                "load_current_contract_summary",
                 StageOutcome(
                     result=dict(self.expected), name="active-cache", events=events
                 ),
@@ -505,8 +505,8 @@ class TestRetainedSnapshots:
         result = ingestion.run_all()
         assert result["historical_contracts"] == dict(self.historical)
         assert result["schedule"] == {"games": 10}
-        if stages.failed_stage == "capwages":
-            assert result["capwages"] == dict(self.expected)
+        if stages.failed_stage == "current":
+            assert result["current_contracts"] == dict(self.expected)
             assert "active-cache" in stages.events
         if stages.failed_stage == "historical":
             assert "historical-cache" in stages.events
@@ -525,22 +525,23 @@ class TestUnavailableSourceWithoutSnapshot:
             ("ingest_moneypuck", StageOutcome(result={})),
             ("ingest_nhl_rosters", StageOutcome(result={})),
             ("ingest_nhl_stats", StageOutcome(result={})),
-            (
-                "ingest_capwages",
-                StageOutcome(
-                    result={},
-                    failure=requests.HTTPError("403 Forbidden", response=response),
-                ),
-            ),
-            (
-                "load_capwages_summary",
-                StageOutcome(
-                    result={},
-                    failure=MissingSourceSnapshotError(source="CapWages"),
-                ),
-            ),
         ):
             monkeypatch.setattr(ingestion, name, stage)
+        monkeypatch.setattr(
+            capspace,
+            "ingest_current_contracts",
+            StageOutcome(
+                result={},
+                failure=requests.HTTPError("403 Forbidden", response=response),
+            ),
+        )
+        monkeypatch.setattr(
+            capspace,
+            "load_current_contract_summary",
+            StageOutcome(
+                result={}, failure=MissingSourceSnapshotError(source="CapSpace")
+            ),
+        )
 
     def test_logs_the_http_status_before_the_snapshot_error(self, blocked, caplog):
         caplog.set_level(logging.WARNING, logger=ingestion.LOGGER.name)
