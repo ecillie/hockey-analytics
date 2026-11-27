@@ -201,19 +201,20 @@ class TestIngestionTelemetry:
         from app.ScriptingFiles.FullDataScript import run_all
 
         logs = InMemoryLogRecordExporter()
-        monkeypatch.setattr(
-            run_all,
-            "load_environment",
-            lambda: {
+
+        def prod_environment() -> dict[str, str]:
+            return {
                 "ENV": "prod",
                 "APPLICATIONINSIGHTS_CONNECTION_STRING": CONNECTION_STRING,
-            },
-        )
+            }
+
+        def in_memory_exporters(settings: TelemetrySettings) -> TelemetryExporters:
+            return TelemetryExporters(spans=InMemorySpanExporter(), logs=logs)
+
+        monkeypatch.setattr(run_all, "load_environment", prod_environment)
         monkeypatch.setattr(
             "app.shared.observability.telemetry.build_azure_exporters",
-            lambda settings: TelemetryExporters(
-                spans=InMemorySpanExporter(), logs=logs
-            ),
+            in_memory_exporters,
         )
 
         def fail(*, context):
