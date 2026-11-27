@@ -240,8 +240,11 @@ ingestion_data_container_url` gives the container URL.
 
 A run that exits nonzero, including a failed download or an empty container,
 fails the execution and fires the ingestion failure alert. The replica timeout
-is `ingestion_timeout_seconds` (30 minutes by default); adjust it after timing
-the first nonprod run.
+is `ingestion_timeout_seconds` (60 minutes by default). The first nonprod run
+on 2026-11-27 hit the earlier 30-minute limit during historical contract gap
+filling: stats stages took about 10.5 minutes, current contracts 4.3 minutes,
+and historical contracts commit about 100 players every 35-40 seconds. Later
+runs only fill remaining gaps and finish sooner.
 
 ## Frontend deploy workflow
 

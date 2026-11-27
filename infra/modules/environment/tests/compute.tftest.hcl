@@ -108,8 +108,8 @@ run "compute_without_database_secret" {
   }
 
   assert {
-    condition     = azurerm_container_app_job.ingestion.replica_timeout_in_seconds == 1800 && length(azurerm_container_app_job.ingestion.manual_trigger_config) == 1
-    error_message = "Job must be manual with an 1800-second timeout."
+    condition     = azurerm_container_app_job.ingestion.replica_timeout_in_seconds == 3600 && length(azurerm_container_app_job.ingestion.manual_trigger_config) == 1
+    error_message = "Job must be manual with a 3600-second timeout."
   }
 
   assert {
