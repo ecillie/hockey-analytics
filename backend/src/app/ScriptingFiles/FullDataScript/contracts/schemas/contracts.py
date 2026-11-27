@@ -291,10 +291,15 @@ def parse_table_contract(block: Tag) -> ParsedContract | None:
         raise ContractDocumentError(
             reason=DocumentFailure.INVALID_SEASONS, source="HTML table"
         )
+    # Live pages name the type in <strong class="underbar"> under an <h3> such
+    # as "Current"; older saved pages put it in the heading itself.
     heading = next(
         (
             tag_text(node)
-            for node in block.find_all(["h2", "h3", "h4"])
+            for node in (
+                *block.select("strong.underbar"),
+                *block.find_all(["h2", "h3", "h4"]),
+            )
             if "contract" in tag_text(node).lower()
         ),
         None,

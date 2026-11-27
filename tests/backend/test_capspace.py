@@ -506,7 +506,11 @@ class TestCapwagesFallbackTriesDisambiguatedSlugAndPreservesSource:
     ):
         candidate = scenario.candidate
         session = scenario.session
-        outcome = profile_http.fetch_profile_with_fallback(session, candidate)
+        outcome = profile_http.fetch_profile_with_fallback(
+            session,
+            candidate,
+            options=contract_domain.ProfileHttpOptions(capwages_fallback=True),
+        )
 
         assert outcome.status == "succeeded"
         assert outcome.source_code == "capwages"
@@ -514,6 +518,39 @@ class TestCapwagesFallbackTriesDisambiguatedSlugAndPreservesSource:
         assert outcome.primary_status == "no_contracts"
         assert outcome.url.endswith("/colin-white-1")
         assert profile_http.covers_target_seasons(outcome) == {2010}
+
+
+class TestCapwagesFallbackIsOffByDefault:
+    """capwages.com returns 403 to the ingestion client, so it is not asked."""
+
+    def test_uncovered_capspace_profile_is_returned_without_a_capwages_request(
+        self,
+    ):
+        candidate = capspace.Candidate(
+            player_id=7,
+            first_name="Colin",
+            last_name="White",
+            nhl_id="8470000",
+            missing_seasons=(2010,),
+        )
+        session = ScriptedProfileSession(
+            routes={
+                "https://cap-space.com/person/nhl:8470000": SavedResponse(
+                    status_code=200,
+                    headers={},
+                    text="<h1>Contract History</h1>",
+                    url="",
+                ),
+            }
+        )
+
+        outcome = profile_http.fetch_profile_with_fallback(session, candidate)
+
+        assert outcome.source_code == "capspace"
+        assert outcome.fallback_attempted is False
+        assert [url for url, _ in session.calls] == [
+            "https://cap-space.com/person/nhl:8470000"
+        ]
 
 
 class TestMissingCapwagesBaseSlugDoesNotFanOutNumberedRequests:

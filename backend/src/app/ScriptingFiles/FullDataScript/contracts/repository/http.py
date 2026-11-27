@@ -412,7 +412,11 @@ def fetch_profile_with_fallback(
 ) -> ProfileResult:
     options = ProfileHttpOptions() if options is None else options
     primary = fetch_profile(session, candidate, options=options, context=context)
-    if primary.covers_target or candidate.nhl_id in (None, ""):
+    if (
+        not options.capwages_fallback
+        or primary.covers_target
+        or candidate.nhl_id in (None, "")
+    ):
         return primary
     report_ingestion_progress(
         context,

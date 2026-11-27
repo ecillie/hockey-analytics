@@ -34,6 +34,7 @@ from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
 from app.ScriptingFiles.FullDataScript.contracts.tests.fixtures import (
     SavedResponse,
     SavedSession,
+    read_contract_fixture,
 )
 from app.ScriptingFiles.FullDataScript.contracts.util import (
     parse_money_cents,
@@ -370,3 +371,23 @@ class TestProfileOutcomes:
             return
         assert isinstance(result.outcome, ProfileFailure)
         assert result.error is not None
+
+
+class TestLiveCapSpaceMarkup:
+    """Live pages name the contract type in a ``strong.underbar``, not a heading."""
+
+    def test_contract_type_and_entry_level_come_from_the_underbar(self):
+        current, entry = parse_capspace_page(
+            read_contract_fixture("capspace_live_markup.html")
+        )
+
+        assert current.contract_type == "Thirty-Five+ Contract (Extension"
+        assert current.is_entry_level is False
+        assert current.signed_on == date(2024, 9, 16)
+        assert [
+            (season.season_start_year, season.cap_hit_cents, season.clause)
+            for season in current.seasons
+        ] == [(2025, 870_000_000, "NMC"), (2026, 870_000_000, "NMC")]
+        assert entry.contract_type == "Entry Level Contract"
+        assert entry.is_entry_level is True
+        assert entry.term_years == 3

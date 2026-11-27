@@ -15,6 +15,7 @@ from app.database import open_database_transaction
 from app.shared.observability.domain import DiagnosticContext
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
     Candidate,
+    CandidateSelection,
     ContractSeason,
     ParsedContract,
     ProfileResult,
@@ -33,6 +34,9 @@ from app.ScriptingFiles.FullDataScript.contracts.policy import (
     are_contracts_compatible,
 )
 from app.ScriptingFiles.FullDataScript.contracts.util import group_source_records
+from app.ScriptingFiles.FullDataScript.source_ingestion.repository import (
+    ensure_seasons,
+)
 from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
     normalize_contracts,
 )
@@ -133,6 +137,55 @@ def select_candidates(
             last_name=row[2],
             nhl_id=str(row[3]) if row[3] not in (None, "") else None,
             missing_seasons=tuple(row[4]),
+        )
+        for row in cursor.fetchall()
+    ]
+
+
+def select_current_roster_candidates(
+    cursor: PgCursor,
+    *,
+    first_season: int,
+    last_season: int,
+    player_id: int | None = None,
+    nhl_id: str | None = None,
+    limit: int | None = None,
+) -> list[Candidate]:
+    """Players on a roster in ``first_season``, targeting every season to ``last_season``.
+
+    Current and future contract seasons change with signings and trades, so
+    these are refreshed every run instead of only when a gap exists.
+    """
+    filters = ["stint.season_start_year = %s"]
+    params: list[int | str] = [first_season]
+    if player_id is not None:
+        filters.append("p.id = %s")
+        params.append(player_id)
+    if nhl_id is not None:
+        filters.append("nhl.external_id = %s")
+        params.append(str(nhl_id))
+    limit_sql = " LIMIT %s" if limit is not None else ""
+    if limit is not None:
+        params.append(limit)
+    cursor.execute(
+        f"""SELECT DISTINCT p.id, p.first_name, p.last_name, nhl.external_id
+              FROM player_team_stints stint
+              JOIN players p ON p.id=stint.player_id
+              LEFT JOIN data_sources nhl_src ON nhl_src.code='nhl'
+              LEFT JOIN player_external_ids nhl
+                ON nhl.player_id=p.id AND nhl.source_id=nhl_src.id
+             WHERE {" AND ".join(filters)}
+             ORDER BY p.id{limit_sql}""",
+        params,
+    )
+    seasons = tuple(range(first_season, last_season + 1))
+    return [
+        Candidate(
+            player_id=int(row[0]),
+            first_name=row[1],
+            last_name=row[2],
+            nhl_id=str(row[3]) if row[3] not in (None, "") else None,
+            missing_seasons=seasons,
         )
         for row in cursor.fetchall()
     ]
@@ -634,6 +687,28 @@ def count_contract_coverage(
     }
 
 
+def load_current_contract_summary(*, season: int) -> dict[str, int]:
+    """Stored contract seasons from ``season`` on, the last-good current snapshot."""
+    with (
+        open_database_transaction() as connection,
+        open_database_cursor(connection) as cursor,
+    ):
+        cursor.execute(
+            """SELECT count(DISTINCT c.player_id), count(DISTINCT c.id), count(*)
+                 FROM contracts c
+                 JOIN contract_seasons cs ON cs.contract_id=c.id
+                WHERE cs.season_start_year >= %s""",
+            (season,),
+        )
+        players, contracts, contract_seasons = cursor.fetchone()
+    return {
+        "players": players,
+        "contracts": contracts,
+        "contract_seasons": contract_seasons,
+        "cached": 1,
+    }
+
+
 def load_coverage_report(
     *, first_season: int = DEFAULT_FIRST_SEASON, last_season: int = DEFAULT_LAST_SEASON
 ) -> dict[str, object]:
@@ -710,6 +785,17 @@ class PostgresContractRepository:
     def select_candidates(
         self, options: HistoricalContractOptions
     ) -> tuple[Candidate, ...]:
+        if options.selection is CandidateSelection.CURRENT_ROSTER:
+            return tuple(
+                select_current_roster_candidates(
+                    self.cursor,
+                    first_season=options.first_season,
+                    last_season=options.last_season,
+                    limit=options.limit,
+                    player_id=options.player_id,
+                    nhl_id=options.nhl_id,
+                )
+            )
         return tuple(
             select_candidates(
                 self.cursor,
@@ -743,6 +829,10 @@ class PostgresContractRepository:
         )
         if len(successful) == 0:
             return summary
+        if options.selection is CandidateSelection.CURRENT_ROSTER and not dry_run:
+            ensure_seasons(
+                self.cursor, range(options.first_season, options.last_season + 1)
+            )
         context = load_persistence_context(
             self.cursor, options.first_season, options.last_season
         )
