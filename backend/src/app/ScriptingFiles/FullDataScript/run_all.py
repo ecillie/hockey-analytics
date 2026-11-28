@@ -15,14 +15,22 @@ from app.ScriptingFiles.FullDataScript.roster_status.errors import (
 )
 from app.shared.cli import ExitCode
 from app.config import load_environment
-from app.shared.observability.domain import CommandOutcome, read_logging_settings
-from app.shared.observability.errors import LoggingSettingsError
+from app.shared.observability.domain import (
+    CommandOutcome,
+    read_logging_settings,
+    read_telemetry_settings,
+)
+from app.shared.observability.errors import (
+    LoggingSettingsError,
+    TelemetrySettingsError,
+)
 from app.shared.observability.services import (
     configure_logging,
     start_command,
     configure_command_exceptions,
     finish_command,
 )
+from app.shared.observability.telemetry import configure_telemetry
 from app.ScriptingFiles.FullDataScript.tracking.services import build_ingestion_context
 
 logger = logging.getLogger(__name__)
@@ -35,11 +43,26 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     parser.parse_args(argv)
+    environment = load_environment()
     try:
-        settings = read_logging_settings(load_environment())
-    except LoggingSettingsError as error:
+        settings = read_logging_settings(environment)
+        telemetry_settings = read_telemetry_settings(environment)
+    except (LoggingSettingsError, TelemetrySettingsError) as error:
         parser.error(str(error))
     configure_logging(settings)
+    # stderr delivery is off in nonprod and prod, so Application Insights is the
+    # only place a deployed run's logs land. Shut it down to flush the last batch.
+    telemetry = configure_telemetry(
+        settings, telemetry_settings, service_name="tradevalue-ingestion"
+    )
+    try:
+        return run_ingestion()
+    finally:
+        if telemetry is not None:
+            telemetry.shutdown()
+
+
+def run_ingestion() -> int:
     context = start_command("ingestion")
     configure_command_exceptions(context)
     try:

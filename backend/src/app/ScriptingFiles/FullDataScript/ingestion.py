@@ -398,6 +398,25 @@ def ingest_schedule(
     )
 
 
+def log_source_unavailable(
+    exc: BaseException, context: IngestionContext | None
+) -> None:
+    """Record why a source refresh failed before falling back to its snapshot.
+
+    The fallback can itself fail when no snapshot exists, and that error would
+    otherwise replace this one as the only exception the command reports.
+    """
+    fields: dict[str, object] = {"event": "ingestion.source_unavailable"}
+    response = getattr(exc, "response", None)
+    if isinstance(exc, requests.HTTPError) and response is not None:
+        fields["status"] = response.status_code
+    LOGGER.warning(
+        "Source refresh unavailable",
+        exc_info=exc,
+        extra=({} if context is None else context.fields) | fields,
+    )
+
+
 def run_all(
     *, context: InvocationContext | None = None
 ) -> dict[str, Mapping[str, object]]:
@@ -423,21 +442,24 @@ def run_all(
                 context, source="nhl", stage="ingest_nhl_stats"
             )
         )
-        active_context = build_ingestion_context(
-            context, source="capwages", stage="ingest_capwages"
+        current_context = build_ingestion_context(
+            context, source="capspace", stage="ingest_current_contracts"
         )
         try:
-            results["capwages"] = ingest_capwages(context=active_context)
+            results["current_contracts"] = capspace.ingest_current_contracts(
+                context=current_context
+            )
         except (
             requests.RequestException,
             RuntimeError,
             IngestionValidationError,
         ) as exc:
-            results["capwages"] = load_capwages_summary()
+            log_source_unavailable(exc, current_context)
+            results["current_contracts"] = capspace.load_current_contract_summary()
             LOGGER.warning(
-                "CapWages refresh unavailable; retained last-good database snapshot: %s",
+                "Current contract refresh unavailable; retained last-good database snapshot: %s",
                 exc,
-                extra=({} if active_context is None else active_context.fields)
+                extra=({} if current_context is None else current_context.fields)
                 | {"event": "ingestion.snapshot_retained"},
             )
         historical_context = build_ingestion_context(
@@ -452,6 +474,7 @@ def run_all(
             RuntimeError,
             IngestionValidationError,
         ) as exc:
+            log_source_unavailable(exc, historical_context)
             results["historical_contracts"] = (
                 capspace.load_historical_contract_summary()
             )

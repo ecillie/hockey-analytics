@@ -78,12 +78,19 @@ def parse_signing_date(value: object) -> date | None:
     if found := re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", text):
         month, day, year = map(int, found.groups())
         return build_calendar_date(value, (year, month, day))
-    if re.fullmatch(r"[A-Za-z]{3,9}\.?\s+\d{1,2},\s*\d{4}", text) is None:
+    # CapWages writes "Aug 20, 2024", "Aug. 20 2024" and sometimes only
+    # "August 2024". A month without a day stays unknown rather than invented.
+    month_only = re.fullmatch(r"[A-Za-z]{3,9}\.?\s+\d{4}", text) is not None
+    if (
+        not month_only
+        and re.fullmatch(r"[A-Za-z]{3,9}\.?\s+\d{1,2},?\s*\d{4}", text) is None
+    ):
         raise SigningDateParseError(value=str(value))
     try:
-        return parse_date(text).date()
+        parsed = parse_date(text).date()
     except ValueError as error:
         raise SigningDateParseError(value=str(value)) from error
+    return None if month_only else parsed
 
 
 def build_calendar_date(value: object, parts: tuple[int, ...]) -> date:

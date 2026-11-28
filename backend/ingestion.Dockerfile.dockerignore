@@ -1,0 +1,8 @@
+.env
+.env.*
+.venv
+__pycache__
+*.pyc
+data
+legacy_loaders
+**/tests

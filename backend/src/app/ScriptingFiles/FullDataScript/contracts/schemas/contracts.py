@@ -109,6 +109,23 @@ def parse_mapping_season(
     )
 
 
+def is_uncounted_season(row: Mapping[str, object]) -> bool:
+    """CapWages lists bought-out and tolled seasons without a cap hit of their own."""
+    cap_hit = clean_text(row.get("capHit", row.get("cap_hit"))).upper()
+    if "TOLLED" in cap_hit or "POSTPONED" in cap_hit:
+        return True
+    return cap_hit == "" and isinstance(row.get("buyout"), dict)
+
+
+def find_uncounted_season_years(raw: Mapping[str, object]) -> frozenset[int]:
+    details = extract_mapping_value(raw, ("details", "seasons"), [])
+    return frozenset(
+        parse_season_start_year(row.get("season"))
+        for row in extract_mapping_rows(details)
+        if is_uncounted_season(row)
+    )
+
+
 def extract_mapping_rows(value: object) -> list[dict[str, object]]:
     if not isinstance(value, list) or any(not isinstance(row, dict) for row in value):
         raise ContractDocumentError(
@@ -140,6 +157,7 @@ def parse_mapping_contract(
     seasons = tuple(
         parse_mapping_season(row, rounding=rounding)
         for row in extract_mapping_rows(details)
+        if not is_uncounted_season(row)
     )
     if len(seasons) == 0 or len({row.season_start_year for row in seasons}) != len(
         seasons
@@ -273,10 +291,15 @@ def parse_table_contract(block: Tag) -> ParsedContract | None:
         raise ContractDocumentError(
             reason=DocumentFailure.INVALID_SEASONS, source="HTML table"
         )
+    # Live pages name the type in <strong class="underbar"> under an <h3> such
+    # as "Current"; older saved pages put it in the heading itself.
     heading = next(
         (
             tag_text(node)
-            for node in block.find_all(["h2", "h3", "h4"])
+            for node in (
+                *block.select("strong.underbar"),
+                *block.find_all(["h2", "h3", "h4"]),
+            )
             if "contract" in tag_text(node).lower()
         ),
         None,

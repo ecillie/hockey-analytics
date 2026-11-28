@@ -52,7 +52,9 @@ class AhlBootstrap(FeedModel):
 
 
 class AhlPlayer(FeedModel):
-    player_id: FeedId
+    # Staff rows (general manager, coaches) share the roster sections but have
+    # no player_id; they are skipped when the roster is parsed.
+    player_id: FeedId | None = None
     name: TextFeedId
     birthdate: str | None = None
 

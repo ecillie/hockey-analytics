@@ -1,11 +1,16 @@
-"""Gap-driven historical NHL contract ingestion from CapSpace and CapWages.
+"""NHL contract ingestion from CapSpace, queried by NHL player ID.
 
-The normal CapWages refresh starts from its active-player index. This module
-fills the resulting historical gaps by selecting players from NHL stats and
-querying CapSpace directly by NHL ID, then trying identity-validated CapWages
-profiles when CapSpace cannot cover a requested season. Parsing and money
-normalisation are deliberately independent of PostgreSQL so saved source pages
-can be regression-tested without network access.
+Two stages share one fetch-and-reconcile path:
+
+- current contracts: every player on a roster this season, refreshed for this
+  season and the following ``horizon_years`` on every run;
+- historical contracts: played seasons in a range that still have no contract
+  season, filled once.
+
+CapWages profiles are kept as an optional fallback for the historical stage,
+off by default because capwages.com returns 403 to the ingestion client.
+Parsing and money normalisation are deliberately independent of PostgreSQL so
+saved source pages can be regression-tested without network access.
 """
 
 import argparse
@@ -50,7 +55,14 @@ from app.ScriptingFiles.FullDataScript.contracts.repository.http import (
 from app.ScriptingFiles.FullDataScript.contracts.repository.http import (
     ProfileSession as ProfileSession,
 )
-from app.ScriptingFiles.FullDataScript.contracts.domain import HistoricalContractOptions
+from app.ScriptingFiles.FullDataScript.contracts.domain import (
+    CandidateSelection,
+    CurrentContractOptions,
+    HistoricalContractOptions,
+)
+from app.ScriptingFiles.FullDataScript.contracts.errors import (
+    ProfileFailureRatioError,
+)
 from app.ScriptingFiles.FullDataScript.contracts.domain import ProfileHttpOptions
 from app.ScriptingFiles.FullDataScript.contracts.policy import find_option_violation
 from app.ScriptingFiles.FullDataScript.contracts.repository import (
@@ -59,6 +71,15 @@ from app.ScriptingFiles.FullDataScript.contracts.repository import (
 )
 from app.ScriptingFiles.FullDataScript.contracts.repository import (
     load_coverage_report as coverage_report,
+)
+from app.ScriptingFiles.FullDataScript.contracts.repository import (
+    load_current_contract_summary as load_current_contract_snapshot,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
+    MissingSourceSnapshotError,
+)
+from app.ScriptingFiles.FullDataScript.source_ingestion.util import (
+    parse_season_start_year as current_season_start_year,
 )
 from app.ScriptingFiles.FullDataScript.contracts.repository import (
     select_candidates as select_candidates,
@@ -239,6 +260,76 @@ def preview_historical_contracts(
         force=force,
         context=context,
     )
+
+
+def build_current_selection(
+    options: CurrentContractOptions,
+) -> HistoricalContractOptions:
+    return HistoricalContractOptions(
+        first_season=options.season,
+        last_season=options.season + options.horizon_years,
+        workers=options.workers,
+        batch_size=options.batch_size,
+        selection=CandidateSelection.CURRENT_ROSTER,
+    )
+
+
+def find_profile_failure_violation(
+    summary: Mapping[str, int], maximum_ratio: float
+) -> ProfileFailureRatioError | None:
+    requested = summary.get("profiles_requested", 0)
+    failed = summary.get("profiles_failed", 0)
+    if requested > 0 and failed / requested > maximum_ratio:
+        return ProfileFailureRatioError(
+            failed=failed, requested=requested, maximum_ratio=maximum_ratio
+        )
+    return None
+
+
+@tracked_ingestion(CAPSPACE_SOURCE, "ingest_current_contracts")
+def track_current_contracts(
+    session: ProfileSession | None,
+    options: CurrentContractOptions,
+    *,
+    context: IngestionContext | None = None,
+) -> dict[str, int]:
+    selection = build_current_selection(options)
+    if violation := find_option_violation(selection):
+        raise violation
+    summary = run_historical_contracts(
+        session, options=selection, dry_run=False, context=context
+    )
+    if violation := find_profile_failure_violation(
+        summary, options.maximum_profile_failure_ratio
+    ):
+        raise violation
+    return summary
+
+
+def ingest_current_contracts(
+    session: ProfileSession | None = None,
+    *,
+    season: int | None = None,
+    horizon_years: int = CurrentContractOptions(season=0).horizon_years,
+    workers: int = CurrentContractOptions(season=0).workers,
+    batch_size: int = CurrentContractOptions(season=0).batch_size,
+    context: IngestionContext | None = None,
+) -> dict[str, int]:
+    options = CurrentContractOptions(
+        season=current_season_start_year() if season is None else season,
+        horizon_years=horizon_years,
+        workers=workers,
+        batch_size=batch_size,
+    )
+    return track_current_contracts(session, options, context=context)
+
+
+def load_current_contract_summary(*, season: int | None = None) -> dict[str, int]:
+    resolved = current_season_start_year() if season is None else season
+    summary = load_current_contract_snapshot(season=resolved)
+    if summary["contracts"] == 0:
+        raise MissingSourceSnapshotError(source="CapSpace")
+    return summary
 
 
 def load_historical_contract_summary() -> dict[str, object]:

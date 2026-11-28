@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from app.ScriptingFiles.FullDataScript.contracts.domain import (
     Candidate,
+    CandidateSelection,
     ProfileResult,
     HistoricalContractOptions,
     HistoricalContractLimits,
@@ -199,7 +200,7 @@ class HistoricalContractService:
             )
         summary.update(committed)
         summary = summarize_progress(summary, dry_run=dry_run)
-        if not dry_run:
+        if not dry_run and options.selection is CandidateSelection.STAT_GAPS:
             with report_batch_failure("coverage", committed, dry_run=dry_run):
                 with self.repository_factory() as repository:
                     coverage = repository.coverage_counts(options)

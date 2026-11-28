@@ -1,5 +1,6 @@
 """Contract boundary regressions and generated amount/season inputs."""
 
+from datetime import date
 import json
 from decimal import Decimal
 from pathlib import Path
@@ -21,6 +22,7 @@ from app.ScriptingFiles.FullDataScript.contracts.errors import (
     ContractDocumentError,
     MoneyParseError,
     ProfileSlugError,
+    SigningDateParseError,
 )
 from app.ScriptingFiles.FullDataScript.contracts.schemas.active import (
     parse_active_index,
@@ -32,10 +34,12 @@ from app.ScriptingFiles.FullDataScript.contracts.schemas.contracts import (
 from app.ScriptingFiles.FullDataScript.contracts.tests.fixtures import (
     SavedResponse,
     SavedSession,
+    read_contract_fixture,
 )
 from app.ScriptingFiles.FullDataScript.contracts.util import (
     parse_money_cents,
     parse_season_start_year,
+    parse_signing_date,
 )
 from hypothesis import given
 from app.ScriptingFiles.FullDataScript.contracts.tests.strategies import (
@@ -97,6 +101,30 @@ class TestAmountAndSeasonProperties:
     def test_invalid_seasons_are_rejected(self, invalid_season: str) -> None:
         with pytest.raises(CapSpaceParseError):
             parse_season_start_year(invalid_season)
+
+
+class TestSigningDates:
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            pytest.param("2024-08-20", date(2024, 8, 20), id="iso"),
+            pytest.param("8/20/2024", date(2024, 8, 20), id="slashes"),
+            pytest.param("Aug 20, 2024", date(2024, 8, 20), id="comma"),
+            pytest.param("Aug. 20 2024", date(2024, 8, 20), id="abbreviation-no-comma"),
+            pytest.param("August 23 2024", date(2024, 8, 23), id="month-no-comma"),
+            pytest.param("August 2024", None, id="month-only-is-unknown"),
+            pytest.param("", None, id="blank"),
+        ],
+    )
+    def test_capwages_formats_parse(self, text: str, expected: date | None) -> None:
+        assert parse_signing_date(text) == expected
+
+    @pytest.mark.parametrize(
+        "text", ["Smarch 2024", "Aug 32 2024", "2024", "sometime in August"]
+    )
+    def test_unrecognized_dates_still_fail(self, text: str) -> None:
+        with pytest.raises(SigningDateParseError):
+            parse_signing_date(text)
 
 
 class TestContractSourceShapes:
@@ -167,6 +195,62 @@ class TestContractSourceShapes:
         active = parse_active_profile(half_cent_profile, slug="fixture")[0]
         assert historical.total_value_cents == historical.seasons[0].cap_hit_cents == 1
         assert active.total_value_cents == active.seasons[0].cap_hit_cents == 0
+
+    @pytest.fixture
+    def uncounted_season_profile(self) -> str:
+        details = [
+            {"season": "2021-22", "capHit": "$1,525,000"},
+            {"season": "2022-23", "capHit": "TOLLED/POSTPONED SEASON"},
+            {"season": "2023-24", "capHit": "$1,525,000"},
+            {
+                "season": "2024-25",
+                "capHit": "",
+                "buyout": {"teamName": "Columbus Blue Jackets", "capHit": "$891,667"},
+            },
+        ]
+        payload = {
+            "props": {
+                "pageProps": {
+                    "player": {
+                        "slug": "fixture",
+                        "contracts": [{"value": "$3,050,000", "details": details}],
+                    }
+                }
+            }
+        }
+        return f'<script id="__NEXT_DATA__">{json.dumps(payload)}</script>'
+
+    def test_tolled_and_bought_out_seasons_are_not_contract_seasons(
+        self, uncounted_season_profile: str
+    ) -> None:
+        (contract,) = parse_active_profile(uncounted_season_profile, slug="fixture")
+        assert [season.season_start_year for season in contract.seasons] == [
+            2021,
+            2023,
+        ]
+        assert contract.term_years == 2
+
+    def test_empty_cap_hit_without_a_buyout_still_fails(self) -> None:
+        payload = {
+            "props": {
+                "pageProps": {
+                    "player": {
+                        "slug": "fixture",
+                        "contracts": [
+                            {
+                                "value": "$1",
+                                "details": [{"season": "2021-22", "capHit": ""}],
+                            }
+                        ],
+                    }
+                }
+            }
+        }
+        with pytest.raises(ActiveContractError, match="missing_cap_hit"):
+            parse_active_profile(
+                f'<script id="__NEXT_DATA__">{json.dumps(payload)}</script>',
+                slug="fixture",
+            )
 
     @pytest.fixture
     def nullable_alias_profile(self) -> str:
@@ -287,3 +371,23 @@ class TestProfileOutcomes:
             return
         assert isinstance(result.outcome, ProfileFailure)
         assert result.error is not None
+
+
+class TestLiveCapSpaceMarkup:
+    """Live pages name the contract type in a ``strong.underbar``, not a heading."""
+
+    def test_contract_type_and_entry_level_come_from_the_underbar(self):
+        current, entry = parse_capspace_page(
+            read_contract_fixture("capspace_live_markup.html")
+        )
+
+        assert current.contract_type == "Thirty-Five+ Contract (Extension"
+        assert current.is_entry_level is False
+        assert current.signed_on == date(2024, 9, 16)
+        assert [
+            (season.season_start_year, season.cap_hit_cents, season.clause)
+            for season in current.seasons
+        ] == [(2025, 870_000_000, "NMC"), (2026, 870_000_000, "NMC")]
+        assert entry.contract_type == "Entry Level Contract"
+        assert entry.is_entry_level is True
+        assert entry.term_years == 3

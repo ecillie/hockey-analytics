@@ -29,3 +29,9 @@ class RecordLimitsError(ValueError):
         self.field = field
         self.minimum = minimum
         self.maximum = maximum
+
+
+class TelemetrySettingsError(ValueError):
+    def __init__(self, *, field: str) -> None:
+        super().__init__(f"{field} must contain an InstrumentationKey")
+        self.field = field

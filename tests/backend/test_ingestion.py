@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 from pathlib import Path
 from app.shared.tests.fakes import StageOutcome
@@ -11,6 +12,7 @@ from app.ScriptingFiles.FullDataScript.source_ingestion.tests.responses import (
     NhlRosterSession,
 )
 import pytest
+import requests
 from app.config import AppEnvironment, DatabaseSettings
 from app.database import open_database_cursor, open_database_transaction
 from psycopg2.errors import lookup
@@ -25,6 +27,7 @@ from app.ScriptingFiles.FullDataScript import (
 from app.ScriptingFiles.FullDataScript.contracts.domain import ActivePlayer
 from app.ScriptingFiles.FullDataScript.contracts.errors import MoneyParseError
 from app.ScriptingFiles.FullDataScript.source_ingestion.errors import (
+    MissingSourceSnapshotError,
     PlayerKindViolation,
 )
 from app.ScriptingFiles.FullDataScript.contracts.schemas.active import (
@@ -37,6 +40,10 @@ from app.ScriptingFiles.FullDataScript.roster_status.domain import (
 )
 from app.ScriptingFiles.FullDataScript.roster_status.tests.fakes import FixedRosterFeed
 from app.ScriptingFiles.FullDataScript.source_ingestion import util as source_utils
+from app.ScriptingFiles.FullDataScript.source_ingestion.domain import PlayerKind
+from app.ScriptingFiles.FullDataScript.source_ingestion.policy import (
+    find_stat_violation,
+)
 from app.ScriptingFiles.FullDataScript.source_ingestion.moneypuck.repository import (
     PostgresMoneyPuckRepository,
 )
@@ -321,7 +328,7 @@ def inconsistent_skater_row():
 
 @pytest.fixture
 def inconsistent_goalie_row():
-    return {"playerId": 2, "shotsAgainst": 20, "saves": 18, "goalsAgainst": 3}
+    return {"playerId": 2, "shotsAgainst": 20, "saves": 18, "goalsAgainst": 5}
 
 
 def test_cross_field_stat_invariants_reject_inconsistent_rows(
@@ -339,6 +346,27 @@ def test_cross_field_stat_invariants_reject_inconsistent_rows(
             inconsistent_goalie_row,
             source="fixture",
         )
+
+
+@pytest.mark.parametrize(
+    ("goals_against", "accepted"),
+    [
+        pytest.param(1, False, id="goals-short-of-shots"),
+        pytest.param(2, True, id="exact"),
+        pytest.param(3, True, id="one-goal-without-shot"),
+        pytest.param(4, True, id="two-goals-without-shot"),
+        pytest.param(5, False, id="three-goals-without-shot"),
+    ],
+)
+def test_goalie_totals_allow_goals_without_a_recorded_shot(goals_against, accepted):
+    row = {
+        "playerId": 2,
+        "shotsAgainst": 20,
+        "saves": 18,
+        "goalsAgainst": goals_against,
+    }
+    violation = find_stat_violation(PlayerKind.GOALIE, row, source="fixture")
+    assert (violation is None) is accepted
 
 
 class TestNhlApiParserRejectsSchemaDrift:
@@ -380,7 +408,7 @@ class TestRetainedSnapshots:
 
     @pytest.fixture(
         params=[
-            pytest.param("capwages", id="retain-active-contracts"),
+            pytest.param("current", id="retain-current-contracts"),
             pytest.param("historical", id="retain-historical-contracts"),
             pytest.param("moneypuck", id="reject-stats-failure"),
         ]
@@ -421,20 +449,20 @@ class TestRetainedSnapshots:
                 StageOutcome(result={}, name="stats", events=events),
             ),
             (
-                ingestion,
-                "ingest_capwages",
+                capspace,
+                "ingest_current_contracts",
                 StageOutcome(
                     result={},
                     failure=RuntimeError("partial feed")
-                    if request.param == "capwages"
+                    if request.param == "current"
                     else None,
-                    name="capwages",
+                    name="current",
                     events=events,
                 ),
             ),
             (
-                ingestion,
-                "load_capwages_summary",
+                capspace,
+                "load_current_contract_summary",
                 StageOutcome(
                     result=dict(self.expected), name="active-cache", events=events
                 ),
@@ -477,11 +505,57 @@ class TestRetainedSnapshots:
         result = ingestion.run_all()
         assert result["historical_contracts"] == dict(self.historical)
         assert result["schedule"] == {"games": 10}
-        if stages.failed_stage == "capwages":
-            assert result["capwages"] == dict(self.expected)
+        if stages.failed_stage == "current":
+            assert result["current_contracts"] == dict(self.expected)
             assert "active-cache" in stages.events
         if stages.failed_stage == "historical":
             assert "historical-cache" in stages.events
+
+
+class TestUnavailableSourceWithoutSnapshot:
+    """A blocked source with nothing to fall back to must still say why it failed."""
+
+    @pytest.fixture
+    def blocked(self, monkeypatch):
+        response = requests.Response()
+        response.status_code = 403
+        for name, stage in (
+            ("init_db", StageOutcome(result=None)),
+            ("http_session", StageOutcome(result=SessionLifecycle())),
+            ("ingest_moneypuck", StageOutcome(result={})),
+            ("ingest_nhl_rosters", StageOutcome(result={})),
+            ("ingest_nhl_stats", StageOutcome(result={})),
+        ):
+            monkeypatch.setattr(ingestion, name, stage)
+        monkeypatch.setattr(
+            capspace,
+            "ingest_current_contracts",
+            StageOutcome(
+                result={},
+                failure=requests.HTTPError("403 Forbidden", response=response),
+            ),
+        )
+        monkeypatch.setattr(
+            capspace,
+            "load_current_contract_summary",
+            StageOutcome(
+                result={}, failure=MissingSourceSnapshotError(source="CapSpace")
+            ),
+        )
+
+    def test_logs_the_http_status_before_the_snapshot_error(self, blocked, caplog):
+        caplog.set_level(logging.WARNING, logger=ingestion.LOGGER.name)
+        with pytest.raises(MissingSourceSnapshotError):
+            ingestion.run_all()
+        (record,) = [
+            record
+            for record in caplog.records
+            if getattr(record, "event", None) == "ingestion.source_unavailable"
+        ]
+        assert record.levelno == logging.WARNING
+        assert record.status == 403
+        assert record.exc_info is not None
+        assert record.exc_info[0] is requests.HTTPError
 
 
 @pytest.mark.usefixtures("isolate_command_logging")

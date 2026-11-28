@@ -15,4 +15,5 @@ check_exports=false
 if [[ "${1:-}" == --check ]]; then check_exports=true; fi
 export_file backend/requirements.txt --no-default-groups
 export_file backend/requirements-dev.txt --all-groups
+export_file backend/requirements-ingestion.txt --no-default-groups --group ingestion
 export_file ml/requirements.txt --only-group ml
