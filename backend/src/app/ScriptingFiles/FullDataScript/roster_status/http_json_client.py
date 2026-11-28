@@ -2,7 +2,9 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from http.client import HTTPException
 import re
+import time
 from typing import Protocol, runtime_checkable
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -35,6 +37,7 @@ def fetch_validated[T: BaseModel](
     except (
         URLError,
         OSError,
+        HTTPException,
         UnicodeError,
         InvalidJsonResponseError,
         ValidationError,
@@ -61,14 +64,26 @@ class JsonHttpClient:
                 "User-Agent": self.options.user_agent,
             },
         )
+        # Dropped connections and truncated bodies are transient on the
+        # HockeyTech feed; one lost team request used to mark the whole roster
+        # feed incomplete. HTTP status errors are not retried.
+        for attempt in range(self.options.max_attempts - 1):
+            try:
+                return decode_json_or_jsonp(self.read_body(request))
+            except HTTPError:
+                raise
+            except (URLError, OSError, HTTPException):
+                time.sleep(self.options.retry_delay_seconds * 2**attempt)
+        return decode_json_or_jsonp(self.read_body(request))
+
+    def read_body(self, request: Request) -> str:
         try:
             response = urlopen(request, timeout=self.options.timeout_seconds)
         except HTTPError as error:
             complete_cleanup((error.close,), error)
             raise
         with response:
-            body = response.read().decode("utf-8")
-        return decode_json_or_jsonp(body)
+            return response.read().decode("utf-8")
 
 
 def decode_json_or_jsonp(body: str) -> dict[str, object]:

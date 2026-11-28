@@ -81,6 +81,8 @@ class SyncSummary:
 class HttpOptions:
     timeout_seconds: float = 15.0
     user_agent: str = "TradeValueRosterSync/1.0"
+    max_attempts: int = 3
+    retry_delay_seconds: float = 1.0
 
 
 @dataclass(slots=True, kw_only=True, frozen=True)
