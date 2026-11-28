@@ -34,6 +34,7 @@ def parse_ahl_roster(payload: AhlRoster, team: str) -> ExternalRoster:
         for group in payload.roster
         for section in group.sections
         for entry in section.data
+        if entry.row.player_id is not None
     )
     return tuple(
         ExternalRosterPlayer(

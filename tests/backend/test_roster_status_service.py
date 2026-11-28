@@ -7,7 +7,8 @@ import pytest
 import asyncio
 import json
 from email.message import Message
-from urllib.error import HTTPError
+from http.client import IncompleteRead
+from urllib.error import HTTPError, URLError
 from app.shared.tests.fakes import StageOutcome
 from app.shared.tests.resources import HttpErrorScenario
 from app.ScriptingFiles.FullDataScript.roster_status import http_json_client
@@ -21,13 +22,16 @@ from app.ScriptingFiles.FullDataScript.roster_status.domain import (
     RosterStatus,
 )
 from app.ScriptingFiles.FullDataScript.roster_status.errors import (
+    FeedFetchError,
     InvalidJsonResponseError,
 )
 from app.ScriptingFiles.FullDataScript.roster_status.http_json_client import (
     JsonClient,
     JsonHttpClient,
     decode_json_or_jsonp,
+    fetch_validated,
 )
+from app.ScriptingFiles.FullDataScript.roster_status.schemas import AhlRoster
 from app.ScriptingFiles.FullDataScript.roster_status.nhl_roster_service import (
     NhlRosterService,
 )
@@ -567,3 +571,90 @@ class TestOwnedRosterHttpErrors:
                 scenario.response.__dict__["tradevalue_cleanup"]
                 is scenario.close_failure
             )
+
+
+class TestAhlStaffRows:
+    """The AHL roster feed lists staff (no player_id) beside players."""
+
+    def test_staff_rows_are_skipped_and_players_kept(self, ahl_payloads):
+        payloads = dict(ahl_payloads)
+        payloads["415"] = {
+            "roster": [
+                {
+                    "sections": [
+                        {"data": [{"row": {"player_id": "7179", "name": "Kaapo"}}]},
+                        {
+                            "title": "Staff",
+                            "data": [
+                                {"row": {"name": "A Coach", "role": "Head Coach"}}
+                            ],
+                        },
+                    ]
+                }
+            ]
+        }
+        result = AhlRosterService(
+            http_client=MemoryHttpClient(responses=payloads)
+        ).fetch_current_rosters()
+        assert result.complete
+        assert [item.external_id for item in result.items] == ["7179"]
+
+
+class TestTransientFeedFailuresAreRetried:
+    @pytest.fixture
+    def sleeps(self, monkeypatch):
+        delays = []
+        monkeypatch.setattr(http_json_client.time, "sleep", delays.append)
+        return delays
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            pytest.param(IncompleteRead(b"partial"), id="truncated-body"),
+            pytest.param(URLError("connection reset"), id="dropped-connection"),
+            pytest.param(TimeoutError("timed out"), id="timeout"),
+        ],
+    )
+    def test_recovers_after_a_transient_failure(self, failure, sleeps, monkeypatch):
+        outcomes = [failure, BytesIO(b'{"ok": true}')]
+
+        def opener(request, *, timeout):
+            outcome = outcomes.pop(0)
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+
+        monkeypatch.setattr(http_json_client, "urlopen", opener)
+        assert JsonHttpClient().get_json("https://feed.test") == {"ok": True}
+        assert sleeps == [1.0]
+
+    def test_gives_up_after_max_attempts(self, sleeps, monkeypatch):
+        calls = []
+
+        def opener(request, *, timeout):
+            calls.append(request)
+            raise IncompleteRead(b"partial")
+
+        monkeypatch.setattr(http_json_client, "urlopen", opener)
+        with pytest.raises(FeedFetchError):
+            fetch_validated(
+                JsonHttpClient(options=HttpOptions(max_attempts=3)),
+                "https://feed.test",
+                AhlRoster,
+                "AHL roster for team 1",
+            )
+        assert len(calls) == 3
+        assert sleeps == [1.0, 2.0]
+
+    def test_http_status_errors_are_not_retried(self, sleeps, monkeypatch):
+        calls = []
+
+        def opener(request, *, timeout):
+            calls.append(request)
+            raise HTTPError("https://feed.test", 503, "unavailable", Message(), None)
+
+        monkeypatch.setattr(http_json_client, "urlopen", opener)
+        with pytest.raises(HTTPError):
+            JsonHttpClient().get_json("https://feed.test")
+        assert len(calls) == 1
+        assert sleeps == []
